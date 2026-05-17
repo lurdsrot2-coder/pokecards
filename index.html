@@ -3216,14 +3216,27 @@ function _detectRepo() {
   return { owner: '', repo: '' };
 }
 
-// GitHub raw URLからデータ取得（認証不要・CORS不問）
+// GitHub からデータ取得
 async function _repoGet() {
   try {
     const { owner, repo } = _detectRepo();
     if (!owner || !repo) return null;
-    const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?t=${Date.now()}`);
+    // https経由（GitHub Pages等）: raw URLで直接取得
+    if (location.protocol === 'https:') {
+      const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?t=${Date.now()}`);
+      if (!r.ok) return null;
+      return await r.json();
+    }
+    // file://経由（ローカル）: Contents APIでbase64デコード
+    const cfg = _loadConfig();
+    if (!cfg.gistToken) return null;
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/data.json`, {
+      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' }
+    });
     if (!r.ok) return null;
-    return await r.json();
+    const j = await r.json();
+    const content = decodeURIComponent(escape(atob(j.content.replace(/\n/g, ''))));
+    return JSON.parse(content);
   } catch(e) { return null; }
 }
 
