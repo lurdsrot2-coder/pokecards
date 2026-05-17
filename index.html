@@ -417,6 +417,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
       <label class="flb">GitHub Personal Access Token（public_repo スコープ）</label>
       <input class="fi" id="cfg-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
     </div>
+    <div class="ff">
+      <label class="flb">GitHubリポジトリ（owner/repo）</label>
+      <input class="fi" id="cfg-repo" placeholder="例: lurdsrot2-coder/pokecards">
+    </div>
     <div id="cfg-test-msg" class="cfg-test-msg" style="display:none"></div>
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="bpri" id="cfg-save">保存</button>
@@ -3205,7 +3209,11 @@ function _detectRepo() {
     return { owner, repo };
   }
   const cfg = _loadConfig();
-  return { owner: cfg.repoOwner || '', repo: cfg.repoName || '' };
+  if (cfg.repoSlug) {
+    const [owner, repo] = cfg.repoSlug.split('/');
+    return { owner: owner || '', repo: repo || '' };
+  }
+  return { owner: '', repo: '' };
 }
 
 // GitHub raw URLからデータ取得（認証不要・CORS不問）
@@ -3283,6 +3291,7 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
 document.getElementById('btn-cfg').addEventListener('click', () => {
   const cfg = _loadConfig();
   document.getElementById('cfg-token').value = cfg.gistToken || '';
+  document.getElementById('cfg-repo').value = cfg.repoSlug || '';
   document.getElementById('cfg-test-msg').style.display = 'none';
   document.getElementById('cfg-ov').classList.add('open');
 });
@@ -3291,7 +3300,8 @@ document.getElementById('cfg-cls').addEventListener('click', () =>
 
 document.getElementById('cfg-save').addEventListener('click', async () => {
   const token = document.getElementById('cfg-token').value.trim();
-  _saveConfig({ gistToken: token });
+  const repoSlug = document.getElementById('cfg-repo').value.trim();
+  _saveConfig({ gistToken: token, repoSlug });
   document.getElementById('cfg-ov').classList.remove('open');
   _setSyncStatus(token ? 'synced' : '', token ? '設定済' : '');
 });
