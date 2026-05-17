@@ -1,0 +1,3432 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>◈ POKÉCARD//SYS</title>
+<meta name="theme-color" content="#0a0a1f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PokéCard">
+<link rel="manifest" id="pwa-manifest">
+<style>
+:root {
+  --bg:    #07071a;
+  --bg-c:  #0a0a1a;
+  --bg-c2: #0d0d22;
+  --cyan:  #00f5ff;
+  --pink:  #ff00ff;
+  --gold:  #ffe600;
+  --red:   #ff4444;
+  --txt:   #c0c0e0;
+  --sub:   rgba(255,255,255,.27);
+  --bd:    rgba(0,245,255,.13);
+  --bd2:   rgba(0,245,255,.32);
+  --r:     7px;
+  --t:     .15s ease;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:clip}
+#app{display:flex;flex-direction:column;min-height:100vh}
+
+/* ── Header ── */
+#top-ui{position:sticky;top:0;z-index:1000}
+#hdr{background:linear-gradient(90deg,#0d0d2a,var(--bg-c));border-bottom:1px solid var(--bd2);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#logo{color:var(--cyan);font-size:15px;font-weight:900;letter-spacing:3px;text-shadow:0 0 12px var(--cyan);margin-right:auto;white-space:nowrap}
+.stats{display:flex;gap:8px}
+.chip{background:rgba(0,245,255,.05);border:1px solid var(--bd);border-radius:4px;padding:3px 12px;text-align:center;min-width:60px}
+.chip-v{font-size:14px;font-weight:900;line-height:1.3}
+.chip-v.c{color:var(--cyan)}.chip-v.p{color:var(--pink)}.chip-v.g{color:var(--gold)}
+.chip-l{color:var(--sub);font-size:8px;letter-spacing:1px}
+.hbtn{background:transparent;border:1px solid;border-radius:4px;font-size:10px;padding:5px 10px;cursor:pointer;letter-spacing:1px;white-space:nowrap;transition:var(--t)}
+#btn-import{border-color:rgba(255,0,255,.5);color:var(--pink)}
+#btn-import:hover{background:rgba(255,0,255,.1)}
+#btn-bulk{border-color:rgba(255,230,0,.35);color:var(--gold)}
+#btn-bulk:hover{background:rgba(255,230,0,.08)}
+#btn-madd{border-color:rgba(0,245,255,.35);color:var(--cyan)}
+#btn-madd:hover{background:rgba(0,245,255,.08)}
+/* ── MANUAL BULK ADD ── */
+#madd-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
+#madd-ov.open{display:flex}
+#madd-box{background:var(--bg-c);border:1px solid var(--bd);border-radius:10px;width:min(980px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+#madd-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.07);background:var(--bg-c2)}
+#madd-tit{color:var(--cyan);font-size:12px;letter-spacing:2px;font-weight:700;flex:1}
+.madd-btn{border-radius:4px;font-size:10px;padding:5px 12px;cursor:pointer;border:1px solid}
+#madd-addrow{background:rgba(0,245,255,.08);border-color:rgba(0,245,255,.4);color:var(--cyan)}
+#madd-addrow:hover{background:rgba(0,245,255,.16)}
+#madd-save{background:rgba(0,245,255,.12);border-color:var(--bd2);color:var(--cyan)}
+#madd-save:hover{background:rgba(0,245,255,.22)}
+#madd-cls{background:none;border:none;color:var(--sub);font-size:20px;cursor:pointer;line-height:1}
+#madd-cls:hover{color:#fff}
+#madd-wrap{flex:1;overflow:auto;padding:12px}
+#madd-tbl{border-collapse:collapse;width:100%;font-size:11px}
+#madd-tbl th{background:var(--bg-c2);color:var(--sub);font-size:9px;letter-spacing:1px;padding:5px 6px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;position:sticky;top:0;z-index:1}
+#madd-tbl td{padding:2px 3px;border-bottom:1px solid rgba(255,255,255,.04)}
+.mci{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:3px;color:#c0c0e0;font-size:11px;padding:4px 6px;width:100%;box-sizing:border-box}
+.mci:focus{outline:none;border-color:rgba(0,245,255,.5);background:rgba(0,245,255,.05)}
+.mci.req{border-color:rgba(255,0,255,.3)}
+#madd-note{color:var(--sub);font-size:9px;padding:6px 16px;border-top:1px solid rgba(255,255,255,.06);text-align:right}
+#madd-assign{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid rgba(255,255,255,.06);background:var(--bg-c2);flex-wrap:wrap}
+.madd-albl{color:var(--sub);font-size:9px;white-space:nowrap}
+.madd-asel{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:3px;color:#c0c0e0;font-size:10px;padding:4px 6px;cursor:pointer}
+.madd-ainp{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:3px;color:#c0c0e0;font-size:10px;padding:4px 8px;width:160px}
+.madd-ainp:focus{outline:none;border-color:rgba(0,245,255,.5)}
+#btn-add{border-color:var(--bd2);color:var(--cyan)}
+#btn-add:hover{background:rgba(0,245,255,.08)}
+#btn-sel{border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.5)}
+#btn-sel:hover{background:rgba(255,255,255,.06)}
+#btn-sel.on{background:rgba(0,245,255,.12);border-color:var(--bd2);color:var(--cyan)}
+#btn-selall{border-color:rgba(0,245,255,.35);color:var(--cyan);display:none}
+#btn-selall:hover{background:rgba(0,245,255,.08)}
+#btn-selall.show{display:block}
+#btn-incsel{border-color:rgba(0,245,255,.35);color:var(--cyan);display:none}
+#btn-incsel:hover{background:rgba(0,245,255,.08)}
+#btn-incsel.show{display:block}
+#btn-hidesel{border-color:rgba(255,165,0,.5);color:#ffa500;display:none}
+#btn-hidesel:hover{background:rgba(255,165,0,.1)}
+#btn-hidesel.show{display:block}
+#btn-showsel{border-color:rgba(0,245,255,.35);color:var(--cyan);display:none}
+#btn-showsel:hover{background:rgba(0,245,255,.08)}
+#btn-showsel.show{display:block}
+#btn-delsel{border-color:rgba(255,68,68,.5);color:var(--red);display:none}
+#btn-delsel:hover{background:rgba(255,68,68,.12)}
+#btn-delsel.show{display:block}
+.ci.card-hidden{opacity:.35;filter:grayscale(.8)}
+.ci.card-hidden .cimg::after{content:'🚫';position:absolute;top:4px;right:4px;font-size:14px;line-height:1}
+
+/* ── Filter Panel ── */
+#fp{background:var(--bg-c2);border-bottom:1px solid rgba(255,255,255,.06);padding:8px 16px 6px;display:flex;flex-direction:column;gap:4px;position:sticky;top:42px;z-index:99}
+.fmr{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.fleft{display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.frow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.flbl{color:var(--sub);font-size:8px;letter-spacing:1px;white-space:nowrap}
+.csel{background:#0a0a20;border:1px solid rgba(0,245,255,.18);border-radius:4px;color:var(--txt);font-size:10px;padding:4px 22px 4px 8px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(0,245,255,0.4)'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;transition:var(--t)}
+.csel:focus{outline:none;border-color:rgba(0,245,255,.7)}
+.csel.ser{border-color:rgba(255,0,255,.2);color:#ff88ff}
+.csel.ttl{border-color:rgba(255,230,0,.2);color:#ffe680}
+.farr{color:rgba(255,255,255,.15);font-size:13px}
+.srch{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:4px 10px;color:var(--txt);font-size:10px;width:190px;transition:var(--t)}
+.srch:focus{outline:none;border-color:var(--bd2)}
+.tgrp{display:flex;gap:3px}
+.tbtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:3px;color:var(--sub);font-size:9px;padding:3px 9px;cursor:pointer;transition:var(--t)}
+.tbtn.on{background:rgba(0,245,255,.12);border-color:rgba(0,245,255,.5);color:var(--cyan)}
+
+/* ── Quick Filters ── */
+.qf{border-left:1px solid rgba(255,255,255,.07);padding-left:12px;flex-shrink:0}
+.qlbl{color:var(--sub);font-size:8px;letter-spacing:2px;margin-bottom:5px}
+.qgrid{display:flex;flex-wrap:wrap;gap:4px;max-height:80px;overflow-y:auto;align-content:flex-start;scrollbar-width:thin;scrollbar-color:rgba(255,230,0,.2) transparent}
+.qbtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.4);font-size:9px;padding:4px 5px;cursor:pointer;text-align:center;line-height:1.3;transition:var(--t)}
+.qbtn:hover{border-color:rgba(255,230,0,.4);color:var(--gold);background:rgba(255,230,0,.06)}
+.qbtn.on{border-color:rgba(255,230,0,.7);color:var(--gold);background:rgba(255,230,0,.12);font-weight:700}
+
+/* ── Rarity Chips ── */
+.rrow{display:flex;gap:7px;align-items:center}
+.rscroll{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;flex:1;scrollbar-width:thin;scrollbar-color:rgba(255,0,255,.2) transparent}
+.rc{background:rgba(255,0,255,.05);border:1px solid rgba(255,0,255,.18);border-radius:10px;padding:2px 9px;font-size:8px;color:rgba(255,0,255,.55);white-space:nowrap;cursor:pointer;flex-shrink:0;transition:var(--t)}
+.rc:hover{border-color:rgba(255,0,255,.5);color:rgba(255,0,255,.9)}
+.rc.on{background:rgba(255,0,255,.2);border-color:rgba(255,0,255,.8);color:var(--pink);font-weight:700}
+.rc.all{border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.5);background:rgba(255,255,255,.04)}
+.rc.all.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.7);color:#fff}
+/* ── Clear Filter Button ── */
+#btn-clr-filter{display:none;background:rgba(255,80,0,.1);border:1px solid rgba(255,120,0,.5);border-radius:4px;font-size:9px;padding:4px 10px;cursor:pointer;color:rgba(255,160,50,.9);letter-spacing:1px;white-space:nowrap;transition:var(--t);flex-shrink:0}
+#btn-clr-filter.visible{display:inline-block}
+#btn-clr-filter:hover{background:rgba(255,80,0,.25);border-color:rgba(255,160,50,.9);color:#fff}
+
+/* ── Card Grid ── */
+#grid{flex:1;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;align-content:start}
+.empty{display:flex;align-items:center;justify-content:center;min-height:300px;grid-column:1/-1}
+.emsg{color:var(--sub);text-align:center;font-size:14px}
+.emsg span{display:block;font-size:10px;margin-top:6px}
+
+/* ── Card Item ── */
+.ci{background:var(--bg-c2);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:transform var(--t),border-color var(--t),box-shadow var(--t);position:relative}
+.ci:hover{transform:translateY(-3px);border-color:rgba(0,245,255,.6);box-shadow:0 0 16px rgba(0,245,255,.15)}
+.ci.owned{border-color:rgba(0,245,255,.35)}
+.ci.selected{border-color:var(--cyan)!important;box-shadow:0 0 20px rgba(0,245,255,.4)!important}
+.ci.selected::after{content:'✓';position:absolute;top:6px;left:6px;background:var(--cyan);color:#000;font-size:11px;font-weight:900;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:5;line-height:20px;text-align:center}
+.ciwrap{transition:filter .2s}
+.ciwrap{filter:saturate(.12) brightness(.5)}
+.ci.owned .ciwrap{filter:none}
+.ci:hover:not(.owned) .ciwrap{filter:saturate(.35) brightness(.7)}
+.ci.selected .ciwrap{filter:none!important}
+.cimg{width:100%;aspect-ratio:2/3;background:#0d0d28;display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden}
+.cimg img{width:100%;height:100%;object-fit:contain;display:block}
+.cinf{padding:4px 6px 2px}
+.cname{color:var(--txt);font-size:9px;font-weight:700;overflow-wrap:anywhere;word-break:break-all;line-height:1.35}
+.csub{display:flex;justify-content:space-between;padding-top:2px}
+.cnum{color:rgba(255,255,255,.2);font-size:7.5px}
+.crar{font-size:7.5px;font-weight:700;color:rgba(255,0,255,.6)}
+.ci.owned .crar{color:var(--pink)}
+.ctrl{display:flex;align-items:center;border-top:1px solid rgba(255,255,255,.05)}
+.cbtn{flex:1;background:transparent;border:none;color:rgba(255,255,255,.2);font-size:14px;cursor:pointer;padding:3px 0;transition:color var(--t);line-height:1}
+.cbtn:hover{color:var(--cyan)}
+.cbtn.m:hover{color:var(--red)}
+.cown{color:rgba(255,255,255,.25);font-size:10px;font-weight:900;text-align:center;min-width:20px}
+.ci.owned .cown{color:var(--cyan)}
+.ci.drop-target{border-color:var(--pink)!important;box-shadow:0 0 22px rgba(255,0,255,.55)!important;transform:scale(1.04)!important}
+.ci.drop-target .cimg::after{content:'📷 DROP';position:absolute;inset:0;background:rgba(255,0,255,.45);color:#fff;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center;letter-spacing:.05em}
+.cimg{position:relative}
+
+/* ── Modals ── */
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:1100;align-items:center;justify-content:center}
+.ov.open{display:flex}
+.mbox{background:var(--bg-c);border:1px solid var(--bd2);border-radius:12px;padding:24px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 0 40px rgba(0,245,255,.1)}
+.mbox.wide{width:min(820px,95vw)}
+.mtit{color:var(--cyan);font-size:14px;font-weight:900;letter-spacing:2px;margin-bottom:16px}
+.mcls{float:right;background:none;border:none;color:var(--sub);font-size:18px;cursor:pointer;line-height:1}
+.mcls:hover{color:#fff}
+.ff{margin-bottom:12px}
+.flb{color:var(--sub);font-size:9px;letter-spacing:1px;display:block;margin-bottom:4px}
+.fi,.fs{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:7px 10px;color:var(--txt);font-size:11px}
+.fi:focus,.fs:focus{outline:none;border-color:var(--bd2)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bpri{background:linear-gradient(135deg,rgba(0,245,255,.2),rgba(0,245,255,.08));border:1px solid var(--bd2);border-radius:4px;color:var(--cyan);font-size:11px;font-weight:700;padding:8px 20px;cursor:pointer;width:100%;transition:var(--t)}
+.bpri:hover{background:rgba(0,245,255,.2);box-shadow:0 0 12px rgba(0,245,255,.2)}
+.bdng{background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.3);border-radius:4px;color:var(--red);font-size:11px;padding:8px 16px;cursor:pointer;transition:var(--t)}
+.bdng:hover{background:rgba(255,68,68,.15)}
+
+/* ── Edit Modal: 2-column ── */
+.edt-layout{display:flex;gap:20px;align-items:flex-start}
+.edt-img-col{flex-shrink:0;width:180px}
+.edt-img-preview{width:100%;aspect-ratio:2/3;background:#0d0d28;border-radius:8px;border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:40px;overflow:hidden;cursor:zoom-in;transition:box-shadow .2s}
+.edt-img-preview:hover{box-shadow:0 0 0 2px var(--cyan)}
+.edt-img-preview img{width:100%;height:100%;object-fit:contain;display:block;border-radius:8px}
+.edt-form-col{flex:1;min-width:0}
+/* ── Card Lightbox ── */
+#card-lb{display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);align-items:center;justify-content:center;cursor:zoom-out}
+#card-lb-wrap{position:relative;display:inline-block}
+#card-lb-wrap img{max-width:min(480px,90vw);max-height:90vh;border-radius:12px;box-shadow:0 0 60px rgba(0,245,255,.25);display:block;cursor:default}
+#card-lb-cls{position:absolute;top:-14px;right:-14px;background:rgba(10,10,30,.9);border:1px solid rgba(255,255,255,.35);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;line-height:30px;text-align:center;z-index:1001}
+
+/* ── Import Modal ── */
+.slist{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;margin-top:12px}
+.si{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:var(--t)}
+.si:hover{border-color:var(--bd2);background:rgba(0,245,255,.06)}
+.siname{color:var(--txt);font-size:11px;font-weight:600}
+.simeta{color:var(--sub);font-size:9px}
+.sicnt{color:var(--cyan);font-size:10px}
+.iprog{color:var(--sub);font-size:11px;text-align:center;padding:12px}
+.iprog.ok{color:var(--cyan)}.iprog.err{color:var(--red)}
+
+/* ── Era Tabs (Set Browser) ── */
+.era-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.era-tab{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:4px;color:var(--sub);font-size:10px;padding:5px 12px;cursor:pointer;transition:var(--t)}
+.era-tab:hover{border-color:rgba(0,245,255,.4);color:var(--cyan)}
+.era-tab.on{background:rgba(0,245,255,.12);border-color:var(--bd2);color:var(--cyan);font-weight:700}
+.set-list{display:flex;flex-direction:column;gap:5px;max-height:380px;overflow-y:auto;margin-bottom:10px}
+.set-row{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:var(--t)}
+.set-row:hover{border-color:var(--bd2);background:rgba(0,245,255,.06)}
+.set-row-name{flex:1;color:var(--txt);font-size:11px}
+.set-row-btn{background:rgba(0,245,255,.1);border:1px solid var(--bd2);border-radius:3px;color:var(--cyan);font-size:9px;padding:3px 10px;cursor:pointer;white-space:nowrap}
+.paste-hint{font-size:9px;color:rgba(255,230,0,.75);background:rgba(255,230,0,.06);border:1px solid rgba(255,230,0,.2);border-radius:4px;padding:8px 10px;line-height:1.8;margin-bottom:8px}
+.paste-hint b{color:rgba(255,230,0,1)}
+.bkm-wrap{background:rgba(0,245,255,.04);border:1px solid rgba(0,245,255,.25);border-radius:6px;padding:10px 12px;margin-bottom:10px}
+.bkm-title{font-size:10px;color:var(--cyan);font-weight:bold;margin-bottom:6px}
+.bkm-steps{font-size:9px;color:var(--txt);line-height:2;margin-bottom:8px}
+.bkm-steps b{color:var(--cyan)}
+.bkm-link{display:inline-block;background:linear-gradient(135deg,rgba(0,245,255,.2),rgba(255,0,255,.15));border:1px solid var(--cyan);border-radius:5px;padding:6px 14px;color:var(--cyan);font-size:10px;font-weight:bold;text-decoration:none;cursor:grab;user-select:none}
+.bkm-link:hover{background:linear-gradient(135deg,rgba(0,245,255,.35),rgba(255,0,255,.25));box-shadow:0 0 10px rgba(0,245,255,.3)}
+.bkm-note{font-size:8px;color:var(--sub);margin-top:5px}
+
+/* ── URL Import ── */
+.url-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:7px;max-height:340px;overflow-y:auto;margin:10px 0}
+.uic{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
+.uic img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#0d0d28}
+.uic-ph{width:100%;aspect-ratio:2/3;background:#0d0d28;display:flex;align-items:center;justify-content:center;font-size:22px}
+.uic-name{padding:3px 5px;font-size:8.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.uic-meta{padding:0 5px 4px;font-size:8px;color:var(--sub)}
+.uic-sold{color:var(--red);font-size:7.5px}
+.uic-dup{opacity:.35}.uic-dup img{filter:saturate(0)}
+.url-more{color:var(--sub);font-size:10px;text-align:center;padding:8px;grid-column:1/-1}
+
+/* ── Bulk Editor ── */
+#be{display:none;position:fixed;inset:0;background:var(--bg);z-index:300;flex-direction:column}
+#be.open{display:flex}
+#behdr{background:var(--bg-c2);border-bottom:1px solid var(--bd2);padding:10px 16px;display:flex;align-items:center;gap:10px}
+#betit{color:var(--gold);font-size:13px;font-weight:900;letter-spacing:2px;flex:1}
+#be-miss{background:rgba(255,230,0,.08);border:1px solid rgba(255,230,0,.3);border-radius:4px;color:var(--gold);font-size:10px;padding:5px 10px;cursor:pointer}
+#be-miss.on{background:rgba(255,230,0,.18);border-color:rgba(255,230,0,.7)}
+#be-save{background:rgba(0,245,255,.12);border:1px solid var(--bd2);border-radius:4px;color:var(--cyan);font-size:10px;padding:5px 12px;cursor:pointer}
+#be-save:hover{background:rgba(0,245,255,.22)}
+#be-cls{background:none;border:none;color:var(--sub);font-size:20px;cursor:pointer}
+#be-cls:hover{color:#fff}
+#be-assign{padding:8px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;gap:8px;align-items:center;background:var(--bg-c2);flex-wrap:wrap}
+#be-assign label{color:var(--sub);font-size:9px}
+.bain{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:3px;color:var(--txt);font-size:10px;padding:4px 8px}
+#be-abtn{background:rgba(255,230,0,.08);border:1px solid rgba(255,230,0,.3);border-radius:3px;color:var(--gold);font-size:10px;padding:4px 10px;cursor:pointer}
+#be-abtn:hover{background:rgba(255,230,0,.15)}
+.bcnt{color:var(--sub);font-size:9px;margin-left:auto}
+#be-wrap{flex:1;overflow:auto;padding:12px}
+.btbl{width:max-content;min-width:100%;border-collapse:collapse;font-size:10px}
+.btbl th{background:var(--bg-c2);color:var(--sub);font-size:8px;letter-spacing:1px;padding:6px 8px;text-align:left;position:sticky;top:0;border-bottom:1px solid var(--bd)}
+.btbl td{border-bottom:1px solid rgba(255,255,255,.04);padding:3px 4px;vertical-align:middle}
+.btbl tr:hover td{background:rgba(255,255,255,.03)}
+.btbl tr.dirty td{background:rgba(0,245,255,.04)}
+.bci{background:transparent;border:1px solid transparent;border-radius:3px;color:var(--txt);font-size:10px;padding:2px 5px;width:100%}
+.bci:focus{outline:none;background:rgba(0,245,255,.07);border-color:rgba(0,245,255,.3)}
+.bci.miss{color:rgba(255,100,100,.7);border-color:rgba(255,100,100,.2)}
+.burl-cell{text-align:center;position:relative;width:28px;min-width:28px}
+.burl-dot{font-size:10px;cursor:pointer;user-select:none}
+.burl-cell .bci{position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.burl-cell:focus-within{min-width:200px;width:200px}
+.burl-cell:focus-within .bci{position:relative;width:100%;height:auto;opacity:1;pointer-events:auto}
+.burl-cell:focus-within .burl-dot{display:none}
+#be-filter{display:flex;align-items:center;gap:8px;padding:7px 16px;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.15);flex-wrap:wrap}
+#be-filter label{color:var(--sub);font-size:9px;white-space:nowrap}
+#be-fsrch{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:3px;color:var(--txt);font-size:10px;padding:3px 8px;width:160px}
+#be-fsrch:focus{outline:none;border-color:rgba(0,245,255,.4)}
+#be-fclr{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:3px;color:var(--sub);font-size:9px;padding:3px 8px;cursor:pointer}
+#be-fclr:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+.miss-flag{display:inline-flex;gap:3px;flex-wrap:wrap}
+.miss-chip{background:rgba(255,80,80,.15);border:1px solid rgba(255,80,80,.4);color:rgba(255,120,120,.9);border-radius:3px;font-size:8px;padding:1px 4px;white-space:nowrap}
+.ok-flag{color:rgba(0,245,120,.7);font-size:11px}
+.bchk{cursor:pointer;accent-color:var(--cyan);width:14px;height:14px}
+
+@media(max-width:900px){#grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}}
+@media(max-width:600px){
+  #grid{grid-template-columns:repeat(auto-fill,minmax(85px,1fr));gap:6px}
+  .edt-layout{flex-direction:column}
+  .edt-img-col{width:100%;max-width:200px;margin:0 auto}
+}
+
+/* ── Mobile UI ── */
+@media(max-width:600px){
+  #hdr{ padding:6px 10px; gap:5px; }
+  #logo{ font-size:13px; }
+  .stats{ gap:6px; }
+  .chip-v{ font-size:14px; }
+  #btn-export, #btn-import-bk, #btn-madd, #btn-bulk, #btn-url-import { display:none; }
+
+  #fp{ padding:6px 8px; }
+  .frow{ flex-wrap:wrap; gap:4px; }
+  .csel{ font-size:11px; padding:4px 6px; }
+  .srch{ font-size:12px; }
+  .tbtn, .tbtn2{ padding:5px 8px; font-size:11px; }
+
+  .rc{ font-size:9px; padding:3px 8px; }
+
+  #grid{ grid-template-columns: repeat(2, 1fr); gap:8px; padding:8px; }
+
+  .cbtn{ font-size:18px; padding:4px 10px; min-width:36px; min-height:36px; }
+  .cown{ font-size:16px; min-width:28px; }
+
+  .cname{ font-size:10px; }
+}
+
+/* ── Settings Modal ── */
+#cfg-status{font-size:10px;letter-spacing:1px;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);white-space:nowrap;color:var(--sub)}
+#cfg-status.syncing{color:var(--cyan);border-color:rgba(0,245,255,.4)}
+#cfg-status.synced{color:#00e595;border-color:rgba(0,229,149,.4)}
+#cfg-status.error{color:var(--red);border-color:rgba(255,68,68,.4)}
+.cfg-row{display:flex;gap:8px;align-items:center;margin-top:6px}
+.cfg-test-msg{font-size:10px;margin-top:6px;padding:6px 10px;border-radius:4px}
+.cfg-test-msg.ok{background:rgba(0,229,149,.1);border:1px solid rgba(0,229,149,.4);color:#00e595}
+.cfg-test-msg.err{background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.3);color:var(--red)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="top-ui">
+<header id="hdr">
+  <div id="logo">◈ POKÉCARD//SYS</div>
+  <div class="stats">
+    <div class="chip"><div class="chip-v c" id="s-total">0</div><div class="chip-l">TOTAL</div></div>
+    <div class="chip"><div class="chip-v p" id="s-owned">0</div><div class="chip-l">OWNED</div></div>
+    <div class="chip"><div class="chip-v g" id="s-assets">¥0</div><div class="chip-l">ASSETS</div></div>
+    <div class="chip"><div class="chip-v" id="s-filtered" style="color:#00e5cc">0</div><div class="chip-l">FILTERED</div></div>
+    <div class="chip" id="chip-selected" style="display:none"><div class="chip-v" id="s-selected" style="color:#ffe600">0</div><div class="chip-l">SELECTED</div></div>
+  </div>
+  <button class="hbtn" id="btn-add">＋ ADD</button>
+  <button class="hbtn" id="btn-sel">◻ SELECT</button>
+  <button class="hbtn" id="btn-selall">全選択</button>
+  <button class="hbtn" id="btn-incsel">＋1 (<span id="sel-count">0</span>)</button>
+  <button class="hbtn" id="btn-hidesel">🚫 非表示</button>
+  <button class="hbtn" id="btn-showsel">👁 表示に戻す</button>
+  <button class="hbtn" id="btn-delsel">🗑 DELETE</button>
+  <button class="hbtn" id="btn-bulk" onclick="openBulkEditor()">⊞ EDIT</button>
+  <button class="hbtn" id="btn-madd" onclick="openMAdd()">✎ 手動追加</button>
+  <button class="hbtn" id="btn-import">⬇ IMPORT SET</button>
+  <button class="hbtn" id="btn-url-import" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">🔗 URL取り込み</button>
+  <button class="hbtn" id="btn-export" style="border-color:rgba(255,230,0,.35);color:var(--gold)">💾 バックアップ</button>
+  <label class="hbtn" id="btn-import-bk" style="border-color:rgba(255,230,0,.35);color:var(--gold);cursor:pointer">📂 復元<input type="file" id="import-bk-file" accept=".json" style="display:none"></label>
+  <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
+  <span id="cfg-status">―</span>
+</header>
+<div id="fp">
+  <div class="fmr">
+    <div class="fleft">
+      <div class="frow">
+        <span class="flbl">CATEGORY</span>
+        <select class="csel" id="sel-type"><option value="">全カード種別</option></select>
+        <span class="farr">›</span>
+        <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select>
+        <span class="farr">›</span>
+        <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
+      </div>
+      <div class="frow">
+        <input class="srch" id="srch" placeholder="🔍 カード名・イラストレーター・タイトル">
+        <div class="tgrp">
+          <button class="tbtn on" data-ow="all">ALL</button>
+          <button class="tbtn" data-ow="owned">OWNED</button>
+          <button class="tbtn" data-ow="want">WANT</button>
+        </div>
+        <button class="tbtn" id="btn-showhidden">🚫 非表示含む</button>
+        <button class="tbtn" id="btn-showall">全件表示</button>
+        <button id="btn-clr-filter" title="フィルタをすべて解除 [ESC]">✕ フィルタ解除</button>
+        <select class="csel" id="sel-sort" style="border-color:rgba(255,230,0,.2);color:#ffe680">
+          <option value="default">追加順</option>
+          <option value="name">名前順</option>
+          <option value="number">番号順</option>
+          <option value="type">種別順</option>
+          <option value="rarity">レアリティ順</option>
+          <option value="owned">所持数順</option>
+        </select>
+      </div>
+    </div>
+    <div class="qf">
+      <div class="qlbl">QUICK FILTER</div>
+      <div class="qgrid" id="qgrid"></div>
+    </div>
+  </div>
+  <div class="rrow">
+    <span class="flbl">RARITY</span>
+    <div class="rscroll" id="rscroll">
+      <button class="rc all on" data-r="">全て</button>
+    </div>
+    <span id="import-badge" style="display:none;background:rgba(0,245,255,.12);border:1px solid rgba(0,245,255,.5);border-radius:10px;color:var(--cyan);font-size:9px;padding:3px 10px;white-space:nowrap;flex-shrink:0">📥 <span id="import-badge-txt"></span> <button id="import-badge-clr" style="background:none;border:none;color:var(--cyan);cursor:pointer;font-size:11px;padding:0 0 0 4px">✕</button></span>
+  </div>
+</div>
+</div><!-- /top-ui -->
+
+<div id="grid">
+  <div class="empty"><div class="emsg">カードが登録されていません<span>「IMPORT SET」でカードを追加してください</span></div></div>
+</div>
+
+</div><!-- #app -->
+
+<!-- Settings Modal -->
+<div class="ov" id="cfg-ov">
+  <div class="mbox">
+    <button class="mcls" id="cfg-cls">✕</button>
+    <div class="mtit">⚙ 設定 — GitHub Gist 同期</div>
+    <div class="ff">
+      <label class="flb">GitHub Personal Access Token（gist スコープ）</label>
+      <input class="fi" id="cfg-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+    </div>
+    <div class="ff">
+      <label class="flb">Gist ID（空欄のまま「新規作成」で自動生成）</label>
+      <div class="cfg-row">
+        <input class="fi" id="cfg-gist-id" placeholder="既存のGist IDを貼り付け" style="flex:1">
+        <button class="hbtn" id="cfg-create-gist" style="border-color:rgba(0,245,255,.35);color:var(--cyan);white-space:nowrap">新規作成</button>
+      </div>
+    </div>
+    <div id="cfg-test-msg" class="cfg-test-msg" style="display:none"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="bpri" id="cfg-save">保存</button>
+      <button class="hbtn" id="cfg-test" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">接続テスト</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set Browser Modal (カードラッシュ) -->
+<div class="ov" id="imp-ov">
+  <div class="mbox wide">
+    <button class="mcls" id="imp-cls">✕</button>
+    <div class="mtit">⬇ セット選択（カードラッシュ）</div>
+    <div class="era-tabs" id="era-tabs">
+      <button class="era-tab on" data-era="SV">SV</button>
+      <button class="era-tab" data-era="MEGA">MEGA</button>
+      <button class="era-tab" data-era="S">剣盾(S)</button>
+      <button class="era-tab" data-era="SM">SM</button>
+      <button class="era-tab" data-era="XY">XY</button>
+      <button class="era-tab" data-era="BW">BW</button>
+      <button class="era-tab" data-era="旧">旧シリーズ</button>
+    </div>
+    <div class="set-list" id="slist"></div>
+    <div style="font-size:9px;color:var(--sub);text-align:center">クリックするとURL取り込みにセットされます</div>
+  </div>
+</div>
+
+<!-- URL Import Modal -->
+<div class="ov" id="url-ov">
+  <div class="mbox wide">
+    <button class="mcls" id="url-cls">✕</button>
+    <div class="mtit">🔗 カード取り込み（公式サイト）</div>
+    <!-- pokecahack.com -->
+    <div class="bkm-wrap" style="margin-bottom:8px">
+      <div class="bkm-title">📘 pokecahack.com — URLを貼り付けて取得</div>
+      <div class="bkm-steps" style="margin-bottom:6px">
+        <a href="https://pokecahack.com/card-list/" target="_blank" style="color:var(--cyan)">pokecahack.com/card-list/</a> でレアリティ別ページのURLをコピーして「取得」
+      </div>
+      <div style="display:flex;gap:8px">
+        <input class="fi" id="url-inp" placeholder="https://pokecahack.com/ar/" style="flex:1;font-size:10px">
+        <button class="bpri" id="url-fetch" style="width:auto;padding:7px 14px;white-space:nowrap">取得</button>
+      </div>
+    </div>
+    <!-- cardrush -->
+    <div class="bkm-wrap" style="margin-bottom:8px">
+      <div class="bkm-title">🛒 カードラッシュ — ワンクリックインポート</div>
+      <div class="bkm-steps">
+        <b>①</b> 下のボタンをブックマークバーにドラッグして登録（初回のみ）<br>
+        <b>②</b> <a href="https://www.cardrush-pokemon.jp/" target="_blank" style="color:var(--cyan)">cardrush-pokemon.jp</a> でカード一覧 or 個別カードページを開く<br>
+        <b>③</b> ブックマークをクリック → 自動でクリップボードにコピー<br>
+        <b>④</b> アプリに戻って下の「📋 クリップボードからインポート」を押す
+      </div>
+      <a id="bkm-cr" href="#" class="bkm-link" style="margin-top:6px;display:inline-block" title="ブックマークバーにドラッグしてください">📥 CardManager取り込み（カードラッシュ）</a>
+      <div class="bkm-note">※ ドラッグしてブックマークバーへ追加してください（初回のみ）</div>
+      <button class="bpri" onclick="importFromClipboard()" style="margin-top:10px;width:100%;font-size:13px;padding:11px;background:rgba(0,245,255,.18);border:1.5px solid #00f5ff">📋 クリップボードからインポート</button>
+    </div>
+    <!-- hareruya2 -->
+    <div class="bkm-wrap" style="margin-bottom:8px">
+      <div class="bkm-title">🛒 晴れる屋2 — URLを貼り付けて取得</div>
+      <div class="bkm-steps" style="margin-bottom:6px">
+        <a href="https://www.hareruya2.com/" target="_blank" style="color:var(--cyan)">hareruya2.com</a> の検索結果URLをコピーして「取得」
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <input class="fi" id="hr2-inp" placeholder="https://www.hareruya2.com/search?type=product&q=..." style="flex:1;font-size:10px">
+        <button class="bpri" id="hr2-fetch" style="width:auto;padding:7px 14px;white-space:nowrap">取得</button>
+      </div>
+      <details style="font-size:11px">
+        <summary style="cursor:pointer;color:var(--cyan);margin-bottom:4px">⚠ 取得できない場合 → ブックマークレットを使用</summary>
+        <div class="bkm-steps" style="margin:6px 0">
+          <b>①</b> 下のボタンをブックマークバーにドラッグして登録（初回のみ）<br>
+          <b>②</b> hareruya2.com で検索結果を開きブックマークをクリック<br>
+          <b>③</b> アプリに戻って上の「📋 クリップボードからインポート」を押す
+        </div>
+        <a id="bkm-hr2" href="#" class="bkm-link" style="display:inline-block" title="ブックマークバーにドラッグしてください">📥 CardManager取り込み（晴れる屋2）</a>
+        <div class="bkm-note">※ ドラッグしてブックマークバーへ追加してください（初回のみ）</div>
+      </details>
+    </div>
+    <div style="text-align:center;color:var(--sub);font-size:10px;margin:4px 0 6px">── 手動：JSONを直接貼り付け ──</div>
+    <div class="ff">
+      <label class="flb">JSONを貼り付け（ブックマークレットが自動コピーに失敗した場合）</label>
+      <textarea class="fi" id="url-html" rows="3" placeholder="ブックマークレット出力JSONをここへ..." style="resize:vertical;font-size:9px;font-family:monospace"></textarea>
+    </div>
+    <button class="bpri" id="url-parse" style="margin-bottom:12px">解析してプレビュー</button>
+    <div id="url-prog" class="iprog" style="display:none"></div>
+    <div id="url-preview" style="display:none">
+      <div class="url-cards" id="url-cards"></div>
+      <button class="bpri" id="url-import-btn" onclick="doImportCards()" style="display:none">0枚をインポート</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card Lightbox -->
+<div id="card-lb" onclick="closeCardLightbox(event)">
+  <div id="card-lb-wrap">
+    <button id="card-lb-cls" onclick="closeCardLightbox(event)">✕</button>
+    <img id="card-lb-img" src="" alt="">
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="ov" id="edt-ov">
+  <div class="mbox wide">
+    <button class="mcls" id="edt-cls" onclick="document.getElementById('edt-ov').classList.remove('open')">✕</button>
+    <div class="mtit" id="edt-tit">CARD EDIT</div>
+    <input type="hidden" id="edt-id">
+    <div class="edt-layout">
+      <!-- 左: カード画像 -->
+      <div class="edt-img-col">
+        <div class="edt-img-preview" id="edt-img-wrap" onclick="openCardLightbox()">
+          <span id="edt-img-placeholder">🃏</span>
+          <img id="edt-img" style="display:none" alt="card">
+        </div>
+      </div>
+      <!-- 右: フォーム -->
+      <div class="edt-form-col">
+        <div class="fgrid">
+          <div class="ff"><label class="flb">カード名</label><input class="fi" id="e-name"></div>
+          <div class="ff"><label class="flb">カード番号</label><input class="fi" id="e-num"></div>
+        </div>
+        <div class="fgrid">
+          <div class="ff"><label class="flb">レアリティ</label><input class="fi" id="e-rar"></div>
+          <div class="ff"><label class="flb">カード種別</label><input class="fi" id="e-type"></div>
+        </div>
+        <div class="fgrid">
+          <div class="ff"><label class="flb">収録シリーズ</label><input class="fi" id="e-ser"></div>
+          <div class="ff"><label class="flb">収録タイトル</label><input class="fi" id="e-ttl"></div>
+        </div>
+        <div class="ff"><label class="flb">イラストレーター</label><input class="fi" id="e-art"></div>
+        <div class="ff">
+          <label class="flb">画像URL（手動）</label>
+          <input class="fi" id="e-img" placeholder="https://...">
+        </div>
+        <div class="ff"><label class="flb">クイックタグ（カンマ区切り）</label><input class="fi" id="e-tags" placeholder="151マスボ, デルタ種 ..."></div>
+        <button class="bsec" onclick="edtFetchFromImage()" style="width:100%;margin-top:8px">📷 画像からカード情報を読み取る</button>
+        <div id="edt-tcg-res" style="display:none;margin-top:6px;max-height:220px;overflow-y:auto;border:1px solid var(--bd2);border-radius:6px;background:var(--bg-c2)"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="bpri" id="edt-save" onclick="saveEdit()">保存</button>
+          <button class="bdng" id="edt-del" onclick="deleteEdit()">削除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Modal -->
+<div class="ov" id="add-ov">
+  <div class="mbox">
+    <button class="mcls" id="add-cls">✕</button>
+    <div class="mtit">＋ カードを追加</div>
+    <div class="fgrid">
+      <div class="ff"><label class="flb">カード名 *</label><input class="fi" id="a-name" placeholder="ピカチュウ ex"></div>
+      <div class="ff"><label class="flb">カード番号</label><input class="fi" id="a-num" placeholder="025/165"></div>
+    </div>
+    <div class="fgrid">
+      <div class="ff"><label class="flb">レアリティ</label><input class="fi" id="a-rar" placeholder="SAR"></div>
+      <div class="ff"><label class="flb">カード種別</label><input class="fi" id="a-type" placeholder="拡張パック"></div>
+    </div>
+    <div class="fgrid">
+      <div class="ff"><label class="flb">収録シリーズ</label><input class="fi" id="a-ser"></div>
+      <div class="ff"><label class="flb">収録タイトル</label><input class="fi" id="a-ttl"></div>
+    </div>
+    <div class="ff"><label class="flb">イラストレーター</label><input class="fi" id="a-art"></div>
+    <div class="ff"><label class="flb">画像URL</label><input class="fi" id="a-img" placeholder="https://..."></div>
+    <button class="bpri" id="add-save" style="margin-top:8px">追加</button>
+  </div>
+</div>
+
+<!-- Bulk Editor (fullscreen) -->
+<!-- ── MANUAL BULK ADD MODAL ── -->
+<div id="madd-ov" onclick="if(event.target.id==='madd-ov')closeMAdd()">
+  <div id="madd-box">
+    <div id="madd-hdr">
+      <div id="madd-tit">✎ 手動一括追加</div>
+      <button class="madd-btn" id="madd-addrow" onclick="maddAddRows(5)">＋ 5行追加</button>
+      <button class="madd-btn" id="madd-save" onclick="saveMAdd()">💾 保存</button>
+      <button id="madd-cls" onclick="closeMAdd()">✕</button>
+    </div>
+    <div id="madd-assign">
+      <span class="madd-albl">列を一括入力：</span>
+      <select id="madd-afield" class="madd-asel">
+        <option value="rarityLabel">レアリティ</option>
+        <option value="cardType">カード種別</option>
+        <option value="series">シリーズ</option>
+        <option value="setName">タイトル</option>
+        <option value="illustrator">イラストレーター</option>
+        <option value="cardNumber">カード番号</option>
+      </select>
+      <input id="madd-aval" class="madd-ainp" placeholder="値を入力">
+      <button class="madd-btn" onclick="maddFillAll()">全行に適用</button>
+    </div>
+    <div id="madd-wrap">
+      <table id="madd-tbl">
+        <thead><tr>
+          <th>#</th>
+          <th>カード名 *</th><th>カード番号</th><th>レアリティ</th>
+          <th>カード種別</th><th>シリーズ</th><th>タイトル</th>
+          <th>イラストレーター</th><th>所持数</th><th>画像URL</th>
+        </tr></thead>
+        <tbody id="madd-body"></tbody>
+      </table>
+    </div>
+    <div id="madd-note">カード名のみ必須。保存時に名前が空の行はスキップされます。</div>
+  </div>
+</div>
+
+<div id="be">
+  <div id="behdr">
+    <div id="betit">⊞ BULK EDITOR</div>
+    <button id="be-miss">未登録のみ</button>
+    <button id="be-save">💾 保存</button>
+    <button id="be-cls">✕</button>
+  </div>
+  <div id="be-filter">
+    <label>絞り込み：</label>
+    <input id="be-fsrch" placeholder="カード名で検索...">
+    <select class="bain" id="be-fser"><option value="">全シリーズ</option></select>
+    <select class="bain" id="be-fttl"><option value="">全タイトル</option></select>
+    <select class="bain" id="be-frar"><option value="">全レアリティ</option></select>
+    <button id="be-fclr">リセット</button>
+    <span id="be-selbadge" style="display:none;background:rgba(0,245,255,.15);border:1px solid rgba(0,245,255,.5);border-radius:10px;color:var(--cyan);font-size:9px;padding:3px 10px;white-space:nowrap">選択カードのみ <button id="be-selclr" style="background:none;border:none;color:var(--cyan);cursor:pointer;font-size:10px;padding:0 0 0 4px">✕</button></span>
+  </div>
+  <div id="be-assign">
+    <label>選択行に一括設定：</label>
+    <select class="bain" id="be-afield">
+      <option value="cardType">カード種別</option>
+      <option value="series">収録シリーズ</option>
+      <option value="setName">収録タイトル</option>
+      <option value="rarityLabel">レアリティ</option>
+      <option value="illustrator">イラストレーター</option>
+      <option value="quickTags_add">タグ追加</option>
+      <option value="quickTags_del">タグ削除</option>
+    </select>
+    <input class="bain" id="be-aval" placeholder="設定する値" style="width:140px">
+    <button id="be-abtn">適用</button>
+    <span class="bcnt" id="be-cnt"></span>
+  </div>
+  <div id="be-wrap">
+    <table class="btbl">
+      <thead><tr>
+        <th><input type="checkbox" class="bchk" id="chk-all"></th>
+        <th>状態</th>
+        <th style="min-width:160px">カード名</th><th class="burl-cell" style="text-align:center">URL</th><th>番号</th><th>レアリティ</th>
+        <th>カード種別</th><th>シリーズ</th><th>タイトル</th>
+        <th>イラストレーター</th><th>タグ</th>
+      </tr></thead>
+      <tbody id="be-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- LZString v1.4.4 compression library for localStorage -->
+<script>
+var LZString=function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";var keyStrUriSafe="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";var baseReverseDic={};function getBaseValue(alphabet,character){if(!baseReverseDic[alphabet]){baseReverseDic[alphabet]={};for(var i=0;i<alphabet.length;i++){baseReverseDic[alphabet][alphabet.charAt(i)]=i}}return baseReverseDic[alphabet][character]}var _compress=function(uncompressed,bitsPerChar,getCharFromInt){if(uncompressed==null)return"";var i,value,context_dictionary={},context_dictionaryToCreate={},context_c="",context_wc="",context_w="",context_enlargeIn=2,context_dictSize=3,context_numBits=2,context_data=[],context_data_val=0,context_data_position=0,ii;for(ii=0;ii<uncompressed.length;ii+=1){context_c=uncompressed.charAt(ii);if(!Object.prototype.hasOwnProperty.call(context_dictionary,context_c)){context_dictionary[context_c]=context_dictSize++;context_dictionaryToCreate[context_c]=true}context_wc=context_w+context_c;if(Object.prototype.hasOwnProperty.call(context_dictionary,context_wc)){context_w=context_wc}else{if(Object.prototype.hasOwnProperty.call(context_dictionaryToCreate,context_w)){if(context_w.charCodeAt(0)<256){for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}}value=context_w.charCodeAt(0);for(i=0;i<8;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}else{value=1;for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1)|value;if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=0}value=context_w.charCodeAt(0);for(i=0;i<16;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}context_enlargeIn--;if(context_enlargeIn==0){context_enlargeIn=Math.pow(2,context_numBits);context_numBits++}delete context_dictionaryToCreate[context_w]}else{value=context_dictionary[context_w];for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}context_enlargeIn--;if(context_enlargeIn==0){context_enlargeIn=Math.pow(2,context_numBits);context_numBits++}context_dictionary[context_wc]=context_dictSize++;context_w=String(context_c)}}if(context_w!==""){if(Object.prototype.hasOwnProperty.call(context_dictionaryToCreate,context_w)){if(context_w.charCodeAt(0)<256){for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}}value=context_w.charCodeAt(0);for(i=0;i<8;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}else{value=1;for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1)|value;if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=0}value=context_w.charCodeAt(0);for(i=0;i<16;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}context_enlargeIn--;if(context_enlargeIn==0){context_enlargeIn=Math.pow(2,context_numBits);context_numBits++}delete context_dictionaryToCreate[context_w]}else{value=context_dictionary[context_w];for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1)|(value&1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}value=value>>1}}context_enlargeIn--;if(context_enlargeIn==0){context_enlargeIn=Math.pow(2,context_numBits);context_numBits++}}for(i=0;i<context_numBits;i++){context_data_val=(context_data_val<<1);if(context_data_position==bitsPerChar-1){context_data_position=0;context_data.push(getCharFromInt(context_data_val));context_data_val=0}else{context_data_position++}}while(true){context_data_val=(context_data_val<<1);if(context_data_position==bitsPerChar-1){context_data.push(getCharFromInt(context_data_val));break}else{context_data_position++}}return context_data.join("")};var _decompress=function(length,resetValue,getNextValue){var dictionary=[],next,enlargeIn=4,dictSize=4,numBits=3,entry="",result=[],i,w,bits,resb,maxpower,power,c,data={val:getNextValue(0),position:resetValue,index:1};for(i=0;i<3;i+=1){dictionary[i]=i}bits=0;maxpower=Math.pow(2,2);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}switch(next=bits){case 0:bits=0;maxpower=Math.pow(2,8);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}c=f(bits);break;case 1:bits=0;maxpower=Math.pow(2,16);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}c=f(bits);break;case 2:return""}w=c;dictionary[3]=c;result.push(c);while(true){if(data.index>length){return""}bits=0;maxpower=Math.pow(2,numBits);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}switch(c=bits){case 0:bits=0;maxpower=Math.pow(2,8);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}dictionary[dictSize++]=f(bits);c=dictSize-1;enlargeIn--;break;case 1:bits=0;maxpower=Math.pow(2,16);power=1;while(power!=maxpower){resb=data.val&data.position;data.position>>=1;if(data.position==0){data.position=resetValue;data.val=getNextValue(data.index++)}bits|=(resb>0?1:0)*power;power<<=1}dictionary[dictSize++]=f(bits);c=dictSize-1;enlargeIn--;break;case 2:return result.join("")}if(enlargeIn==0){enlargeIn=Math.pow(2,numBits);numBits++}if(dictionary[c]){entry=dictionary[c]}else{if(c===dictSize){entry=w+w.charAt(0)}else{return null}}result.push(entry);dictionary[dictSize++]=w+entry.charAt(0);enlargeIn--;if(enlargeIn==0){enlargeIn=Math.pow(2,numBits);numBits++}w=entry}};return{compress:function(uncompressed){return _compress(uncompressed,16,function(a){return f(a)})},decompress:function(compressed){if(compressed==null)return"";if(compressed=="")return null;return _decompress(compressed.length,32768,function(index){return compressed.charCodeAt(index)})},compressToUTF16:function(uncompressed){if(uncompressed==null)return"";return _compress(uncompressed,15,function(a){return f(a+32)})+" "},decompressFromUTF16:function(compressed){if(compressed==null)return"";if(compressed=="")return null;return _decompress(compressed.length,16384,function(index){return compressed.charCodeAt(index)-32})},compressToBase64:function(uncompressed){if(uncompressed==null)return"";var res=_compress(uncompressed,6,function(a){return keyStrBase64.charAt(a)});switch(res.length%4){default:case 0:return res;case 1:return res+"===";case 2:return res+"==";case 3:return res+"="}},decompressFromBase64:function(compressed){if(compressed==null)return"";if(compressed=="")return null;return _decompress(compressed.length,32,function(index){return getBaseValue(keyStrBase64,compressed.charAt(index))})},compressToEncodedURIComponent:function(uncompressed){if(uncompressed==null)return"";return _compress(uncompressed,6,function(a){return keyStrUriSafe.charAt(a)})},decompressFromEncodedURIComponent:function(compressed){if(compressed==null)return"";if(compressed=="")return null;compressed=compressed.replace(/ /g,"+");return _decompress(compressed.length,32,function(index){return getBaseValue(keyStrUriSafe,compressed.charAt(index))})}}}();
+</script>
+<script>
+window.onerror=function(msg,src,line){
+  document.body.insertAdjacentHTML('beforeend',`<div style="position:fixed;bottom:0;left:0;right:0;background:#c00;color:#fff;padding:10px;z-index:99999;font-size:12px;font-family:monospace">JS Error line ${line}: ${msg}</div>`);
+};
+// ── CONSTANTS ─────────────────────────────────────────
+const SK  = 'pokecards_v1';
+const API = 'https://api.pokemontcg.io/v2';
+
+const RMAP = {
+  'Common':'C','Uncommon':'U','Rare':'R','Rare Holo':'RH',
+  'Rare Holo EX':'RR','Rare Holo GX':'RR','Rare Holo V':'RR',
+  'Rare Holo VMAX':'RR','Rare Holo VSTAR':'RR',
+  'Rare Ultra':'SR','Rare Rainbow':'HR','Rare Secret':'UR',
+  'Rare Shiny':'S','Rare Shiny GX':'SSR','Rare Prism Star':'PR',
+  'Rare ACE':'ACE','Rare BREAK':'RRR','Rare Prime':'SR',
+  'LEGEND':'LEG','Amazing Rare':'AR','Illustration Rare':'AR',
+  'Special Illustration Rare':'SAR','Trainer Gallery Rare Holo':'TG',
+  'Hyper Rare':'HR','Double Rare':'RR','Ultra Rare':'UR',
+  'Shiny Rare':'S','Shiny Ultra Rare':'SSR','Classic Collection':'K','Promo':'PROMO',
+};
+
+const QTAG_RULES = {
+  '151マスボ':    id => id === 'sv3pt5',
+  'デルタ種':     id => ['ex9','ex10','ex11','ex13','ex14','ex15','ex16','dp1','dp2','dp3','dp4'].includes(id),
+  'わるい・R団':  id => ['base5','gym1','gym2'].includes(id),
+  'やさしい':     id => ['neo1','neo2','neo3','neo4'].includes(id),
+  'eカード':      id => ['ecard1','ecard2','ecard3'].includes(id),
+  'VS':           id => id === 'vs',
+  'ジムリーダー': id => ['gym1','gym2'].includes(id),
+  'EBB':          id => ['base1','base2','base3','base4'].includes(id),
+  'レジェンド':   id => ['hgss3','hgss4'].includes(id),
+  'グレート':     id => ['pl1','pl2','pl3','pl4'].includes(id),
+};
+
+// ── DATA LAYER ────────────────────────────────────────
+// IndexedDB: 主ストレージ（非同期・ノンブロッキング・容量制限なし）
+// localStorage: 旧データ読み込み専用 + beforeunload 緊急バックアップ
+const SK_LZ='pokecards_v1_lz';
+const IDB_NAME='pokecards_db',IDB_STORE='store',IDB_KEY='v1';
+let _idb=null;
+const _idbReady=new Promise(res=>{
+  try{
+    const r=indexedDB.open(IDB_NAME,1);
+    r.onupgradeneeded=e=>e.target.result.createObjectStore(IDB_STORE);
+    r.onsuccess=e=>{_idb=e.target.result;res(true);};
+    r.onerror=()=>res(false);
+  }catch(e){res(false);}
+});
+function _idbPut(data){
+  if(!_idb)return;
+  try{_idb.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(data,IDB_KEY);}
+  catch(e){console.error('idbPut',e);}
+}
+function _idbGet(){
+  return new Promise(res=>{
+    if(!_idb){res(null);return;}
+    try{
+      const r=_idb.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(IDB_KEY);
+      r.onsuccess=e=>res(e.target.result||null);
+      r.onerror=()=>res(null);
+    }catch(e){res(null);}
+  });
+}
+// 旧localStorage圧縮データを読み込む（初回移行用）
+function _lzDecompress(str){
+  if(!str)return null;
+  try{
+    const rv=16384;let dv=str.charCodeAt(0)-32,dp=rv,di=1;
+    function rb(n){let b=0,p=1;for(let i=0;i<n;i++){const r=dv&dp;dp>>=1;if(!dp){dp=rv;dv=str.charCodeAt(di++)-32;}b|=(r>0?1:0)*p;p<<=1;}return b;}
+    const D=[0,1,2];let ds=4,nb=3,ei=4,res=[],w,c,ent;
+    const tp=rb(2);if(tp===2)return null;
+    c=String.fromCharCode(rb(tp===0?8:16));w=c;D[3]=c;res.push(c);
+    while(di<=str.length+1){
+      const sym=rb(nb);if(sym===2)break;
+      if(sym===0){D[ds++]=String.fromCharCode(rb(8));c=ds-1;ei--;}
+      else if(sym===1){D[ds++]=String.fromCharCode(rb(16));c=ds-1;ei--;}
+      else c=sym;
+      if(ei===0){ei=Math.pow(2,nb);nb++;}
+      if(D[c]){ent=D[c];}else if(c===ds){ent=w+w[0];}else break;
+      res.push(ent);D[ds++]=w+ent[0];ei--;
+      if(ei===0){ei=Math.pow(2,nb);nb++;}
+      w=ent;
+    }
+    const j=res.join('');
+    const trimmed=j.slice(0,j.lastIndexOf('}')+1);
+    return trimmed.length>2?trimmed:null;
+  }catch(e){return null;}
+}
+async function loadDbAsync(){
+  try{
+    await _idbReady;
+    // IndexedDB を優先（通常はここから読み込む）
+    const d=await _idbGet();
+    if(d?.cards){return d;}
+    // 旧 localStorage データへのフォールバック（初回移行）
+    const lz=localStorage.getItem(SK_LZ);
+    if(lz){const json=_lzDecompress(lz);if(json){const data=JSON.parse(json);_idbPut(data);return data;}}
+    const r=localStorage.getItem(SK);if(r){const data=JSON.parse(r);_idbPut(data);return data;}
+  }catch(e){console.error('loadDb error',e);}
+  return{cards:[],version:1};
+}
+// 同期版 loadDb（初期描画用ダミー）
+function loadDb(){return{cards:[],version:1};}
+
+function _doSave(){
+  // IndexedDB に非同期保存（メインスレッドをブロックしない）
+  _idbPut(db);
+}
+function saveDb(){
+  db.lastUpdated=new Date().toISOString();
+  _doSave();
+  _scheduleGistSave();
+}
+// デバウンス保存: 最後の操作から400ms後に保存
+let _saveTimer=null;
+function saveDbDebounced(){
+  db.lastUpdated=new Date().toISOString();
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>{_saveTimer=null;_doSave();_scheduleGistSave();},400);
+}
+// タブを閉じる前: IndexedDB + localStorage 両方に保存
+window.addEventListener('beforeunload',()=>{
+  clearTimeout(_saveTimer);
+  _idbPut(db);
+  // localStorage にも素のJSONを緊急バックアップ（圧縮なし＝高速）
+  try{localStorage.setItem(SK,JSON.stringify(db));localStorage.removeItem(SK_LZ);}catch(e){}
+});
+function getCard(id){return db.cards.find(c=>c.id===id)}
+function upsertCard(c){
+  const i=db.cards.findIndex(x=>x.id===c.id);
+  if(i>=0)db.cards[i]=c;else db.cards.push(c);
+  saveDb();
+}
+function deleteCard(id){db.cards=db.cards.filter(c=>c.id!==id);saveDb()}
+function deleteCards(ids){const s=new Set(ids);db.cards=db.cards.filter(c=>!s.has(c.id));saveDb()}
+
+let db=loadDb();
+
+// ── FILTER STATE ──────────────────────────────────────
+let fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+function isFilterActive(){
+  return !!(fs.cardType||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
+}
+function clearFilters(){
+  fs.cardType='';fs.series='';fs.title='';fs.search='';fs.ownership='all';
+  fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
+  // sync UI controls
+  document.getElementById('srch').value='';
+  document.getElementById('sel-type').value='';
+  document.getElementById('sel-series').value='';
+  document.getElementById('sel-title').value='';
+  document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow==='all'));
+  document.getElementById('btn-showhidden').classList.remove('on');
+  const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
+  renderAll();
+}
+
+function _cardNumVal(s){
+  const m=(s||'').match(/\d+/);return m?parseInt(m[0],10):99999;
+}
+function _sortCards(arr){
+  if(fs.sort==='default') return arr;
+  const ja=(a,b)=>(a||'').localeCompare(b||'','ja');
+  return [...arr].sort((a,b)=>{
+    switch(fs.sort){
+      case 'name':    return ja(a.name,b.name);
+      case 'number':  return _cardNumVal(a.cardNumber)-_cardNumVal(b.cardNumber)||ja(a.name,b.name);
+      case 'type':    return ja(a.cardType,b.cardType)||ja(a.name,b.name);
+      case 'rarity':  return ja(a.rarityLabel,b.rarityLabel)||ja(a.name,b.name);
+      case 'owned':   return (b.owned||0)-(a.owned||0)||ja(a.name,b.name);
+      default:        return 0;
+    }
+  });
+}
+
+function filtered(){
+  return _sortCards(db.cards.filter(c=>{
+    if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
+    if(c.hidden && !fs.showHidden) return false;
+    if(fs.cardType && c.cardType!==fs.cardType) return false;
+    if(fs.series===NONE_VAL){ if(c.series) return false; }
+    else if(fs.series && c.series!==fs.series) return false;
+    if(fs.title===NONE_VAL){ if(c.setName) return false; }
+    else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.search){
+      const q=fs.search.toLowerCase();
+      if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
+    }
+    if(fs.ownership==='owned' && c.owned<=0) return false;
+    if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
+    if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
+    return true;
+  }));
+}
+
+// ── SELECT MODE ───────────────────────────────────────
+let selMode=false;
+let selIds=new Set();
+let lastSelId=null; // Shift範囲選択のアンカー
+
+function enterSelMode(){
+  selMode=true;
+  document.getElementById('btn-sel').classList.add('on');
+  document.getElementById('btn-sel').textContent='✕ 選択解除';
+  document.getElementById('btn-selall').classList.add('show');
+  document.getElementById('chip-selected').style.display='';
+  updateDelBtn();
+}
+function exitSelMode(){
+  // .selected を一括除去（querySelectorAll 1回 → O(DOM) のみ）
+  document.querySelectorAll('.ci.selected').forEach(el=>el.classList.remove('selected'));
+  selMode=false;selIds.clear();lastSelId=null;
+  document.getElementById('btn-sel').classList.remove('on');
+  document.getElementById('btn-sel').textContent='◻ SELECT';
+  document.getElementById('btn-selall').classList.remove('show');
+  document.getElementById('btn-incsel').classList.remove('show');
+  document.getElementById('btn-hidesel').classList.remove('show');
+  document.getElementById('btn-showsel').classList.remove('show');
+  document.getElementById('btn-delsel').classList.remove('show');
+  document.getElementById('chip-selected').style.display='none';
+}
+// キーボードショートカット
+document.addEventListener('keydown',e=>{
+  // ESC: 開いているモーダルを閉じる / 選択モード解除
+  if(e.key==='Escape'){
+    const ovIds=['edt-ov','add-ov','url-ov','imp-ov','cfg-ov'];
+    for(const id of ovIds){
+      const el=document.getElementById(id);
+      if(el?.classList.contains('open')){el.classList.remove('open');return;}
+    }
+    const be=document.getElementById('be');
+    if(be?.classList.contains('open')){
+      if(typeof beDirty!=='undefined'&&beDirty.size>0&&!confirm('未保存の変更があります。閉じますか？'))return;
+      be.classList.remove('open');return;
+    }
+    const madd=document.getElementById('madd-ov');
+    if(madd?.classList.contains('open')){madd.classList.remove('open');return;}
+    if(selMode){exitSelMode();return;}
+    if(isFilterActive()){clearFilters();return;}
+  }
+  // Delete: 選択カードを削除確認
+  if(e.key==='Delete'&&selMode&&selIds.size){
+    const tag=document.activeElement?.tagName;
+    if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+    const n=selIds.size;
+    if(!confirm(`選択した ${n} 枚のカードを削除しますか？\nこの操作は元に戻せません。`)) return;
+    deleteCards(selIds);
+    exitSelMode();
+    renderAll();
+    return;
+  }
+  // 1 / Space: 選択カードを +1（入力欄にフォーカス中は無視）
+  if((e.key==='1'||e.key===' ')&&selMode&&selIds.size){
+    const tag=document.activeElement?.tagName;
+    if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+    e.preventDefault();
+    // O(n) 1回走査で全選択カードを更新（O(n²) を回避）
+    db.cards.forEach((c,i)=>{
+      if(!selIds.has(c.id))return;
+      db.cards[i]={...c,owned:(c.owned||0)+1};
+      patchOwnedEl(db.cards[i]);
+    });
+    saveDbDebounced();
+    renderStats();
+  }
+});
+
+function updateDelBtn(){
+  const n=selIds.size;
+  document.getElementById('sel-count').textContent=n;
+  document.getElementById('s-selected').textContent=n;
+  document.getElementById('chip-selected').style.display=selMode?'':'none';
+  document.getElementById('btn-incsel').classList.toggle('show',n>0);
+  document.getElementById('btn-delsel').classList.toggle('show',n>0);
+  // 非表示/表示に戻す: 選択中カードに hidden があるかで切り替え（O(n) 1回走査）
+  let hasHidden=false,hasVisible=false;
+  if(n>0){for(const c of db.cards){if(!selIds.has(c.id))continue;if(c.hidden)hasHidden=true;else hasVisible=true;if(hasHidden&&hasVisible)break;}}
+  document.getElementById('btn-hidesel').classList.toggle('show',hasVisible);
+  document.getElementById('btn-showsel').classList.toggle('show',hasHidden);
+  // 全選択ボタンのラベル更新
+  const vis=filtered();
+  const allSel=vis.length>0&&vis.every(c=>selIds.has(c.id));
+  document.getElementById('btn-selall').textContent=allSel?'全解除':'全選択';
+}
+
+// ── RENDER: STATS ─────────────────────────────────────
+function renderStats(){
+  document.getElementById('s-total').textContent=db.cards.length;
+  document.getElementById('s-owned').textContent=db.cards.reduce((s,c)=>s+(c.owned||0),0);
+  document.getElementById('s-assets').textContent='¥0';
+}
+
+// ── RENDER: DROPDOWNS ─────────────────────────────────
+const NONE_VAL='__NONE__';
+// 指定フィルタ以外を全て適用したカード一覧（ファセット検索用）
+function _filteredExcluding(exclude){
+  return db.cards.filter(c=>{
+    if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
+    if(c.hidden && !fs.showHidden) return false;
+    if(exclude!=='cardType' && fs.cardType && c.cardType!==fs.cardType) return false;
+    if(exclude!=='series'){
+      if(fs.series===NONE_VAL){ if(c.series) return false; }
+      else if(fs.series && c.series!==fs.series) return false;
+    }
+    if(exclude!=='title'){
+      if(fs.title===NONE_VAL){ if(c.setName) return false; }
+      else if(fs.title && c.setName!==fs.title) return false;
+    }
+    if(fs.search){
+      const q=fs.search.toLowerCase();
+      if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
+    }
+    if(fs.ownership==='owned' && c.owned<=0) return false;
+    if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
+    if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
+    return true;
+  });
+}
+function renderDropdowns(){
+  const poolType  =_filteredExcluding('cardType');
+  const poolSeries=_filteredExcluding('series');
+  const poolTitle =_filteredExcluding('title');
+
+  const types =[...new Set(poolType.map(c=>c.cardType).filter(Boolean))].sort();
+  const sers  =[...new Set(poolSeries.map(c=>c.series).filter(Boolean))].sort();
+  const titles=[...new Set(poolTitle.map(c=>c.setName).filter(Boolean))].sort();
+
+  const rebuild=(el,items,lbl,cur,hasNone)=>{
+    el.innerHTML=`<option value="">${lbl}</option>`;
+    if(hasNone) el.innerHTML+=`<option value="${NONE_VAL}"${cur===NONE_VAL?' selected':''}>（未登録）</option>`;
+    items.forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v;o.textContent=v;if(v===cur)o.selected=true;
+      el.appendChild(o);
+    });
+  };
+  const hasNoSeries=poolSeries.some(c=>!c.series);
+  const hasNoTitle =poolTitle.some(c=>!c.setName);
+  rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardType, false);
+  rebuild(document.getElementById('sel-series'), sers,  '全シリーズ',  fs.series,  hasNoSeries);
+  rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle);
+}
+
+// ── RENDER: RARITY CHIPS ──────────────────────────────
+function _filteredWithoutRarity(){
+  // filtered() without the rarity filter — used to scope rarity chips
+  return db.cards.filter(c=>{
+    if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
+    if(c.hidden && !fs.showHidden) return false;
+    if(fs.cardType && c.cardType!==fs.cardType) return false;
+    if(fs.series===NONE_VAL){ if(c.series) return false; }
+    else if(fs.series && c.series!==fs.series) return false;
+    if(fs.title===NONE_VAL){ if(c.setName) return false; }
+    else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.search){
+      const q=fs.search.toLowerCase();
+      if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
+    }
+    if(fs.ownership==='owned' && c.owned<=0) return false;
+    if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
+    return true;
+  });
+}
+function renderRarity(){
+  const anyOtherFilter=fs.cardType||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
+  const pool=anyOtherFilter?_filteredWithoutRarity():db.cards;
+  const rs=[...new Set(pool.map(c=>c.rarityLabel).filter(Boolean))].sort();
+  const el=document.getElementById('rscroll');
+  el.innerHTML=`<button class="rc all ${fs.rarities.size===0?'on':''}" data-r="">全て</button>`;
+  rs.forEach(r=>{
+    const b=document.createElement('button');
+    b.className='rc'+(fs.rarities.has(r)?' on':'');
+    b.dataset.r=r;b.textContent=r;el.appendChild(b);
+  });
+}
+
+// ── RENDER: CARDS ─────────────────────────────────────
+function esc(v){return(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+
+function cardHTML(c){
+  const src=c.customImage||c.image||'';
+  const img=src
+    ?`<img src="${src}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'">`
+    :`<span>🃏</span>`;
+  const isSel=selIds.has(c.id);
+  return `<div class="ci ${c.owned>0?'owned':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
+    <div class="ciwrap"><div class="cimg">${img}</div></div>
+    <div class="cinf">
+      <div class="cname" title="${esc(c.name)}">${esc(c.name)}</div>
+      <div class="csub">
+        <span class="cnum">${esc(c.cardNumber)}</span>
+        <span class="crar">${esc(c.rarityLabel)}</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <button class="cbtn m" data-act="dec" data-id="${c.id}">－</button>
+      <div class="cown">${c.owned||0}</div>
+      <button class="cbtn" data-act="inc" data-id="${c.id}">＋</button>
+    </div>
+  </div>`;
+}
+
+let _gridShowAll=false;
+let _gridLimit=200;
+let _gridObs=null;
+
+function _attachGridObserver(cards){
+  if(_gridObs){_gridObs.disconnect();_gridObs=null;}
+  const sentinel=document.getElementById('grid-sentinel');
+  if(!sentinel)return;
+  _gridObs=new IntersectionObserver(entries=>{
+    if(!entries[0].isIntersecting)return;
+    _gridObs.disconnect();_gridObs=null;
+    const from=_gridLimit;
+    _gridLimit+=200;
+    const next=cards.slice(from,_gridLimit);
+    const s=document.getElementById('grid-sentinel');
+    if(!s)return;
+    s.insertAdjacentHTML('beforebegin',next.map(cardHTML).join(''));
+    if(cards.length>_gridLimit) _attachGridObserver(cards);
+    else s.remove();
+  },{rootMargin:'400px'});
+  _gridObs.observe(sentinel);
+}
+
+function renderCards(){
+  _updateClrFilterBtn();
+  renderRarity();
+  if(_gridObs){_gridObs.disconnect();_gridObs=null;}
+  const g=document.getElementById('grid');
+  const cards=filtered();
+  document.getElementById('s-filtered').textContent=cards.length;
+  if(!cards.length){
+    g.innerHTML=`<div class="empty"><div class="emsg">${
+      db.cards.length===0
+        ?'カードが登録されていません<span>「IMPORT SET」でカードを追加してください</span>'
+        :'条件に一致するカードがありません'
+    }</div></div>`;
+    return;
+  }
+  if(_gridShowAll){
+    g.innerHTML=cards.map(cardHTML).join('');
+    return;
+  }
+  _gridLimit=200;
+  g.innerHTML=cards.slice(0,_gridLimit).map(cardHTML).join('')
+    +(cards.length>_gridLimit?'<div id="grid-sentinel" style="grid-column:1/-1;height:1px"></div>':'');
+  _attachGridObserver(cards);
+}
+
+function renderQuickFilter(){
+  const tags=[...new Set(db.cards.flatMap(c=>c.quickTags||[]))].sort((a,b)=>a.localeCompare(b,'ja'));
+  const el=document.getElementById('qgrid');
+  if(!tags.length){
+    el.innerHTML='<span style="color:var(--sub);font-size:9px;padding:4px">タグなし</span>';
+    return;
+  }
+  el.innerHTML=tags.map(t=>`<button class="qbtn${fs.quickTag===t?' on':''}" data-tag="${esc(t)}">${esc(t)}</button>`).join('');
+}
+
+function _updateClrFilterBtn(){
+  document.getElementById('btn-clr-filter').classList.toggle('visible',isFilterActive());
+}
+function renderAll(){renderStats();renderDropdowns();renderQuickFilter();renderCards();}
+
+// ── CARD INTERACTIONS ─────────────────────────────────
+// +/- 専用: 該当カード要素だけ更新（全再描画なし）
+function patchOwnedEl(c){
+  const ci=document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`);
+  if(!ci)return;
+  ci.querySelector('.cown').textContent=c.owned||0;
+  ci.classList.toggle('owned',c.owned>0);
+}
+
+document.getElementById('grid').addEventListener('click',e=>{
+  // +/- ボタンは選択モードでも動作
+  const btn=e.target.closest('[data-act]');
+  if(btn){
+    e.stopPropagation();
+    const c=getCard(btn.dataset.id);if(!c)return;
+    if(btn.dataset.act==='inc') c.owned=(c.owned||0)+1;
+    else c.owned=Math.max(0,(c.owned||0)-1);
+    // DB はメモリ更新 + デバウンス保存（全再描画しない）
+    const i=db.cards.findIndex(x=>x.id===c.id);
+    if(i>=0)db.cards[i]=c;
+    saveDbDebounced();
+    patchOwnedEl(c);
+    renderStats();
+    return;
+  }
+  const ci=e.target.closest('.ci');
+  if(!ci)return;
+  const id=ci.dataset.id;
+
+  if(selMode){
+    if(e.shiftKey && lastSelId && lastSelId!==id){
+      // Shift+クリック: lastSelId〜id の範囲を全選択
+      const cards=filtered();
+      const fromIdx=cards.findIndex(c=>c.id===lastSelId);
+      const toIdx  =cards.findIndex(c=>c.id===id);
+      if(fromIdx>=0&&toIdx>=0){
+        const [lo,hi]=[Math.min(fromIdx,toIdx),Math.max(fromIdx,toIdx)];
+        cards.slice(lo,hi+1).forEach(c=>{
+          if(!selIds.has(c.id)){
+            selIds.add(c.id);
+            document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`)?.classList.add('selected');
+          }
+        });
+      }
+      // アンカーは変えない
+    } else {
+      // 通常クリック: トグル
+      if(selIds.has(id)){selIds.delete(id);ci.classList.remove('selected');}
+      else{selIds.add(id);ci.classList.add('selected');}
+      lastSelId=id;
+    }
+    updateDelBtn();
+  } else if(e.ctrlKey||e.metaKey||e.shiftKey){
+    // Ctrl / Shift+クリック: 選択モードに入って選択
+    enterSelMode();
+    selIds.add(id);
+    lastSelId=id;
+    ci.classList.add('selected');
+    updateDelBtn();
+  } else {
+    openEdit(id);
+  }
+});
+
+// ── DRAG & DROP IMAGE UPDATE ──────────────────────────
+(()=>{
+  const grid=document.getElementById('grid');
+  grid.addEventListener('dragover',e=>{
+    const ci=e.target.closest('.ci');if(!ci)return;
+    e.preventDefault();e.dataTransfer.dropEffect='copy';
+    document.querySelectorAll('.ci.drop-target').forEach(el=>{if(el!==ci)el.classList.remove('drop-target');});
+    ci.classList.add('drop-target');
+  });
+  grid.addEventListener('dragleave',e=>{
+    if(!e.relatedTarget||!grid.contains(e.relatedTarget))
+      document.querySelectorAll('.ci.drop-target').forEach(el=>el.classList.remove('drop-target'));
+  });
+  grid.addEventListener('drop',e=>{
+    const ci=e.target.closest('.ci');if(!ci)return;
+    e.preventDefault();
+    ci.classList.remove('drop-target');
+    let url='';
+    const uri=e.dataTransfer.getData('text/uri-list');
+    const htm=e.dataTransfer.getData('text/html');
+    const txt=e.dataTransfer.getData('text/plain');
+    if(uri){url=uri.split('\n').map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'))[0]||'';}
+    if(!url&&htm){const m=htm.match(/src="([^"]+)"/i);if(m)url=m[1];}
+    if(!url&&txt&&/\.(jpe?g|png|webp|gif)/i.test(txt))url=txt.trim();
+    if(!url){alert('画像URLを取得できませんでした');return;}
+    const c=getCard(ci.dataset.id);if(!c)return;
+    c.customImage=url;
+    upsertCard(c);renderCards();
+  });
+})();
+
+// ── SELECT MODE BUTTONS ───────────────────────────────
+document.getElementById('btn-sel').addEventListener('click',()=>{
+  if(selMode) exitSelMode();
+  else enterSelMode();
+});
+
+document.getElementById('btn-selall').addEventListener('click',()=>{
+  const vis=filtered();
+  const allSel=vis.every(c=>selIds.has(c.id));
+  if(allSel){
+    vis.forEach(c=>selIds.delete(c.id));
+  } else {
+    vis.forEach(c=>selIds.add(c.id));
+  }
+  updateDelBtn();
+  renderCards();
+});
+
+document.getElementById('btn-incsel').addEventListener('click',()=>{
+  if(!selIds.size)return;
+  db.cards.forEach((c,i)=>{
+    if(!selIds.has(c.id))return;
+    db.cards[i]={...c,owned:(c.owned||0)+1};
+    patchOwnedEl(db.cards[i]);
+  });
+  saveDbDebounced();
+  renderStats();
+});
+
+// 非表示
+document.getElementById('btn-hidesel').addEventListener('click',()=>{
+  if(!selIds.size)return;
+  db.cards.forEach((c,i)=>{if(!selIds.has(c.id))return;db.cards[i]={...c,hidden:true};});
+  saveDb();exitSelMode();renderCards();
+});
+// 表示に戻す
+document.getElementById('btn-showsel').addEventListener('click',()=>{
+  if(!selIds.size)return;
+  db.cards.forEach((c,i)=>{if(!selIds.has(c.id))return;const n={...c};delete n.hidden;db.cards[i]=n;});
+  saveDb();exitSelMode();renderCards();
+});
+
+document.getElementById('btn-delsel').addEventListener('click',()=>{
+  const n=selIds.size;
+  if(!n)return;
+  const ok=confirm(`選択した ${n} 枚のカードを削除しますか？\nこの操作は元に戻せません。`);
+  if(!ok)return;
+  deleteCards(selIds);
+  exitSelMode();
+  renderAll();
+});
+
+// 非表示含むトグル
+document.getElementById('btn-showhidden').addEventListener('click',function(){
+  fs.showHidden=!fs.showHidden;
+  this.classList.toggle('on',fs.showHidden);
+  renderCards();
+});
+// フィルタ解除ボタン
+document.getElementById('btn-clr-filter').addEventListener('click',clearFilters);
+// 全件表示トグル
+document.getElementById('btn-showall').addEventListener('click',function(){
+  _gridShowAll=!_gridShowAll;
+  this.classList.toggle('on',_gridShowAll);
+  this.textContent=_gridShowAll?'200枚ずつ':'全件表示';
+  renderCards();
+});
+
+// ── インポート直後フィルター ───────────────────────────────
+function applyImportFilter(ids){
+  fs.importedIds=ids&&ids.size>0?ids:null;
+  const badge=document.getElementById('import-badge');
+  if(fs.importedIds){
+    document.getElementById('import-badge-txt').textContent=`インポート直後 ${fs.importedIds.size}枚`;
+    badge.style.display='';
+  } else {
+    badge.style.display='none';
+  }
+  renderAll();
+}
+document.getElementById('import-badge-clr').addEventListener('click',()=>applyImportFilter(null));
+
+// ── バックアップ ─────────────────────────────────────────
+document.getElementById('btn-export').addEventListener('click',()=>{
+  const json=JSON.stringify(db,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const date=new Date().toISOString().slice(0,10);
+  a.href=url;a.download=`pokecards_backup_${date}.json`;
+  a.click();URL.revokeObjectURL(url);
+});
+document.getElementById('import-bk-file').addEventListener('change',e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!Array.isArray(data.cards))throw new Error('無効なデータ');
+      if(!confirm(`バックアップを復元します。\n現在のデータ(${db.cards.length}件)は上書きされます。\nよろしいですか？`))return;
+      db=data;saveDb();renderAll();
+      alert(`✓ 復元完了（${db.cards.length}件）`);
+    }catch(err){alert('復元失敗: '+err.message);}
+    e.target.value='';
+  };
+  reader.readAsText(file);
+});
+
+// ── FILTER EVENTS ─────────────────────────────────────
+document.getElementById('sel-type').addEventListener('change',e=>{
+  fs.cardType=e.target.value;fs.series='';fs.title='';renderAll();
+});
+document.getElementById('sel-series').addEventListener('change',e=>{
+  fs.series=e.target.value;fs.title='';renderAll();
+});
+document.getElementById('sel-title').addEventListener('change',e=>{
+  fs.title=e.target.value;renderCards();
+});
+document.getElementById('sel-sort').addEventListener('change',e=>{
+  fs.sort=e.target.value;renderCards();
+});
+document.getElementById('srch').addEventListener('input',e=>{
+  fs.search=e.target.value.trim();renderCards();
+});
+document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');fs.ownership=b.dataset.ow;renderCards();
+}));
+document.getElementById('rscroll').addEventListener('click',e=>{
+  const c=e.target.closest('.rc');if(!c)return;
+  const r=c.dataset.r;
+  if(r===''){
+    fs.rarities.clear();
+  } else if(e.ctrlKey||e.metaKey){
+    // Ctrl+クリック: 複数選択トグル
+    if(fs.rarities.has(r)) fs.rarities.delete(r);
+    else fs.rarities.add(r);
+  } else {
+    // 通常クリック: 単独選択（同じものを再クリックで解除）
+    if(fs.rarities.size===1&&fs.rarities.has(r)) fs.rarities.clear();
+    else{fs.rarities.clear();fs.rarities.add(r);}
+  }
+  renderRarity();renderCards();
+});
+document.getElementById('qgrid').addEventListener('click',e=>{
+  const b=e.target.closest('.qbtn');if(!b)return;
+  const tag=b.dataset.tag;
+  if(fs.quickTag===tag){
+    fs.quickTag=null;b.classList.remove('on');
+  } else {
+    document.querySelectorAll('.qbtn').forEach(x=>x.classList.remove('on'));
+    fs.quickTag=tag;b.classList.add('on');
+  }
+  renderAll();
+});
+
+// ── カードラッシュ セットデータ ───────────────────────
+const CR_SETS={
+  'SV':[
+    {name:'ニンジャスピナー',          id:'556'},
+    {name:'ムニキスゼロ',              id:'533'},
+    {name:'バトルパートナーズ',        id:'427'},
+    {name:'テラスタルフェスex',        id:'416'},
+    {name:'超電ブレイカー',            id:'411'},
+    {name:'楽園ドラゴーナ',            id:'409'},
+    {name:'ステラミラクル',            id:'327'},
+    {name:'ナイトワンダラー',          id:'318'},
+    {name:'変幻の仮面',                id:'311'},
+    {name:'クリムゾンヘイズ',          id:'310'},
+    {name:'ワイルドフォース/サイバージャッジ', id:'302'},
+    {name:'シャイニートレジャーex',    id:'300'},
+    {name:'古代の咆哮/未来の一閃',     id:'298'},
+    {name:'レイジングサーフ',          id:'294'},
+    {name:'黒炎の支配者',              id:'286'},
+    {name:'ポケモンカード151',         id:'284'},
+    {name:'スノーハザード/クレイバースト', id:'280'},
+    {name:'トリプレットビート',        id:'276'},
+    {name:'スカーレットex/バイオレットex', id:'266'},
+  ],
+  'MEGA':[
+    {name:'MEGAドリームex',            id:'509'},
+    {name:'インフェルノX',             id:'501'},
+    {name:'スターターセットMEGA',      id:'500'},
+    {name:'メガブレイブ/メガシンフォニア', id:'488'},
+    {name:'ブラックボルト/ホワイトフレア', id:'476'},
+    {name:'熱風のアリーナ',            id:'449'},
+    {name:'ロケット団の栄光',          id:'457'},
+    {name:'MEGA全パック',              id:'361'},
+  ],
+  'S':[
+    {name:'ソード/シールド(S全セット)', id:'359'},
+    {name:'プロモ(S)',                  id:'87'},
+  ],
+  'SM':[
+    {name:'サン&ムーン(SM全セット)',    id:'358'},
+    {name:'プロモ(SM)',                 id:'43'},
+  ],
+  'XY':[
+    {name:'XY(全セット)',               id:'357'},
+    {name:'プロモ(BW/XY)',              id:'214'},
+  ],
+  'BW':[
+    {name:'BW(全セット)',               id:'356'},
+  ],
+  '旧':[
+    {name:'δ-デルタ種',               id:'317'},
+    {name:'DPt(全セット)',              id:'354'},
+    {name:'DP(全セット)',               id:'353'},
+    {name:'LEGEND(全セット)',           id:'355'},
+    {name:'殿堂/旧裏',                 id:'117'},
+    {name:'旧裏',                       id:'532'},
+  ],
+};
+
+// ── SET BROWSER（セット選択モーダル） ────────────────
+let currentEra='SV';
+
+function renderSetList(){
+  const sets=CR_SETS[currentEra]||[];
+  document.getElementById('slist').innerHTML=sets.map(s=>`
+    <div class="set-row" data-id="${s.id}" data-name="${esc(s.name)}">
+      <span class="set-row-name">${esc(s.name)}</span>
+      <span class="set-row-btn">URL取り込み →</span>
+    </div>`).join('');
+}
+
+document.getElementById('btn-import').addEventListener('click',()=>{
+  document.getElementById('imp-ov').classList.add('open');
+  renderSetList();
+});
+document.getElementById('imp-cls').addEventListener('click',()=>
+  document.getElementById('imp-ov').classList.remove('open'));
+
+document.getElementById('era-tabs').addEventListener('click',e=>{
+  const tab=e.target.closest('.era-tab');if(!tab)return;
+  document.querySelectorAll('.era-tab').forEach(t=>t.classList.remove('on'));
+  tab.classList.add('on');
+  currentEra=tab.dataset.era;
+  renderSetList();
+});
+
+document.getElementById('slist').addEventListener('click',e=>{
+  const row=e.target.closest('.set-row');if(!row)return;
+  const url=`https://www.cardrush-pokemon.jp/product-group/${row.dataset.id}`;
+  // URL取り込みモーダルにセットして開く
+  document.getElementById('imp-ov').classList.remove('open');
+  document.getElementById('url-inp').value=url;
+  document.getElementById('url-prog').style.display='none';
+  document.getElementById('url-preview').style.display='none';
+  document.getElementById('url-html').value='';
+  urlImportCards=[];
+  document.getElementById('url-ov').classList.add('open');
+});
+
+// ── URL IMPORT（カードラッシュ対応） ──────────────────
+let urlImportCards=[];
+
+function openUrlImport(url=''){
+  document.getElementById('url-ov').classList.add('open');
+  if(url) document.getElementById('url-inp').value=url;
+  document.getElementById('url-prog').style.display='none';
+  document.getElementById('url-preview').style.display='none';
+  document.getElementById('url-html').value='';
+  urlImportCards=[];
+}
+
+document.getElementById('btn-url-import').addEventListener('click',()=>openUrlImport());
+document.getElementById('url-cls').addEventListener('click',()=>
+  document.getElementById('url-ov').classList.remove('open'));
+document.getElementById('url-fetch').addEventListener('click',doUrlFetch);
+document.getElementById('url-inp').addEventListener('keydown',e=>{if(e.key==='Enter')doUrlFetch();});
+document.getElementById('hr2-fetch').addEventListener('click',()=>{
+  const v=document.getElementById('hr2-inp').value.trim();
+  if(v){document.getElementById('url-inp').value=v;doUrlFetch();}
+});
+document.getElementById('hr2-inp').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const v=e.target.value.trim();if(v){document.getElementById('url-inp').value=v;doUrlFetch();}}
+});
+document.getElementById('url-parse').addEventListener('click',doHtmlParse);
+(function(){
+  var inner=`(function(){try{
+var res=[];var seen={};var host=location.hostname;
+if(host.includes('pokecahack.com')){
+  var h1El=document.querySelector('h1,.entry-title');
+  var h1txt=h1El?h1El.textContent.trim():'';
+  [].slice.call(document.querySelectorAll('img,[data-src],[data-lazy-src],[data-original]')).forEach(function(img){
+    var src=img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.getAttribute('data-original')||img.src||'';
+    if(!src||src.includes('data:'))return;
+    var fm=src.match(/\\/([a-z][a-z0-9]*)_(\\d+)\\.(png|jpe?g|webp)/i);if(!fm)return;
+    var k=fm[1]+'_'+fm[2];if(seen[k])return;seen[k]=1;
+    var alt=img.alt||'';
+    var rarM=alt.match(/\\s+([A-Z]{1,5})\\s*$/);var rar=rarM?rarM[1]:'';
+    var name=alt.replace(/\\s+[A-Z]{1,5}\\s*$/,'').trim();if(!name)return;
+    var full=src.replace(/-\\d+x\\d+(\\.(png|jpe?g|webp))$/i,'$1');
+    res.push({id:'pokecahack-'+k,name:name,image:full,rarity:rar,rarityLabel:rar,cardNumber:fm[2],setId:fm[1],setName:h1txt,illustrator:'',soldout:false});
+  });
+} else if(host.includes('cardrush-pokemon.jp')){
+  var h1El=document.querySelector('h1');
+  var h1txt=h1El?h1El.textContent.trim():'';
+  function crLargeImg(img,linkEl){
+    if(!img)return'';
+    // ファンシーボックス/ライトボックス用アンカー（高解像度画像へのリンク）を優先
+    var pA=img.closest?img.closest('a[data-fancybox],a[data-lightbox],a[data-zoom]'):null;
+    if(pA){var pHref=pA.getAttribute('href')||'';if(pHref&&pHref.match(/\\.(jpe?g|png|webp)(\\?|$)/i))return pHref.startsWith('http')?pHref:location.origin+pHref;}
+    var src=img.getAttribute('data-zoom-image')||img.getAttribute('data-large')||img.getAttribute('data-original')||img.getAttribute('data-src')||img.src||'';
+    if(!src)return'';
+    var href=(linkEl&&linkEl.getAttribute('href'))||'';
+    if(href&&href.match(/\\.(jpe?g|png|webp)(\\?|$)/i))src=href.startsWith('http')?href:location.origin+href;
+    src=src.replace(/_s\\.(jpe?g|png|webp)$/i,'.$1').replace(/_\\d+x\\d+\\.(jpe?g|png|webp)$/i,'.$1');
+    return src;
+  }
+  // 商品詳細ページ（/product/ID）の場合は大画像を直接取得
+  var detailIdM=location.href.match(/\\/product\\/(\\d+)/);
+  if(detailIdM){
+    // カード画像を特定: /cardrushpokemon/ を含むURL優先、縦長(カードらしい)を優先
+    var allI2=[].slice.call(document.querySelectorAll('img')).filter(function(i){
+      if(!i.src||i.src.includes('data:'))return false;
+      var s=i.src.toLowerCase();if(/logo|banner|icon|noimage/.test(s))return false;
+      if(i.naturalWidth>0&&i.naturalWidth>=i.naturalHeight*1.5)return false;
+      var el=i.parentElement;while(el){var tt=(el.tagName||'').toLowerCase();if(tt==='header'||tt==='footer'||tt==='nav'||tt==='aside')return false;el=el.parentElement;}
+      return true;
+    });
+    allI2.sort(function(a,b){
+      var sa=(a.src.toLowerCase().includes('/cardrushpokemon/')?2000:0)+(a.naturalHeight>a.naturalWidth?1000:0)+a.naturalHeight;
+      var sb=(b.src.toLowerCase().includes('/cardrushpokemon/')?2000:0)+(b.naturalHeight>b.naturalWidth?1000:0)+b.naturalHeight;
+      return sb-sa;
+    });
+    var mainImg=allI2[0]||null;
+    var alt2=mainImg?mainImg.alt||'':'';
+    var numM2=alt2.match(/\\{([^}]+)\\}/);var cardNumber2=numM2?numM2[1]:'';
+    var rarM2=alt2.match(/【([^】]*)】/);var rarityRaw2=rarM2?rarM2[1]:'';
+    // 名前はh1から取得（空白正規化後）。h1がなければalt2から
+    var h1raw=((document.querySelector('h1')||{}).textContent||'').replace(/\\s+/g,' ').trim();
+    var altname=alt2.replace(/^〔[^〕]+〕\\s*/,'').replace(/【[^】]*】/g,'').replace(/\\{[^}]+\\}/g,'').replace(/\\([^)]*ED\\)/gi,'').trim();
+    var name2=h1raw||altname;
+    // 状態・レアリティ・番号・条件の余分な記述を除去してポケモン名だけ残す
+    name2=name2.replace(/^〔[^〕]+〕\\s*/,'').replace(/【[^】]*】/g,'').replace(/\\{[^}]+\\}/g,'').replace(/\\[\\[[^\\]]*\\][^\\]]*\\]/g,'').replace(/\\([^)]*ED\\)/gi,'').replace(/\\s+/g,' ').trim();
+    var bodyTxt=document.body.textContent||'';
+    if(!cardNumber2){var cnM=bodyTxt.match(/(\\d{1,3})\\/(\\d{2,3})/);if(cnM)cardNumber2=cnM[1]+'/'+cnM[2];}
+    var illustrator2='';var illusM=bodyTxt.match(/[Ii]llus\\.[ \\t]*([A-Za-z][A-Za-z .&]{1,40})/);if(illusM)illustrator2=illusM[1].replace(/\\s+$/,'');
+    if(name2&&!seen[detailIdM[1]]){
+      seen[detailIdM[1]]=1;
+      var imgSrc2=mainImg?crLargeImg(mainImg,null):'';
+      var priceM2=bodyTxt.match(/([0-9,]+)円/);
+      res.push({id:'cardrush-'+detailIdM[1],name:name2,image:imgSrc2,rarity:rarityRaw2,rarityLabel:rarityRaw2,cardNumber:cardNumber2,illustrator:illustrator2,setName:h1txt,soldout:!document.querySelector('form'),price:priceM2?parseInt(priceM2[1].replace(/,/g,''),10):0});
+    }
+  }
+  // 個別商品ページ（/product/ID）でなければ一覧ループを実行
+  if(!detailIdM){[].slice.call(document.querySelectorAll('a[href*="/product/"]')).forEach(function(a){
+    var href=a.href||'';
+    var idM=href.match(/\\/product\\/(\\d+)/);if(!idM||seen[idM[1]])return;seen[idM[1]]=1;
+    var container=a.closest('li,tr,.item')||a;
+    var img=container.querySelector('img');
+    if(!img||!img.src||img.src.includes('data:'))return;
+    var imgSrc=crLargeImg(img,a);
+    var alt=img?img.alt||'':'';
+    var numM=alt.match(/\\{([^}]+)\\}/);var cardNumber=numM?numM[1]:'';
+    var rarM=alt.match(/【([^】]*)】/);var rarityRaw=rarM?rarM[1]:'';
+    var name=alt.replace(/^〔[^〕]+〕\\s*/,'').replace(/【[^】]*】/g,'').replace(/\\{[^}]+\\}/g,'').replace(/\\([^)]*ED\\)/gi,'').trim();
+    if(!name){var txt=(container.textContent||'').replace(/\\s+/g,' ').trim();name=txt.replace(/^〔[^〕]+〕\\s*/,'').slice(0,60).trim();}
+    if(!name||name.length<2)return;
+    var priceM=(container.textContent||'').match(/([0-9,]+)円/);
+    var price=priceM?parseInt(priceM[1].replace(/,/g,''),10):0;
+    var soldout=!container.querySelector('form');
+    res.push({id:'cardrush-'+idM[1],name:name,image:imgSrc,rarity:rarityRaw,rarityLabel:rarityRaw,cardNumber:cardNumber,setName:h1txt,soldout:soldout,price:price});
+  });}
+} else if(host.includes('hareruya2.com')){
+  [].slice.call(document.querySelectorAll('img[alt]')).forEach(function(img){
+    var alt=img.alt||'';
+    if(!/[〈<][^〉>]+[〉>]/.test(alt)||!/\[[\w-]+\]/.test(alt))return;
+    var rarM=alt.match(/\(([^)]+)\)/);var rarity=rarM?rarM[1]:'';
+    var typeM=alt.match(/\{([^}]+)\}/);var cardType=typeM?typeM[1]:'';
+    var numM=alt.match(/[〈<]([^〉>]+)[〉>]/);var cardNumber=numM?numM[1]:'';
+    var setM=alt.match(/\[([^\]]+)\]$/);var setId=setM?setM[1]:'';
+    var name=alt.replace(/\([^)]*\)/g,'').replace(/\{[^}]*\}/g,'')
+      .replace(/[〈<][^〉>]*[〉>]/g,'').replace(/\[[^\]]*\]/g,'').trim();
+    if(!name)return;
+    var a2=img.closest&&img.closest('a[href*=\\"/products/\\"]');
+    if(!a2){var p=img.parentElement;while(p&&p!==document.body){var al=p.querySelector('a[href*=\\"/products/\\"]');if(al){a2=al;break;}p=p.parentElement;}}
+    var pidM=a2&&(a2.getAttribute('href')||'').match(/\\/products\\/(\\d+)/);
+    var productId=pidM?pidM[1]:null;
+    var cardKey=productId?'hareruya2-'+productId:(setId||'?')+'_'+(cardNumber&&cardNumber!=='-'?cardNumber:name);
+    if(seen[cardKey])return;seen[cardKey]=1;
+    var src=img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.src||'';
+    if(src.startsWith('//'))src='https:'+src;
+    src=src.replace(/[?&]width=\\d+/,'').replace(/[?&]$/,'');
+    res.push({id:cardKey,name:name,image:src,rarity:rarity,rarityLabel:rarity,
+      cardNumber:cardNumber,cardType:cardType||'Pok\\u00e9mon',setId:setId.toLowerCase(),setName:setId,
+      illustrator:'',soldout:false});
+  });
+} else {
+  [].slice.call(document.links).forEach(function(a){
+    if(!a.href.includes('details.php/card/'))return;
+    var m=a.href.match(/\\/card\\/(\\d+)\\//);if(!m||seen[m[1]])return;seen[m[1]]=1;
+    var img=a.querySelector('img')||a.parentElement&&a.parentElement.querySelector('img');
+    var imgSrc=img?img.src:'';if(imgSrc&&imgSrc.startsWith('data:'))imgSrc='';
+    var name=(img&&img.alt)||a.textContent.trim().split('\\n')[0].trim()||'';
+    res.push({id:'ptcg-'+m[1],name:name,image:imgSrc,rarity:'',cardNumber:'',illustrator:'',setName:'',soldout:false});
+  });
+}
+if(!res.length){alert('\\u30ab\\u30fc\\u30c9\\u304c\\u898b\\u3064\\u304b\\u308a\\u307e\\u305b\\u3093\\u3067\\u3057\\u305f\\n\\u30b5\\u30a4\\u30c8: '+host);return;}
+var json=JSON.stringify(res,null,2);
+function showBkm(ok){
+  var d=document.createElement('div');d.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;font-family:sans-serif';
+  var box=document.createElement('div');box.style.cssText='background:#0a0a1a;border:2px solid '+(ok?'#00f5ff':'#ff00ff')+';border-radius:8px;padding:22px;width:min(460px,94vw);display:flex;flex-direction:column;gap:14px;box-sizing:border-box';
+  var h=document.createElement('div');h.style.cssText='color:#00f5ff;font-size:15px;font-weight:bold';h.textContent=res.length+'枚を取得';
+  if(ok){
+    var msg=document.createElement('div');msg.style.cssText='color:#00ff99;font-size:13px;line-height:1.7';msg.textContent='✓ クリップボードに自動コピーしました！ CardManagerアプリで「📋 クリップボードからインポート」ボタンを押してください。';
+    var cl=document.createElement('button');cl.style.cssText='background:rgba(0,245,255,.12);border:1px solid #00f5ff;color:#00f5ff;padding:10px;border-radius:5px;cursor:pointer;font-size:13px;width:100%';cl.textContent='閉じる';cl.onclick=function(){document.body.removeChild(d);};
+    box.appendChild(h);box.appendChild(msg);box.appendChild(cl);
+  }else{
+    var msg2=document.createElement('div');msg2.style.cssText='color:#c0c0e0;font-size:12px';msg2.textContent='クリップボードへの自動コピーができませんでした。手動でコピーしてアプリに貼り付けてください:';
+    var ta=document.createElement('textarea');ta.style.cssText='width:100%;height:110px;background:#07071a;color:#c0c0e0;border:1px solid #333;border-radius:4px;padding:8px;font-size:10px;font-family:monospace;box-sizing:border-box;resize:none';ta.value=json;
+    var row=document.createElement('div');row.style.cssText='display:flex;gap:8px';
+    var cp=document.createElement('button');cp.style.cssText='flex:1;background:rgba(0,245,255,.15);border:1px solid #00f5ff;color:#00f5ff;padding:8px;border-radius:5px;cursor:pointer;font-size:12px';cp.textContent='全選択＆コピー';cp.onclick=function(){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(json).then(function(){cp.textContent='✓ コピー済み!';}).catch(function(){ta.select();try{document.execCommand('copy');}catch(x){}cp.textContent='✓ コピー済み!';});}else{ta.select();try{document.execCommand('copy');}catch(x){}cp.textContent='✓ コピー済み!';}};
+    var cl2=document.createElement('button');cl2.style.cssText='background:rgba(255,0,255,.12);border:1px solid #ff00ff;color:#ff00ff;padding:8px 14px;border-radius:5px;cursor:pointer;font-size:12px';cl2.textContent='閉じる';cl2.onclick=function(){document.body.removeChild(d);};
+    row.appendChild(cp);row.appendChild(cl2);box.appendChild(h);box.appendChild(msg2);box.appendChild(ta);box.appendChild(row);
+  }
+  d.appendChild(box);document.body.appendChild(d);
+}
+function doCopy(){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(json).then(function(){showBkm(true);}).catch(function(){showBkm(false);});}else{showBkm(false);}}
+if(detailIdM&&mainImg&&mainImg.naturalWidth>0){
+  var spin=document.createElement('div');spin.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;font-family:sans-serif';
+  spin.innerHTML='<div style="color:#00f5ff;font-size:15px;text-align:center">&#128247; OCR\\u5b9f\\u884c\\u4e2d...<br><small style="color:#aaa;font-size:11px">\\u30a4\\u30e9\\u30b9\\u30c8\\u30ec\\u30fc\\u30bf\\u30fc\\u30fb\\u30ab\\u30fc\\u30c9\\u756a\\u53f7\\u3092\\u8aad\\u307f\\u53d6\\u308a\\u4e2d</small></div>';
+  document.body.appendChild(spin);
+  (async function(){
+    try{
+      var cv=document.createElement('canvas');cv.width=mainImg.naturalWidth;cv.height=mainImg.naturalHeight;
+      cv.getContext('2d').drawImage(mainImg,0,0);
+      var b64=cv.toDataURL('image/jpeg',0.85);
+      var ofd=new FormData();ofd.append('apikey','helloworld');ofd.append('base64Image',b64);ofd.append('language','jpn');ofd.append('scale','true');
+      var ocrR=await fetch('https://api.ocr.space/parse/image',{method:'POST',body:ofd});
+      var ocrJ=await ocrR.json();
+      if(ocrJ.ParsedResults&&ocrJ.ParsedResults.length){
+        var txt=ocrJ.ParsedResults.map(function(p){return p.ParsedText||'';}).join('\\n');
+        var ilM=txt.match(/[Ii]llus\\.[ \\t]*([A-Za-z][A-Za-z .&]{1,40})/);
+        if(ilM&&res[0])res[0].illustrator=ilM[1].replace(/\\s+$/,'');
+        var cnMo=txt.match(/(\\d{1,3})\\/(\\d{2,3})/);
+        if(cnMo&&res[0]&&!res[0].cardNumber)res[0].cardNumber=cnMo[1]+'/'+cnMo[2];
+      }
+    }catch(e){}
+    json=JSON.stringify(res,null,2);
+    document.body.removeChild(spin);
+    doCopy();
+  })();
+}else{doCopy();}
+}catch(e){alert('\\u30a8\\u30e9\\u30fc: '+e.message);}})();`;
+  const crEl=document.getElementById('bkm-cr');
+  if(crEl)crEl.setAttribute('href','javascript:'+encodeURIComponent(inner));
+  const hr2El=document.getElementById('bkm-hr2');
+  if(hr2El)hr2El.setAttribute('href','javascript:'+encodeURIComponent(inner));
+})();
+async function importFromClipboard(){
+  try{
+    const text=await navigator.clipboard.readText();
+    if(!text.trim()){alert('クリップボードが空です。先にカードラッシュでブックマークレットを実行してください。');return;}
+    document.getElementById('url-html').value=text;
+    doHtmlParse();
+  }catch(e){
+    alert('クリップボードを読み取れませんでした。\nブラウザのアドレスバー左のアイコンから「クリップボード」の許可を確認してください。\n\nエラー: '+e.message);
+  }
+}
+function doImportCards(){
+  try{
+    const newIds=new Set();
+    urlImportCards.forEach(c=>{if(!getCard(c.id)){db.cards.push(c);newIds.add(c.id);}});
+    const added=newIds.size;
+    saveDb();
+    fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+    document.getElementById('url-ov').classList.remove('open');
+    applyImportFilter(newIds);
+    if(added>0) document.getElementById('url-prog').style.display='none';
+  }catch(e){
+    alert('インポートエラー: '+e.message);
+  }
+}
+
+
+// ── pokecahack.com パーサー ──────────────────────────────
+function parsePokecahackPage(html){
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const seen=new Map();
+  // WordPressのポストID（body class "postid-XXXX" or <article id="post-XXXX">）
+  const bodyPostId=(doc.body?.className||'').match(/postid-(\d+)/)?.[1]||null;
+  const articlePostId=doc.querySelector('article[id^="post-"]')?.id?.replace('post-','')||null;
+  const wpPostId=bodyPostId||articlePostId||null;
+  const h1=doc.querySelector('h1,.entry-title')?.textContent?.trim()||'';
+  const rarityFromTitle=(h1.match(/[（(]([^）)]+)[）)]/) ||h1.match(/全([A-Z]+(?:[（(][^）)]+[）)])?)/)||[])[1]||'';
+
+  // URL→img要素の候補マップ（imgの参照を保持するため上書き禁止）
+  const candidates=new Map();
+  [...doc.querySelectorAll('img')].forEach(img=>{
+    // lazy-loading属性を優先順位付きで取得
+    const src=img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.getAttribute('data-lazy')||img.getAttribute('data-original')||img.getAttribute('src')||'';
+    if(src&&!src.startsWith('data:')&&!candidates.has(src))candidates.set(src,img);
+    // srcset / data-srcset からも収集
+    const ss=img.getAttribute('data-srcset')||img.getAttribute('srcset')||'';
+    if(ss)ss.split(',').forEach(part=>{const u=part.trim().split(/\s+/)[0];if(u&&!candidates.has(u))candidates.set(u,img);});
+  });
+  // noscript内フォールバックsrc：既存エントリを絶対に上書きしない
+  [...doc.querySelectorAll('noscript')].forEach(ns=>{
+    const text=ns.textContent||'';
+    (text.match(/src=["']([^"']+)["']/g)||[]).forEach(m=>{
+      const u=m.replace(/^src=["']/,'').replace(/["']$/,'');
+      if(u&&!u.startsWith('data:')&&!candidates.has(u))candidates.set(u,null);
+    });
+  });
+
+  candidates.forEach((img,src)=>{
+    if(!src.includes('wp-content/uploads'))return;
+    // サムネイル(-300x415)・バージョン(-1,-2)サフィックス両対応
+    const fileM=src.match(/\/([a-z][a-z0-9]*)_(\d+)(?:_[a-z][a-z0-9_-]*)?(?:-\d+)?(?:-\d+x\d+)?\.(png|jpe?g|webp)/i);
+    if(!fileM)return;
+    const setCode=fileM[1].toLowerCase();
+    const cardNumOnly=fileM[2];
+    const key=setCode+'_'+cardNumOnly;
+    if(seen.has(key))return;
+    const alt=(img?.getAttribute('alt')||img?.getAttribute('title')||'');
+    const figcaption=img?.closest('figure')?.querySelector('figcaption')?.textContent?.trim()||'';
+    const parentText=img?.closest('figure,p,div,td,li')?.textContent?.trim()||'';
+    const combined=alt+' '+figcaption+' '+parentText;
+    const cnM=combined.match(/(\d+\/\d+)/);
+    const cardNumber=cnM?cnM[1]:cardNumOnly;
+    const illusM=combined.match(/[Ii]llus\.?\s*([A-Za-z][A-Za-z.]+)/);
+    const illustrator=illusM?illusM[1]:'';
+    const rarM=alt.replace(/[Ii]llus\..*/,'').match(/\s+([A-Z]{1,5})\s*$/);
+    const rarity=rarM?rarM[1]:rarityFromTitle;
+    let name=alt.replace(/\s*\d+\/\d+/,'').replace(/\s+[A-Z]{1,5}\s*$/,'').replace(/\s*[Ii]llus\..*/,'').trim();
+    // altが空の場合はfigcaptionから名前を取得
+    if(!name&&figcaption)name=figcaption.replace(/\s*\d+\/\d+/,'').replace(/\s+[A-Z]{1,5}\s*$/,'').replace(/\s*[Ii]llus\..*/,'').trim();
+    if(!name)name=setCode.toUpperCase()+' '+cardNumOnly;
+    // サムネイルサイズ(-300x415)とバージョン番号(-1,-2)を除去してフルサイズURLに
+    const fullSrc=src.replace(/[-_]\d+x\d+(\.(png|jpe?g|webp))$/i,'$1');
+    seen.set(key,{
+      id:'pokecahack-'+key, name, image:fullSrc,
+      customImage:null, price:0, owned:0,
+      cardType:'Pokémon', pokemonTypes:[], subtypes:[],
+      series:'', setName:h1, setId:setCode,
+      rarity, rarityLabel:rarity, cardNumber,
+      illustrator, quickTags:[]
+    });
+  });
+  // 次ページURLを検出（WordPress post pagination & archive pagination）
+  let nextUrl=null;
+  const nextLinkEl=doc.querySelector('link[rel="next"]');
+  if(nextLinkEl)nextUrl=nextLinkEl.getAttribute('href');
+  if(!nextUrl){
+    const a=[...doc.querySelectorAll('a')].find(a=>/次のページ|次へ|Next/.test(a.textContent||''));
+    if(a)nextUrl=a.getAttribute('href')||null;
+  }
+  return{title:h1, cards:[...seen.values()], nextUrl, wpPostId};
+}
+
+// プロキシ経由でHTMLを取得する共通関数
+async function fetchViaProxy(targetUrl){
+  const to=ms=>new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),ms));
+  const rs=await Promise.allSettled([
+    Promise.race([fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`).then(r=>r.text()),to(30000)]),
+    Promise.race([fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`).then(r=>r.json()).then(j=>j.contents||''),to(30000)])
+  ]);
+  let a='',b='';
+  // HTMLフェッチ：{で始まるものはエラーJSONとして除外
+  if(rs[0].status==='fulfilled'){const t=rs[0].value||'';if(t.length>500&&!t.startsWith('{'))a=t;}
+  if(rs[1].status==='fulfilled'){const t=rs[1].value||'';if(t.length>500)b=t;}
+  return a.length>=b.length?a:b;
+}
+
+// プロキシ経由でJSONを取得する関数（WP REST API用）
+async function fetchJsonViaProxy(targetUrl){
+  const to=ms=>new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),ms));
+  const rs=await Promise.allSettled([
+    Promise.race([fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`).then(r=>r.text()),to(30000)]),
+    Promise.race([fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`).then(r=>r.json()).then(j=>j.contents||''),to(30000)])
+  ]);
+  for(const r of rs){
+    if(r.status!=='fulfilled')continue;
+    const t=(r.value||'').trim();
+    if(!t||t.length<10)continue;
+    try{
+      const parsed=JSON.parse(t);
+      // WPエラーは {code,message} 形式。配列かidを持つオブジェクトなら正常
+      if(parsed&&!(parsed.code&&parsed.message))return parsed;
+    }catch(_){}
+  }
+  return null;
+}
+
+async function doUrlFetch(){
+  const url=document.getElementById('url-inp').value.trim();
+  if(!url){alert('URLを入力してください');return;}
+  const prog=document.getElementById('url-prog');
+  prog.style.display='block';prog.className='iprog';
+  prog.textContent='取得中...';
+  document.getElementById('url-preview').style.display='none';
+  urlImportCards=[];
+  try{
+    const isPokecahack=url.includes('pokecahack.com');
+    let cards=[];
+    if(isPokecahack){
+      // URLのslugを取得（末尾の /N/ ページ番号を除去）
+      const pathParts=new URL(url).pathname.replace(/\/$/,'').split('/').filter(Boolean);
+      const baseSlug=pathParts.filter(p=>/\D/.test(p)).pop()||'';
+      // Step1: slugからポストIDを検索
+      prog.textContent='ポスト検索中...';
+      let postId=null;
+      if(baseSlug){
+        const found=await fetchJsonViaProxy(`https://pokecahack.com/wp-json/wp/v2/posts?slug=${encodeURIComponent(baseSlug)}&per_page=1`).catch(()=>null);
+        if(Array.isArray(found)&&found.length)postId=found[0].id;
+      }
+      // Step2: REST APIで全文取得
+      if(postId){
+        prog.textContent=`全文取得中 (REST API id:${postId})...`;
+        const postData=await fetchJsonViaProxy(`https://pokecahack.com/wp-json/wp/v2/posts/${postId}`).catch(()=>null);
+        if(postData?.content?.rendered){
+          const result=parsePokecahackPage(postData.content.rendered);
+          cards=result.cards;
+          prog.textContent=`REST API: ${cards.length}枚取得`;
+        }
+      }
+      // Step3: REST API失敗時はプロキシでHTMLを直接パース（フォールバック）
+      if(!cards.length){
+        prog.textContent='HTML取得中 (フォールバック)...';
+        const html=await fetchViaProxy(url).catch(()=>'');
+        if(html){const r=parsePokecahackPage(html);cards=r.cards;}
+      }
+      // IDで重複除去
+      const dedup=new Map();
+      cards.forEach(c=>{if(!dedup.has(c.id))dedup.set(c.id,c);});
+      cards=[...dedup.values()];
+    } else if(url.includes('cardrush-pokemon.jp')){
+      const html2=await fetchViaProxy(url);
+      if(!html2)throw new Error('ページを取得できませんでした');
+      ({cards}=parseCardrushPage(html2,url));
+    } else if(url.includes('hareruya2.com')){
+      prog.textContent='1ページ目取得中...';
+      const html4=await fetchViaProxy(url).catch(()=>'');
+      if(!html4)throw new Error('ページを取得できませんでした');
+      const r4=parseHareruya2Page(html4);
+      cards=[...r4.cards];
+      if(r4.nextUrl){
+        // ?page=N で URL を直接構築して3ページ並列取得
+        // nextUrlがあればページがまだある証拠
+        const baseUrl=url.replace(/[?&]page=\d+/,'');
+        const sep=baseUrl.includes('?')?'&':'?';
+        const BATCH=3;
+        let page=2;
+        let emptyStreak=0;
+        while(page<=200&&emptyStreak<BATCH){
+          const pageNums=Array.from({length:BATCH},(_,i)=>page+i);
+          prog.textContent=`${page}〜${page+BATCH-1}ページ取得中 (${cards.length}枚)...`;
+          const htmls=await Promise.all(
+            pageNums.map(p=>fetchViaProxy(`${baseUrl}${sep}page=${p}`).catch(()=>''))
+          );
+          let gotNew=false;
+          for(const h of htmls){
+            if(!h){emptyStreak++;continue;}
+            const r=parseHareruya2Page(h);
+            if(!r.cards.length){emptyStreak++;continue;}
+            cards.push(...r.cards);
+            gotNew=true;
+            emptyStreak=0;
+          }
+          if(!gotNew)break;
+          page+=BATCH;
+        }
+      }
+      const dedup4=new Map();
+      cards.forEach(c=>{if(!dedup4.has(c.id))dedup4.set(c.id,c);});
+      cards=[...dedup4.values()];
+    } else {
+      const html3=await fetchViaProxy(url);
+      if(!html3)throw new Error('ページを取得できませんでした');
+      ({cards}=parsePtcgPage(html3));
+    }
+
+    if(!cards.length) throw new Error('カードが見つかりませんでした。URLを確認してください');
+    showUrlPreview(cards);
+  }catch(e){
+    prog.className='iprog err';
+    prog.textContent='⚠ '+e.message;
+  }
+}
+
+// ── pokemon-card.com フェッチ＆パーサー ──────────────────
+function parsePtcgPage(html){
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const seen=new Map();
+  [...doc.querySelectorAll('a[href*="/details.php/card/"]')].forEach(link=>{
+    const href=link.getAttribute('href')||'';
+    const idM=href.match(/\/card\/(\d+)\//);
+    if(!idM)return;
+    const cardId=idM[1];
+    if(seen.has(cardId))return;
+    const img=link.querySelector('img');
+    let imgSrc=img?.getAttribute('src')||'';
+    if(imgSrc&&!imgSrc.startsWith('http'))
+      imgSrc='https://www.pokemon-card.com'+(imgSrc.startsWith('/')?'':'/')+imgSrc;
+    // サムネ → 大画像に変換
+    imgSrc=imgSrc.replace('/small/','/large/').replace(/_s(\.\w+)$/,'$1');
+    const name=img?.alt?.trim()||link.textContent?.trim()||'';
+    if(!name)return;
+    const setM=imgSrc.match(/card_images\/(?:large|small)\/([^/]+)\//);
+    const setId=setM?setM[1]:'';
+    seen.set(cardId,{
+      id:'ptcg-'+cardId, name, image:imgSrc,
+      customImage:null, price:0, owned:0,
+      cardType:'Pokémon', pokemonTypes:[], subtypes:[],
+      series:'', setName:'', setId,
+      rarity:'', rarityLabel:'', cardNumber:'',
+      illustrator:'', quickTags:[]
+    });
+  });
+  const title=doc.querySelector('title')?.textContent?.trim()||'';
+  return{title, cards:[...seen.values()]};
+}
+
+
+function parseCardrushPage(html, pageUrl){
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const origin=new URL(pageUrl).origin;
+  const pageTitle=doc.querySelector('article h1, h1')?.textContent?.trim()||'';
+  const items=[...doc.querySelectorAll('main article ul li')];
+  const seen=new Map();
+
+  items.forEach(item=>{
+    const link=item.querySelector('a[href*="/product/"]');if(!link)return;
+    const img=link.querySelector('img');
+    let imgSrc=img?.getAttribute('src')||img?.getAttribute('data-src')||'';
+    if(imgSrc&&!imgSrc.startsWith('http'))
+      imgSrc=origin+(imgSrc.startsWith('/')?'':'/')+imgSrc;
+
+    // alt: 〔状態B〕リザードン☆δ-デルタ種(1ED)【★】{052/068}
+    const alt=img?.alt||'';
+    const numM=alt.match(/\{([^}]+)\}/);   const cardNumber=numM?numM[1]:'';
+    const rarM=alt.match(/【([^】]*)】/);   const rarityRaw=rarM?rarM[1]:'';
+    let name=alt
+      .replace(/^〔[^〕]+〕\s*/,'')
+      .replace(/【[^】]*】/g,'')
+      .replace(/\{[^}]+\}/g,'')
+      .replace(/\([^)]*ED\)/gi,'')
+      .trim();
+    if(!name)return;
+
+    const key=cardNumber||name;
+    if(seen.has(key))return; // 同一カードの重複コンディションはスキップ
+
+    const priceM=(link.textContent||'').match(/([0-9,]+)円/);
+    const price=priceM?parseInt(priceM[1].replace(/,/g,'')):0;
+    const hrefAttr=link.getAttribute('href')||'';
+    const fullHref=hrefAttr.startsWith('http')?hrefAttr:origin+hrefAttr;
+    const idM=fullHref.match(/\/product\/(\d+)/);
+    const id='cardrush-'+(idM?idM[1]:key.replace(/\s/g,'_'));
+    const soldout=!item.querySelector('form');
+
+    seen.set(key,{
+      id, name, image:imgSrc, customImage:null,
+      price, owned:0,
+      cardType:'Pokémon', pokemonTypes:[], subtypes:[],
+      series:'', setName:pageTitle, setId:'',
+      rarity:rarityRaw, rarityLabel:rarityRaw,
+      cardNumber, illustrator:'', quickTags:[],
+      _soldout:soldout
+    });
+  });
+  return{title:pageTitle, cards:[...seen.values()]};
+}
+
+// ── 晴れる屋2 パーサー ──────────────────────────────────────
+function parseHareruya2Page(html){
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const seen=new Map();
+  [...doc.querySelectorAll('img[alt]')].forEach(img=>{
+    const alt=img.getAttribute('alt')||'';
+    // 商品IDをキーに使う（フィルタより先に取得してゲートに使う）
+    const a=img.closest('a[href*="/products/"]')||
+      img.closest('[class]')?.querySelector('a[href*="/products/"]');
+    const pidM=a?.getAttribute('href')?.match(/\/products\/(\d+)/);
+    const productId=pidM?pidM[1]:null;
+    // カード名形式: カード名(レアリティ){カード種別}〈番号/総数〉[セット]  ※エネルギーは〈-〉
+    // 商品リンクがある場合はalt非標準でも取り込む; ない場合は両ブラケット必須
+    const hasNumBracket=/[〈<][^〉>]+[〉>]/.test(alt);
+    const hasSetBracket=/\[[\w-]+\]/.test(alt);
+    if(!productId&&(!hasNumBracket||!hasSetBracket))return;
+    const rarM=alt.match(/\(([^)]+)\)/);
+    const rarity=rarM?rarM[1]:'';
+    const typeM=alt.match(/\{([^}]+)\}/);
+    const cardType=typeM?typeM[1]:'';
+    const numM=alt.match(/[〈<]([^〉>]+)[〉>]/);
+    const cardNumber=numM?numM[1]:'';
+    const setM=alt.match(/\[([^\]]+)\]$/);
+    const setId=setM?setM[1]:'';
+    let name=alt.replace(/\([^)]*\)/g,'').replace(/\{[^}]*\}/g,'')
+      .replace(/[〈<][^〉>]*[〉>]/g,'').replace(/\[[^\]]*\]/g,'').trim();
+    if(!name)name=alt.trim();
+    if(!name)return;
+    const cardKey=productId?'hareruya2-'+productId
+      :(setId||'?')+'_'+(cardNumber&&cardNumber!=='-'?cardNumber:name);
+    if(seen.has(cardKey))return;
+    let src=img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.getAttribute('src')||'';
+    if(src.startsWith('//'))src='https:'+src;
+    // Shopify CDN: width パラメータを除去してオリジナルサイズに
+    src=src.replace(/[?&]width=\d+/,'').replace(/\?$/,'').replace(/&$/,'');
+    seen.set(cardKey,{
+      id:cardKey, name, image:src,
+      customImage:null, price:0, owned:0,
+      cardType:cardType||'Pokémon', pokemonTypes:[], subtypes:[],
+      series:'', setName:setId, setId:setId.toLowerCase(),
+      rarity, rarityLabel:rarity, cardNumber,
+      illustrator:'', quickTags:[]
+    });
+  });
+  // ページネーション（Shopify: ?page=N）
+  let nextUrl=null;
+  const relNext=doc.querySelector('link[rel="next"]');
+  if(relNext)nextUrl=relNext.getAttribute('href');
+  if(!nextUrl){
+    const aNext=[...doc.querySelectorAll('a[href*="page="]')]
+      .find(a=>/次|next/i.test(a.textContent||''));
+    if(aNext)nextUrl=aNext.getAttribute('href');
+  }
+  if(nextUrl&&!nextUrl.startsWith('http'))nextUrl='https://www.hareruya2.com'+nextUrl;
+  return{cards:[...seen.values()],nextUrl};
+}
+
+function showUrlPreview(all){
+  urlImportCards=all.filter(c=>!getCard(c.id));
+  const dupCnt=all.length-urlImportCards.length;
+  const prog=document.getElementById('url-prog');
+  prog.className='iprog ok';
+  prog.textContent=`${all.length}枚取得 → 新規 ${urlImportCards.length}枚 / 重複スキップ ${dupCnt}枚`;
+  // 新規・重複含めて全件表示（重複はグレーアウト）
+  const display=all.slice(0,120);
+  document.getElementById('url-cards').innerHTML=
+    display.map(c=>{
+      const isDup=!!getCard(c.id);
+      return `<div class="uic${isDup?' uic-dup':''}" title="${isDup?'取得済み':'新規'}">
+        ${c.image?`<img src="${esc(c.image)}" loading="lazy" onerror="this.style.display='none'">`:
+          `<div class="uic-ph">🃏</div>`}
+        <div class="uic-name" title="${esc(c.name)}">${esc(c.name)}</div>
+        <div class="uic-meta">${esc(c.cardNumber)}${isDup?' <span class="uic-sold">DUP</span>':''}</div>
+      </div>`;
+    }).join('')+
+    (all.length>120?`<div class="url-more">…他 ${all.length-120}枚</div>`:'');
+  const btn=document.getElementById('url-import-btn');
+  btn.textContent=`${urlImportCards.length}枚をインポート`;
+  btn.style.display=urlImportCards.length?'block':'none';
+  document.getElementById('url-preview').style.display='block';
+}
+
+
+function doHtmlParse(){
+  const raw=document.getElementById('url-html').value.trim();
+  const url=document.getElementById('url-inp').value.trim()||'https://www.cardrush-pokemon.jp/product-group/0';
+  if(!raw){alert('JSONまたはHTMLソースを貼り付けてください');return}
+  const prog=document.getElementById('url-prog');
+  prog.style.display='block';prog.className='iprog';
+  prog.textContent='解析中...';
+  document.getElementById('url-preview').style.display='none';
+  try{
+    let cards;
+    if(raw.startsWith('[')){
+      // ブックマークレットが出力したJSON
+      const arr=JSON.parse(raw);
+      cards=arr.map(o=>({
+        id:'cardrush-'+(o.id||o.cardNumber||o.name||Date.now()).toString().replace(/\s/g,'_'),
+        name:o.name||'',
+        image:o.image||'',
+        customImage:null,
+        price:o.price||0,
+        owned:0,
+        cardType:'Pokémon',
+        pokemonTypes:[],
+        subtypes:[],
+        series:'',
+        setName:o.setName||'',
+        setId:'',
+        rarity:o.rarity||'',
+        rarityLabel:o.rarity||'',
+        cardNumber:o.cardNumber||'',
+        illustrator:'',
+        quickTags:[],
+        _soldout:o.soldout||false
+      }));
+    } else if(raw.includes('pokecahack.com')||raw.includes('wp-content/uploads')){
+      const res=parsePokecahackPage(raw);
+      cards=res.cards;
+    } else if(raw.includes('pokemon-card.com')||raw.includes('/details.php/card/')){
+      const res=parsePtcgPage(raw);
+      cards=res.cards;
+    } else {
+      const res=parseCardrushPage(raw,url||'https://www.cardrush-pokemon.jp/product-group/0');
+      cards=res.cards;
+    }
+    if(!cards.length){
+      prog.className='iprog err';
+      prog.textContent='カードが見つかりませんでした。URLが正しいか、または別のHTMLを試してください。';
+      return;
+    }
+    showUrlPreview(cards);
+  }catch(e){
+    prog.className='iprog err';
+    prog.textContent='解析エラー: '+e.message;
+  }
+}
+
+
+
+// ── CARD LIGHTBOX ─────────────────────────────────────
+function openCardLightbox(){
+  const imgEl=document.getElementById('edt-img');
+  if(!imgEl||imgEl.style.display==='none')return;
+  const lb=document.getElementById('card-lb');
+  document.getElementById('card-lb-img').src=imgEl.src;
+  lb.style.display='flex';
+}
+function closeCardLightbox(e){
+  if(e){e.stopPropagation();e.preventDefault();}
+  document.getElementById('card-lb').style.display='none';
+  document.getElementById('card-lb-img').src='';
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('card-lb').style.display==='flex')closeCardLightbox(e);});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.getElementById('edt-ov').classList.contains('open')){
+    const tag=(e.target.tagName||'').toLowerCase();
+    if(tag==='textarea')return;
+    e.preventDefault();saveEdit();
+  }
+});
+
+// ── EDIT MODAL ────────────────────────────────────────
+// ── IMAGE OCR AUTO-FILL ────────────────────────────────────
+async function edtFetchFromImage(){
+  const imgUrl=document.getElementById('e-img').value.trim();
+  const panel=document.getElementById('edt-tcg-res');
+  if(!imgUrl){
+    panel.style.display='block';
+    panel.innerHTML='<div style="padding:10px;color:var(--sub);font-size:12px">先に画像URLを入力してください</div>';
+    return;
+  }
+  panel.style.display='block';
+  panel.innerHTML='<div style="padding:10px;color:var(--sub);font-size:12px">📷 画像を読み取り中...</div>';
+  try{
+    // Step1: 画像をプロキシ経由でfetchしてbase64化（ホットリンク保護を回避）
+    const imgResp=await fetch('https://corsproxy.io/?url='+encodeURIComponent(imgUrl));
+    if(!imgResp.ok)throw new Error('画像取得失敗: '+imgResp.status);
+    const blob=await imgResp.blob();
+    const base64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(blob);});
+    // Step2: base64をOCR.spaceに送信（URLを渡すとホットリンクで弾かれるためデータ直送）
+    const fd=new FormData();
+    fd.append('apikey','helloworld');
+    fd.append('base64Image',base64);
+    fd.append('language','jpn');
+    fd.append('scale','true');
+    fd.append('isTable','false');
+    fd.append('detectOrientation','false');
+    let r;
+    try{
+      r=await fetch('https://api.ocr.space/parse/image',{method:'POST',body:fd});
+      if(!r.ok)throw new Error('status '+r.status);
+    }catch(_){
+      r=await fetch('https://corsproxy.io/?url='+encodeURIComponent('https://api.ocr.space/parse/image'),{method:'POST',body:fd});
+    }
+    const j=await r.json();
+    if(j.IsErroredOnProcessing||!j.ParsedResults||!j.ParsedResults.length){
+      panel.innerHTML='<div style="padding:10px;color:var(--sub);font-size:12px">テキストを読み取れませんでした</div>';
+      return;
+    }
+    const text=j.ParsedResults.map(p=>p.ParsedText||'').join('\n');
+    const applied=[];
+    // カード番号: 例 207/165
+    if(!document.getElementById('e-num').value){
+      const m=text.match(/(\d{1,3})\s*\/\s*(\d{2,3})/);
+      if(m){document.getElementById('e-num').value=m[1]+'/'+m[2];applied.push('カード番号: '+m[1]+'/'+m[2]);}
+    }
+    // イラストレーター: Illus. 名前
+    if(!document.getElementById('e-art').value){
+      const m=text.match(/[Ii]llus\.\s*([A-Za-z][A-Za-z .&'-]{1,40})/);
+      if(m){const v=m[1].trim();document.getElementById('e-art').value=v;applied.push('イラストレーター: '+v);}
+    }
+    // レアリティ記号から推定
+    if(!document.getElementById('e-rar').value){
+      let rar='';
+      if(/SAR|Special\s*Illustration/i.test(text))rar='SAR';
+      else if(/\bACE\b/.test(text))rar='ACE';
+      else if(/\bIM\b/.test(text))rar='IM';
+      else if(/\bSSR\b/.test(text))rar='SSR';
+      else if(/\bCSR\b/.test(text))rar='CSR';
+      else if(/\bCHR\b/.test(text))rar='CHR';
+      else if(/\bSAR\b/.test(text))rar='SAR';
+      else if(/\bUR\b/.test(text))rar='UR';
+      else if(/\bHR\b/.test(text))rar='HR';
+      else if(/\bSR\b/.test(text))rar='SR';
+      else if(/\bRRR\b/.test(text))rar='RRR';
+      else if(/\bRR\b/.test(text))rar='RR';
+      else if(/\bAR\b/.test(text))rar='AR';
+      else if(/\bTR\b/.test(text))rar='TR';
+      else if(/★★★/.test(text))rar='RRR';
+      else if(/★★/.test(text))rar='RR';
+      else if(/★/.test(text))rar='R';
+      else if(/◆◆◆◆/.test(text))rar='UR';
+      else if(/◆◆◆/.test(text))rar='SR';
+      else if(/◆◆/.test(text))rar='RR';
+      else if(/◆/.test(text))rar='R';
+      if(rar){document.getElementById('e-rar').value=rar;applied.push('レアリティ: '+rar);}
+    }
+    if(applied.length){
+      panel.innerHTML='<div style="padding:10px;font-size:12px;color:var(--cyan)">✓ 読み取り完了:<br>'+applied.map(s=>'・'+esc(s)).join('<br>')+'</div>';
+    }else{
+      panel.innerHTML='<div style="padding:10px;color:var(--sub);font-size:12px">対象フィールドは既に入力済みか、読み取れる情報がありませんでした</div>';
+    }
+  }catch(e){
+    panel.innerHTML='<div style="padding:10px;color:var(--red);font-size:12px">エラー: '+esc(e.message)+'</div>';
+  }
+}
+
+function openEdit(id){
+  const c=getCard(id);if(!c)return;
+  document.getElementById('edt-tcg-res').style.display='none';
+  document.getElementById('edt-id').value=id;
+  document.getElementById('edt-tit').textContent=c.name||'CARD EDIT';
+  document.getElementById('e-name').value=c.name||'';
+  document.getElementById('e-num').value=c.cardNumber||'';
+  document.getElementById('e-rar').value=c.rarityLabel||'';
+  document.getElementById('e-type').value=c.cardType||'';
+  document.getElementById('e-ser').value=c.series||'';
+  document.getElementById('e-ttl').value=c.setName||'';
+  document.getElementById('e-art').value=c.illustrator||'';
+  document.getElementById('e-img').value=c.customImage||'';
+  document.getElementById('e-tags').value=(c.quickTags||[]).join(', ');
+
+  // カード画像（フルカラーで表示）
+  const src=c.customImage||c.image||'';
+  const imgEl=document.getElementById('edt-img');
+  const ph=document.getElementById('edt-img-placeholder');
+  if(src){
+    imgEl.src=src;
+    imgEl.style.display='block';
+    ph.style.display='none';
+  } else {
+    imgEl.style.display='none';
+    ph.style.display='block';
+  }
+
+  document.getElementById('edt-ov').classList.add('open');
+}
+
+// 画像URL変更時にプレビューも更新
+document.getElementById('e-img').addEventListener('input',e=>{
+  const src=e.target.value.trim();
+  const imgEl=document.getElementById('edt-img');
+  const ph=document.getElementById('edt-img-placeholder');
+  if(src){imgEl.src=src;imgEl.style.display='block';ph.style.display='none';}
+  else{imgEl.style.display='none';ph.style.display='block';}
+});
+
+function saveEdit(){
+  document.getElementById('edt-ov').classList.remove('open');
+  const id=document.getElementById('edt-id').value;
+  const c=getCard(id);
+  if(c){
+    c.name       =document.getElementById('e-name').value.trim();
+    c.cardNumber =document.getElementById('e-num').value.trim();
+    c.rarityLabel=document.getElementById('e-rar').value.trim();
+    c.cardType   =document.getElementById('e-type').value.trim();
+    c.series     =document.getElementById('e-ser').value.trim();
+    c.setName    =document.getElementById('e-ttl').value.trim();
+    c.illustrator=document.getElementById('e-art').value.trim();
+    c.customImage=document.getElementById('e-img').value.trim()||null;
+    c.quickTags  =document.getElementById('e-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+    upsertCard(c);
+  }
+  renderAll();
+}
+function deleteEdit(){
+  const name=document.getElementById('e-name').value||'このカード';
+  if(!confirm(`「${name}」を削除しますか？`))return;
+  deleteCard(document.getElementById('edt-id').value);
+  document.getElementById('edt-ov').classList.remove('open');
+  renderAll();
+}
+
+// ── ADD MODAL ─────────────────────────────────────────
+document.getElementById('btn-add').addEventListener('click',()=>{
+  ['a-name','a-num','a-rar','a-type','a-ser','a-ttl','a-art','a-img']
+    .forEach(i=>document.getElementById(i).value='');
+  document.getElementById('add-ov').classList.add('open');
+});
+document.getElementById('add-cls').addEventListener('click',()=>
+  document.getElementById('add-ov').classList.remove('open'));
+document.getElementById('add-save').addEventListener('click',()=>{
+  const name=document.getElementById('a-name').value.trim();
+  if(!name){alert('カード名は必須です');return}
+  db.cards.push({
+    id:'manual-'+Date.now(), name,
+    cardNumber:  document.getElementById('a-num').value.trim(),
+    rarityLabel: document.getElementById('a-rar').value.trim(),
+    cardType:    document.getElementById('a-type').value.trim(),
+    series:      document.getElementById('a-ser').value.trim(),
+    setName:     document.getElementById('a-ttl').value.trim(),
+    illustrator: document.getElementById('a-art').value.trim(),
+    image:       document.getElementById('a-img').value.trim()||'',
+    customImage:null,pokemonTypes:[],subtypes:[],rarity:'',setId:'',price:0,owned:0,quickTags:[],
+  });
+  saveDb();
+  document.getElementById('add-ov').classList.remove('open');
+  renderAll();
+});
+
+// ── BULK EDITOR ───────────────────────────────────────
+let beMiss=false, beDirty=new Set();
+let beFilter={search:'',series:'',title:'',rarity:''};
+let beSelIds=null; // null=全件, Set=選択カードのみ
+let beLimit=200;   // 描画上限（スクロールで追加）
+
+const BE_REQ=[
+  {f:'name',      l:'カード名'},
+  {f:'rarityLabel',l:'レアリティ'},
+  {f:'cardType',  l:'種別'},
+  {f:'series',    l:'シリーズ'},
+  {f:'setName',   l:'タイトル'},
+];
+
+function beCards(){
+  return db.cards.filter(c=>{
+    if(beSelIds && !beSelIds.has(c.id)) return false;
+    if(beMiss && BE_REQ.every(({f})=>c[f])) return false;
+    if(beFilter.search && !(c.name||'').toLowerCase().includes(beFilter.search.toLowerCase())) return false;
+    if(beFilter.series && c.series!==beFilter.series) return false;
+    if(beFilter.title  && c.setName!==beFilter.title)  return false;
+    if(beFilter.rarity && c.rarityLabel!==beFilter.rarity) return false;
+    return true;
+  });
+}
+
+function renderBulkFilters(){
+  const serSel=document.getElementById('be-fser');
+  const ttlSel=document.getElementById('be-fttl');
+  const rarSel=document.getElementById('be-frar');
+  // beSelIds がある場合はその範囲のカードのみを選択肢の母集合にする
+  const base=beSelIds ? db.cards.filter(c=>beSelIds.has(c.id)) : db.cards;
+  const sers=[...new Set(base.map(c=>c.series).filter(Boolean))].sort();
+  const ttls=[...new Set(base.filter(c=>!beFilter.series||c.series===beFilter.series).map(c=>c.setName).filter(Boolean))].sort();
+  const rars=[...new Set(base.map(c=>c.rarityLabel).filter(Boolean))].sort();
+  const curSer=beFilter.series, curTtl=beFilter.title, curRar=beFilter.rarity;
+  serSel.innerHTML='<option value="">全シリーズ</option>'+sers.map(s=>`<option value="${esc(s)}"${s===curSer?' selected':''}>${esc(s)}</option>`).join('');
+  ttlSel.innerHTML='<option value="">全タイトル</option>'+ttls.map(s=>`<option value="${esc(s)}"${s===curTtl?' selected':''}>${esc(s)}</option>`).join('');
+  rarSel.innerHTML='<option value="">全レアリティ</option>'+rars.map(s=>`<option value="${esc(s)}"${s===curRar?' selected':''}>${esc(s)}</option>`).join('');
+}
+
+function beRowHTML(c){
+  const missing=BE_REQ.filter(({f})=>!c[f]);
+  const flag=missing.length
+    ?`<div class="miss-flag">${missing.map(({l})=>`<span class="miss-chip">${l}</span>`).join('')}</div>`
+    :`<span class="ok-flag">✓</span>`;
+  return `<tr data-id="${c.id}" class="${beDirty.has(c.id)?'dirty':''}">
+    <td style="text-align:center"><input type="checkbox" class="bchk br" data-id="${c.id}"></td>
+    <td style="white-space:nowrap">${flag}</td>
+    <td><input class="bci ${!c.name?'miss':''}" data-f="name" data-id="${c.id}" value="${esc(c.name)}"></td>
+    <td class="burl-cell"><span class="burl-dot" style="color:${(c.customImage||c.image)?'#00f5ff':'rgba(255,255,255,.18)'}" title="${esc(c.customImage||c.image||'')}">●</span><input class="bci" data-f="image" data-id="${c.id}" value="${esc(c.customImage||c.image||'')}" placeholder="https://..."></td>
+    <td><input class="bci" data-f="cardNumber" data-id="${c.id}" value="${esc(c.cardNumber)}" style="width:65px"></td>
+    <td><input class="bci ${!c.rarityLabel?'miss':''}" data-f="rarityLabel" data-id="${c.id}" value="${esc(c.rarityLabel)}" style="width:50px"></td>
+    <td><input class="bci ${!c.cardType?'miss':''}" data-f="cardType" data-id="${c.id}" value="${esc(c.cardType)}" style="width:80px"></td>
+    <td><input class="bci ${!c.series?'miss':''}" data-f="series" data-id="${c.id}" value="${esc(c.series)}"></td>
+    <td><input class="bci ${!c.setName?'miss':''}" data-f="setName" data-id="${c.id}" value="${esc(c.setName)}"></td>
+    <td><input class="bci" data-f="illustrator" data-id="${c.id}" value="${esc(c.illustrator)}"></td>
+    <td><input class="bci" data-f="quickTags" data-id="${c.id}" value="${esc((c.quickTags||[]).join(','))}"></td>
+  </tr>`;
+}
+
+let _beObserver=null;
+function renderBulk(){
+  if(_beObserver){_beObserver.disconnect();_beObserver=null;}
+  renderBulkFilters();
+  const cards=beCards();
+  const visible=cards.slice(0,beLimit);
+  const hasMore=cards.length>beLimit;
+  document.getElementById('be-cnt').textContent=cards.length+'件';
+  const body=document.getElementById('be-body');
+  body.innerHTML=visible.map(beRowHTML).join('')
+    +(hasMore?`<tr id="be-sentinel"><td colspan="11" style="text-align:center;padding:14px;color:var(--sub);font-size:9px">読み込み中...</td></tr>`:'');
+  if(hasMore){
+    _beObserver=new IntersectionObserver(entries=>{
+      if(!entries[0].isIntersecting)return;
+      _beObserver.disconnect();_beObserver=null;
+      beLimit+=200;
+      const extra=cards.slice(visible.length,beLimit);
+      const sentinel=document.getElementById('be-sentinel');
+      if(sentinel){
+        sentinel.insertAdjacentHTML('beforebegin',extra.map(beRowHTML).join(''));
+        if(cards.length>beLimit) sentinel.cells[0].textContent='読み込み中...';
+        else sentinel.remove();
+      }
+      if(cards.length>beLimit&&document.getElementById('be-sentinel')){
+        _beObserver=new IntersectionObserver(arguments.callee);
+        _beObserver.observe(document.getElementById('be-sentinel'));
+      }
+    },{rootMargin:'200px'});
+    const s=document.getElementById('be-sentinel');
+    if(s)_beObserver.observe(s);
+  }
+}
+
+// btn-bulk は onclick="openBulkEditor()" で処理
+document.getElementById('be-cls').addEventListener('click',()=>{
+  if(beDirty.size>0&&!confirm('未保存の変更があります。閉じますか？'))return;
+  document.getElementById('be').classList.remove('open');
+});
+document.getElementById('be-miss').addEventListener('click',function(){
+  beMiss=!beMiss;beLimit=200;this.classList.toggle('on',beMiss);renderBulk();
+});
+document.getElementById('be-fsrch').addEventListener('input',e=>{
+  beFilter.search=e.target.value;beLimit=200;renderBulk();
+});
+document.getElementById('be-fser').addEventListener('change',e=>{
+  beFilter.series=e.target.value;beFilter.title='';beLimit=200;renderBulk();
+});
+document.getElementById('be-fttl').addEventListener('change',e=>{
+  beFilter.title=e.target.value;beLimit=200;renderBulk();
+});
+document.getElementById('be-frar').addEventListener('change',e=>{
+  beFilter.rarity=e.target.value;beLimit=200;renderBulk();
+});
+document.getElementById('be-fclr').addEventListener('click',()=>{
+  beFilter={search:'',series:'',title:'',rarity:''};
+  beLimit=200;
+  document.getElementById('be-fsrch').value='';
+  renderBulk();
+});
+document.getElementById('be-body').addEventListener('change',e=>{
+  const inp=e.target.closest('.bci');if(!inp)return;
+  const c=getCard(inp.dataset.id);if(!c)return;
+  if(inp.dataset.f==='quickTags')
+    c.quickTags=inp.value.split(',').map(s=>s.trim()).filter(Boolean);
+  else if(inp.dataset.f==='image')
+    c.customImage=inp.value||null;
+  else
+    c[inp.dataset.f]=inp.value;
+  beDirty.add(c.id);
+  document.querySelector(`#be-body tr[data-id="${c.id}"]`)?.classList.add('dirty');
+});
+document.getElementById('be-save').addEventListener('click',()=>{
+  saveDb();beDirty.clear();renderBulk();renderAll();
+  const btn=document.getElementById('be-save');
+  btn.textContent='✓ 保存完了';
+  setTimeout(()=>btn.textContent='💾 保存',1500);
+});
+document.getElementById('chk-all').addEventListener('change',function(){
+  document.querySelectorAll('.br').forEach(c=>c.checked=this.checked);
+});
+document.getElementById('be-abtn').addEventListener('click',()=>{
+  const field=document.getElementById('be-afield').value;
+  const val  =document.getElementById('be-aval').value.trim();
+  const checked=[...document.querySelectorAll('.br:checked')];
+  if(!checked.length){alert('行を選択してください');return}
+  checked.forEach(cb=>{
+    const c=getCard(cb.dataset.id);if(!c)return;
+    if(field==='quickTags_add'){
+      if(!val)return;
+      if(!(c.quickTags||[]).includes(val)) c.quickTags=[...(c.quickTags||[]),val];
+    } else if(field==='quickTags_del'){
+      c.quickTags=(c.quickTags||[]).filter(t=>t!==val);
+    } else {
+      c[field]=val;
+    }
+    beDirty.add(c.id);
+    const dataField=(field==='quickTags_add'||field==='quickTags_del')?'quickTags':field;
+    const inp=document.querySelector(`#be-body input[data-id="${cb.dataset.id}"][data-f="${dataField}"]`);
+    if(inp) inp.value=dataField==='quickTags'?(c.quickTags||[]).join(','):val;
+    document.querySelector(`#be-body tr[data-id="${cb.dataset.id}"]`)?.classList.add('dirty');
+  });
+});
+
+// Overlay click to close
+['imp-ov','edt-ov','add-ov','url-ov'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{
+    if(e.target.id===id) document.getElementById(id).classList.remove('open');
+  });
+});
+
+// ── BULK EDITOR OPEN (onclick経由) ────────────────────
+function openBulkEditor(){
+  beDirty.clear();beMiss=false;beFilter={search:'',series:'',title:'',rarity:''};
+  beLimit=200;
+  // 選択モードで1枚以上選ばれていれば選択カードのみ表示
+  beSelIds=(selMode&&selIds.size>0)?new Set(selIds):null;
+  document.getElementById('be-miss').classList.remove('on');
+  document.getElementById('be-fsrch').value='';
+  const badge=document.getElementById('be-selbadge');
+  badge.style.display=beSelIds?'':'none';
+  if(beSelIds) badge.firstChild.textContent=`選択カードのみ (${beSelIds.size}枚) `;
+  renderBulk();
+  document.getElementById('be').classList.add('open');
+}
+document.getElementById('be-selclr').addEventListener('click',()=>{
+  beSelIds=null;
+  document.getElementById('be-selbadge').style.display='none';
+  beLimit=200;
+  renderBulk();
+});
+
+// ── MANUAL BULK ADD ────────────────────────────────────
+let maddRowCount=0;
+
+function maddRowHTML(n){
+  maddRowCount++;
+  return `<tr id="madd-r${n}">
+    <td style="color:var(--sub);font-size:9px;text-align:center;padding:4px">${n}</td>
+    <td><input class="mci req" data-f="name" placeholder="カード名"></td>
+    <td><input class="mci" data-f="cardNumber" placeholder="001/098" style="width:80px"></td>
+    <td><input class="mci" data-f="rarityLabel" placeholder="R" style="width:50px"></td>
+    <td><input class="mci" data-f="cardType" placeholder="Pokémon" style="width:80px"></td>
+    <td><input class="mci" data-f="series" placeholder="Scarlet &amp; Violet"></td>
+    <td><input class="mci" data-f="setName" placeholder="151"></td>
+    <td><input class="mci" data-f="illustrator" placeholder="Mitsuhiro Arita"></td>
+    <td><input class="mci" data-f="owned" type="number" min="0" value="0" style="width:50px"></td>
+    <td><input class="mci" data-f="image" placeholder="https://..."></td>
+  </tr>`;
+}
+
+function openMAdd(){
+  maddRowCount=0;
+  const body=document.getElementById('madd-body');
+  body.innerHTML='';
+  for(let i=1;i<=10;i++) body.insertAdjacentHTML('beforeend',maddRowHTML(i));
+  document.getElementById('madd-ov').classList.add('open');
+}
+
+function closeMAdd(){
+  document.getElementById('madd-ov').classList.remove('open');
+}
+
+function maddAddRows(n){
+  const body=document.getElementById('madd-body');
+  const start=maddRowCount+1;
+  for(let i=start;i<start+n;i++) body.insertAdjacentHTML('beforeend',maddRowHTML(i));
+}
+
+function maddFillAll(){
+  const field=document.getElementById('madd-afield').value;
+  const val=document.getElementById('madd-aval').value;
+  document.querySelectorAll(`#madd-body [data-f="${field}"]`).forEach(inp=>inp.value=val);
+}
+
+function saveMAdd(){
+  const rows=document.querySelectorAll('#madd-body tr');
+  const newIds=new Set();
+  rows.forEach(tr=>{
+    const name=tr.querySelector('[data-f="name"]').value.trim();
+    if(!name) return;
+    const get=f=>tr.querySelector(`[data-f="${f}"]`).value.trim();
+    const id='manual-'+Date.now()+'-'+(Math.random()*1e6|0);
+    db.cards.push({
+      id, name,
+      cardNumber:  get('cardNumber'),
+      rarityLabel: get('rarityLabel'),
+      rarity:      get('rarityLabel'),
+      cardType:    get('cardType'),
+      series:      get('series'),
+      setName:     get('setName'),
+      illustrator: get('illustrator'),
+      image:       get('image'),
+      customImage: null,
+      pokemonTypes:[],subtypes:[],setId:'',price:0,
+      owned:       Math.max(0,parseInt(get('owned'))||0),
+      quickTags:   [],
+    });
+    newIds.add(id);
+  });
+  if(!newIds.size){alert('カード名が入力された行がありません');return;}
+  saveDb();
+  closeMAdd();
+  applyImportFilter(newIds);
+}
+
+// ── BULK EDITOR URL DRAG & DROP ───────────────────────
+(()=>{
+  const body=document.getElementById('be-body');
+  body.addEventListener('dragover',e=>{
+    const cell=e.target.closest('.burl-cell');if(!cell)return;
+    e.preventDefault();e.dataTransfer.dropEffect='copy';
+    cell.style.outline='2px solid #00f5ff';
+  });
+  body.addEventListener('dragleave',e=>{
+    const cell=e.target.closest('.burl-cell');if(cell)cell.style.outline='';
+  });
+  body.addEventListener('drop',e=>{
+    const cell=e.target.closest('.burl-cell');if(!cell)return;
+    e.preventDefault();cell.style.outline='';
+    const tr=cell.closest('tr');if(!tr)return;
+    const id=tr.dataset.id;const c=getCard(id);if(!c)return;
+    let url='';
+    const uri=e.dataTransfer.getData('text/uri-list');
+    const htm=e.dataTransfer.getData('text/html');
+    const txt=e.dataTransfer.getData('text/plain');
+    if(uri)url=uri.split('\n').map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'))[0]||'';
+    if(!url&&htm){const m=htm.match(/src="([^"]+)"/i);if(m)url=m[1];}
+    if(!url&&txt&&/\.(jpe?g|png|webp|gif)/i.test(txt))url=txt.trim();
+    if(!url)return;
+    c.customImage=url;
+    beDirty.add(id);tr.classList.add('dirty');
+    // ドットの色と入力値を更新
+    const dot=cell.querySelector('.burl-dot');if(dot){dot.style.color='#00f5ff';dot.title=url;}
+    const inp=cell.querySelector('.bci');if(inp)inp.value=url;
+  });
+})();
+
+// ── MADD PASTE ────────────────────────────────────────
+document.getElementById('madd-body').addEventListener('paste',function(e){
+  const inp=e.target;
+  if(!inp.classList.contains('mci')||!['name','image'].includes(inp.dataset.f))return;
+  const text=(e.clipboardData||window.clipboardData).getData('text');
+  const lines=text.split(/\r?\n/).map(s=>s.trim()).filter(s=>s);
+  if(lines.length<=1)return; // 1行は通常ペーストに任せる
+  e.preventDefault();
+  const allRows=Array.from(document.querySelectorAll('#madd-body tr'));
+  const startIdx=allRows.indexOf(inp.closest('tr'));
+  const needed=(startIdx+lines.length)-allRows.length;
+  if(needed>0)maddAddRows(needed);
+  const rows=Array.from(document.querySelectorAll('#madd-body tr'));
+  lines.forEach((line,i)=>{
+    const row=rows[startIdx+i];
+    if(row)row.querySelector('[data-f="name"]').value=line;
+  });
+});
+
+// ── タイトル移行マップ {series: {旧setName: 新title}} ─
+// 同コードが複数シリーズに存在する場合はseriesで区別
+const _TITLE_MAP2={
+  'PMCG':{
+    'PMCG-P':'プロモーションカード「PMCG-P」',
+    'OPM':'映画公開記念パック','OPI':'イントロパック',
+    'OPG2':'ジム拡張第2弾「闇からの挑戦」',
+    'OPG-YN':'ポケモンジム第3弾「ヤマブキシティジムナツメ」',
+    'OPG-GK':'ポケモンジム第3弾「グレンタウンジムカツラ」',
+    'OPQ':'クイックスターターギフト',
+    'OPG1':'ジム拡張第1弾「リーダーズスタジアム」',
+    'OPG-TE':'ポケモンジム第2弾「タマムシシティジムエリカ」',
+    'OPG-KM':'ポケモンジム第2弾「クチバシティジムマチス」',
+    'OPG-HK':'ポケモンジム第1弾「ハナダシティジムカスミ」',
+    'OPG-NT':'ポケモンジム第1弾「ニビシティジムタケシ」',
+    'OPG-t':'ポケモンジム構築デッキトレーナーズ','OPE':'拡張シート',
+    'OP4':'拡張パック第4弾「ロケット団」','OP3':'拡張パック第3弾「化石の秘密」',
+    'OP2':'拡張パック第2弾「ポケモンジャングル」',
+    'OP1':'拡張パック第1弾（再販）','OP00':'拡張パック第1弾（初版）',
+  },
+  '★neo':{
+    'neo-P':'プロモーションカード「neo-P」',
+    'neo4':'拡張パック第4弾「闇、そして光へ...」','neoI':'イントロパック★neo',
+    'neoP3':'プレミアムファイル3（neo）','neo3':'拡張パック第3弾「めざめる伝説」',
+    'neoP2':'プレミアムファイル2（neo）','neo2':'拡張パック第2弾「遺跡をこえて...」',
+    'neo1':'拡張パック第1弾「金、銀、新世界へ...」','neoP1':'プレミアムファイル（neo）',
+  },
+  '★VS':{'vs-P':'プロモーションカード「vs-P」','VS':'ポケモンカード★VS','VS-P':'プロモーションカード「VS-P」'},
+  'MEGA':{
+    'M1L':'拡張パック「メガブレイブ」',
+    'M1S':'拡張パック「メガシンフォニア」',
+    'M2a-BM':'ハイクラスパック「MEGAドリームex」',
+    'M2a-EM':'ハイクラスパック「MEGAドリームex」',
+    'M2a-RM':'ハイクラスパック「MEGAドリームex」',
+  },
+  'e':{
+    'e-P':'プロモーションカード「e-P」','e5':'拡張パック第5弾「神秘なる山」',
+    'e4':'拡張パック第4弾「裂けた大地」','eVS':'劇場限定VSパック',
+    'e3':'拡張パック第3弾「海からの風」','e2':'拡張パック第2弾「地図にない町」',
+    'eM':'マクドナルドオリジナル「ミニマム★パック」',
+    'e1':'第1弾 基本拡張パック','eS':'ポケモンカードe スターターパック',
+    'e-BE':'エクストラレギュレーションBOX/e',
+  },
+  'ADV':{
+    'AD-P':'プロモーションカード「ADV-P」',
+    'ADS-3m':'構築済みスターター「メタグロスデッキ」',
+    'AD4':'第4弾 拡張パック「とかれた封印」','ADg':'ギフトボックス ADV',
+    'AD-da':'構築済みデッキ「アクア団ハーフデッキW」',
+    'AD-dm':'構築済みデッキ「マグマ団ハーフデッキW」',
+    'ADEX':'強化拡張パックex1「マグマVSアクア ふたつの野望」',
+    'ADVS':'映画公開記念VSパック',
+    'ADS-2b':'構築済みスターター「ボーマンダデッキ」',
+    'ADS-2f':'構築済みスターター「フライゴンデッキ」',
+    'AD3':'第3弾 拡張パック「天空の覇者」','AD2':'第2弾 拡張パック「砂漠のきせき」',
+    'AD1':'第1弾 拡張パック',
+    'ADS-1m':'第1弾 構築済みスターター「ミズゴロウデッキ」',
+    'ADS-1a':'第1弾 構築済みスターター「アチャモデッキ」',
+    'ADS-1k':'第1弾 構築済みスターター「キモリデッキ」',
+    'E-g':'クイックコンストラクションパック「草」',
+    'E-ps':'ギフトボックス エメラルドver.',
+    'AD-BE':'エクストラレギュレーションBOX/ADV',
+  },
+  'PCG':{
+    'PCG-P':'プロモーションカード「PCG-P」',
+    'WCP':'ワールドチャンピオンズパック',
+    'M-VS':'映画公開記念VSパック「蒼海のマナフィ」',
+    'PCG-D':'構築済みデッキ「雷震! バンギラスex」',
+    'P9':'拡張パック「さいはての攻防」',
+    'PCG-S':'構築済みスターター「大海のカイオーガex」',
+    'P8':'拡張パック「きせきの結晶」','P7':'拡張パック「ホロンの幻影」',
+    'PCG-GB':'ギフトボックス ミュウ・ルカリオver.',
+    'P6':'拡張パック「ホロンの研究塔」',
+    'PCG-H':'ホロンの研究塔ハーフデッキ1/2雷EX',
+    'L-VS':'映画公開記念VSパック「波導のルカリオ」',
+    'PCG-MK':'マスターキット','PCG-M':'構築済みスターター「まぼろしのミュウ」',
+    'P5':'拡張パック「まぼろしの森」','P4':'拡張パック「金の空、銀の海」',
+    'PCG-PP':'ポケパークプレミアムファイル',
+    'PCG-Q':'クイックコンストラクションパック「闘」',
+    'PCG-E':'ギフトボックス エメラルドver.',
+    'PCG-R':'構築済みデッキ「ロケット団ハーフデッキW -silver-」',
+    'P3':'拡張パック「ロケット団の逆襲」',
+    'D-VS':'映画公開記念VSパック「裂空のデオキシス」',
+    'P2':'拡張パック「蒼空の激突」','P1':'拡張パック「伝説の飛翔」',
+    'PCG-RS':'ランダム構築スターター',
+    'KK':'拡張パック「きせきの結晶」',
+    'OP-BE':'エクストラレギュレーションBOX/プロモ',
+    'P-P':'プロモーションカード「PCG-P」',
+    'PG-MR':'ギフトボックス ミュウ・ルカリオver.',
+    'PH-fr':'ホロンの研究塔ハーフデッキ 炎EX',
+    'PH-l':'ホロンの研究塔ハーフデッキ 雷EX','PH-w':'ホロンの研究塔ハーフデッキ 水EX',
+    'PQ-fr':'クイックコンストラクションパック 炎',
+    'PQ-g':'クイックコンストラクションパック 草',
+    'PQ-l':'クイックコンストラクションパック 雷',
+    'PQ-p':'クイックコンストラクションパック 超',
+    'PQ-w':'クイックコンストラクションパック 水',
+    'PQ‐fg':'クイックコンストラクションパック 闘',
+    'PD-bl':'ロケット団ハーフデッキW -black-',
+    'PD-sl':'ロケット団ハーフデッキW -silver-',
+    'PS-1':'拡張パック「伝説の飛翔」',
+    'PS-2D':'拡張パック「蒼空の激突」','PS-2R':'拡張パック「蒼空の激突」',
+    'PS-3w':'拡張パック「ロケット団の逆襲」','PS-4M':'拡張パック「まぼろしの森」',
+    'PS-5G':'拡張パック「きせきの結晶」','PS-5K':'拡張パック「ホロンの研究塔」',
+    'PS-6B':'拡張パック「さいはての攻防」','PS-6S':'拡張パック「さいはての攻防」',
+    'PVS-M':'映画公開記念VSパック「蒼海のマナフィ」',
+    'PVS-D':'映画公開記念VSパック「裂空のデオキシス」',
+    'PWCP':'ワールドチャンピオンズパック',
+    'PM':'構築済みスターター「まぼろしのミュウ」',
+    'PPF':'ポケパークプレミアムファイル',
+    'PDｰbl':'構築済みデッキ「ロケット団ハーフデッキW -black-」',
+    'PDｰsl':'構築済みデッキ「ロケット団ハーフデッキW -silver-」',
+    'PGｰMR':'ギフトボックス ミュウ・ルカリオver.',
+    'PGｰe':'ギフトボックス エメラルドver.',
+    'PSｰ2D':'構築済みスターター「デオキシスデッキ」',
+    'PSｰ3fr':'構築済みスターター「バクフーンex★炎」',
+    'PSｰ3g':'構築済みスターター「メガニウムex★草」',
+    'PSｰ3w':'構築済みスターター「オーダイルex★水」',
+    'PVSｰD':'映画公開記念VSパック',
+    'PVSｰR':'映画公開記念VSパック',
+  },
+  'DP':{
+    'DP-P':'プロモーションカード「DP-P」',
+    'DP-S':'対戦スターターパック「ギラティナVSディアルガ」(ディアルガ)',
+    'DP6':'拡張パック「破空の激闘」',
+    'DP5':'拡張パック「怒りの神殿」「秘境の叫び」',
+    'DP-PS':'映画公開記念 プレミアムシート2008',
+    'DP-E':'エントリーパック\'08',
+    'DP-D':'構築スタンダードデッキ「ディアルガLV.X」「パルキアLV.X」',
+    'DP3':'拡張パック「ひかる闇」',
+    'DP-H':'構築ハーフデッキ「攻めのラムパルド」「守りのトリデプス」',
+    'DP2':'拡張パック「湖の秘密」',
+    'DP1':'拡張パック「時空の創造 ダイヤモンド・パールコレクション」',
+    'DP-BE':'エクストラレギュレーションBOX/DP',
+    'DP10th':'映画10周年記念 プレミアムシート',
+    'DP2D':'拡張パック「湖の秘密」','DP3D':'拡張パック「ひかる闇」',
+    'DP4S':'拡張パック「夜明けの疾走」「月光の追跡」',
+    'DP5S':'拡張パック「怒りの神殿」「秘境の叫び」',
+    'DP6S-D':'拡張パック「破空の激闘」(ディアルガ)',
+    'DP6S-G':'拡張パック「破空の激闘」(ギラティナ)',
+    'DPE':'エントリーパック DP','DPE08':'エントリーパック\'08',
+    'DPM08':'映画公開記念 プレミアムシート2008',
+  },
+  'DPt':{
+    'DPt-P':'プロモーションカード「DPt-P」',
+    'DPt-R':'映画公開記念 ランダムパック2009',
+    'DPt-S':'乱戦！ポケモンスクランブル×ポケモンカードゲーム',
+    'DPt-D':'構築スタンダードデッキ「アルセウスLV.X 雷&超」',
+    'Pt4':'拡張パック「アルセウス光臨」',
+    'DPt-C':'コレクションパック ミュウツーLV.X',
+    'Pt3':'拡張パック「フロンティアの鼓動」','Pt2':'拡張パック「時の果ての絆」',
+    'DPt-GB':'ギフトボックス「ピカチュウ」','DPt-E':'エントリーパック「パルキア」',
+    'Pt1':'拡張パック「ギンガの覇道」',
+    'Pt-P':'プロモーションカード「DPt-P」',
+    'Pt2S-fr':'対戦スターターパックSP「ゴウカザルVSエルレイド」(ゴウカザル)',
+    'Pt2S-p':'対戦スターターパックSP「ゴウカザルVSエルレイド」(エルレイド)',
+    'Pt3S-G':'対戦スターターパックSP「ガブリアスVSリザードン」(ガブリアス)',
+    'Pt3S-R':'対戦スターターパックSP「ガブリアスVSリザードン」(リザードン)',
+    'Pt4S-gf':'構築スタンダードデッキ「アルセウスLV.X 草&炎」',
+    'Pt4S-lp':'構築スタンダードデッキ「アルセウスLV.X 雷&超」',
+    'PtC-M':'コレクションパック ミュウツーLV.X',
+    'PtC-R':'コレクションパック レジギガスLV.X',
+    'PtC-S':'コレクションパック シェイミLV.X',
+    'PtE-fr':'エントリーパック「ヒコザル」','PtE-g':'エントリーパック「ナエトル」',
+    'PtE-w':'エントリーパック「ポッチャマ」',
+    'PtGB-fr':'ギフトボックス「ヒコザル」','PtGB-g':'ギフトボックス「ナエトル」',
+    'PtGB-l':'ギフトボックス「ピカチュウ」','PtGB-w':'ギフトボックス「ポッチャマ」',
+    'PtRan':'映画公開記念 ランダムパック2009',
+    'PtRP':'乱戦！ポケモンスクランブル×ポケモンカードゲーム',
+  },
+  'LEGEND':{
+    'L-P':'プロモーションカード「L-P」','PW':'ピカチュウ ワールド',
+    'L3':'拡張パック「頂上大激突」','LL':'強化パック「ロストリンク」',
+    'L-D':'構築スタンダードデッキ「ハガネール鋼」',
+    'L2':'拡張パック「よみがえる伝説」',
+    'L-B':'バトルスタートデッキ「ライチュウ」',
+    'L-ED':'エキスパートデッキ「リーフィアVSメタグロス+Online」メタグロスデッキ',
+    'L1':'拡張パック「ソウルシルバーコレクション」',
+    'B-fr':'バトルスタートデッキ「ブーバーン」',
+    'B-g':'バトルスタートデッキ「ドダイトス」',
+    'B-l':'拡張パック「頂上大激突」',
+    'B-w':'バトルスタートデッキ「カメックス」',
+    'L1-l':'拡張パック「ソウルシルバーコレクション」',
+    'L1-r':'拡張パック「ハートゴールドコレクション」',
+    'L1-l-M':'ソウルシルバーコレクション (ミラー仕様)',
+    'L1-r-M':'ハートゴールドコレクション (ミラー仕様)',
+    'L2-da':'拡張パック「よみがえる伝説」',
+    'L2-m':'構築スタンダードデッキ「バンギラス悪」',
+    'L2-w':'構築スタンダードデッキ「ハガネール鋼」',
+    'L2-w-M':'ハガネール鋼 (ミラー仕様)',
+    'L3-B':'拡張パック「頂上大激突」',
+    'L3-B-M':'頂上大激突 (ミラー仕様)',
+    'L-BE':'エクストラレギュレーションBOX/LEGEND',
+  },
+  'BW':{
+    'BW-P':'プロモーションカード「BW-P」',
+    'EXB':'コンセプトパック「EXバトルブースト」',
+    'MG':'30枚デッキ対戦set「ミュウツーVSゲノセクト」',
+    'EBB':'コンセプトパック「EXバトルブースト」',
+    'BK':'最強爆流コンボデッキ60「カメックス+キュレムEX」',
+    'BW9':'拡張パック「メガロキャノン」',
+    'SC':'コンセプトパック「シャイニーコレクション」',
+    'BW8':'拡張パック「ライデンナックル」','WAK':'みんなのWAKUWAKUバトル',
+    'PBG':'プラズマ団バトルギフトセット',
+    'BKB':'バトル強化デッキ60「ブラックキュレムEX」',
+    'BKW':'バトル強化デッキ60「ホワイトキュレムEX」',
+    'MDB':'トッププレイヤーが選ぶ100＋40枚 マスターデッキビルドBOX EX',
+    'PPD':'プラズマ団パワードデッキ30','BW7':'拡張パック「プラズマゲイル」',
+    'BW6':'拡張パック「コールドフレア」','BKD':'バトル強化デッキ30「ケルディオ」',
+    'HSZ':'はじめてセット 全国図鑑版','GBD':'ガブリアスデッキ30',
+    'SZD':'サザンドラデッキ30','BW5':'拡張パック「リューノブレード」',
+    'DS':'拡張パック「ドラゴンセレクション」','BW4':'拡張パック「ダークラッシュ」',
+    'BGS':'バトルギフトセット「ボルトロスVSトルネロス」',
+    'HSD':'はじめてセットDX ピカチュウver.',
+    'BKZ':'バトル強化デッキ60「ゼクロムEX」',
+    'BKR':'バトル強化デッキ60「レシラムEX」',
+    'BW3':'拡張パック「ヘイルブリザード」','BW2':'拡張パック「レッドコレクション」',
+    'BTV':'バトルテーマデッキ「ビクティニ」',
+    'BKC':'バトル強化デッキ「コバルオン」','BKT':'バトル強化デッキ「テラキオン」',
+    'BKV':'バトル強化デッキ「ビリジオン」','BW1':'拡張パック「ホワイトコレクション」',
+    'HSP':'はじめてセットプラス','HS':'はじめてセット/BW',
+    'CST':'コレクションシート「旅立ちの仲間」',
+    'BW1-b':'拡張パック「ブラックコレクション」','BW1-w':'拡張パック「ホワイトコレクション」',
+    'BW3-l':'拡張パック「サイコドライブ」','BW3-p':'拡張パック「ヘイルブリザード」',
+    'BW5-g':'拡張パック「リューズブラスト」','BW5-o':'拡張パック「リューノブレード」',
+    'BW6-l':'拡張パック「フリーズボルト」','BW6-r':'拡張パック「コールドフレア」',
+    'BW8-b':'拡張パック「ラセンフォース」','BW8-p':'拡張パック「ライデンナックル」',
+    'BK-g':'バトル強化デッキ「ビリジオン」','BK-l':'バトル強化デッキ「コバルオン」',
+    'BK-o':'バトル強化デッキ「テラキオン」',
+    'GBR':'ガブリアスデッキ30','HS-K':'はじめてセット 全国図鑑版',
+    'HSplus':'はじめてセットプラス',
+    'BW-BE':'エクストラレギュレーションBOX/BW',
+    'KLD':'バトル強化デッキ30「ケルディオ」',
+    'MC':'拡張パック「メガロキャノン」',
+    'CS':'コレクションシート「旅立ちの仲間」',
+  },
+  'XY':{
+    'XY-P':'プロモーションカード「XY-P」',
+    'EXB':'エクストラレギュレーションBOX/XY',
+    'SM-DB':'デッキビルドBOX「ウルトラサン・ウルトラムーン」:XY再録',
+    'SM-PB':'プレミアムトレーナーボックス「ウルトラサン・ウルトラムーン」:XY再録',
+    'CP6':'ハイクラスパック「THE BEST OF XY」',
+    'XY-PB':'プレミアムトレーナーボックス:XY再録',
+    'CP5':'コンセプトパック 「幻・伝説ドリームキラコレクション 」',
+    'XY11':'拡張パック「冷酷の反逆者」','CP4':'プレミアムチャンピオンパック「EX×M×BREAK」',
+    'XYG':'メガバトルデッキ60「MタブンネEX」','XY10':'拡張パック「めざめる超王」',
+    'HXY':'ポケットモンスターカードゲーム スターターパック',
+    'CP3':'コンセプトパック「ポケキュンコレクション」','XY9':'拡張パック「破天の怒り」',
+    'XYF':'BREAKコンボデッキ60「ゴルダックBREAK+パルキアEX」',
+    'XYE':'BREAK進化パック「オンバーンBREAK」','XY8':'拡張パック「赤い閃光」',
+    'MMB':'メガマスターデッキビルドBOX「スピードスタイル」',
+    'XYD':'対戦スタートセット30「エンブオーEX VS トゲキッスEX」',
+    'CP2':'コンセプトパック「伝説キラコレクション」','XY7':'拡張パック「バンデットリング」',
+    'XYC':'メガバトルデッキ60「MレックウザEX」','XY6':'拡張パック「エメラルドブレイク」',
+    'CP1':'コンセプトパック「マグマ団VSアクア団 ダブルクライシス」',
+    'XY5':'拡張パック「タイダルストーム」',
+    'SL':'スーパーレジェンドセット60「ゼルネアスEX・イベルタルEX」',
+    'XYB':'ハイパーメタルチェーンデッキ60「ディアルガEX+ギルガルドEX」',
+    'XY4':'拡張パック「ファントムゲート」','XY3':'拡張パック「ライジングフィスト」',
+    'XYA':'メガバトルデッキ60「MリザードンEX」','XY2':'拡張パック「ワイルドブレイズ」',
+    'XY1':'拡張パック「コレクションY」','HS':'はじめてセット/XY',
+    '20th':'ポケットモンスターカードゲーム スターターパック',
+    'XY1-b':'拡張パック「コレクションY」','XY1-r':'拡張パック「コレクションX」',
+    'XY11-l':'拡張パック「爆熱の闘士」','XY11-p':'拡張パック「冷酷の反逆者」',
+    'XY5-l':'拡張パック「ガイアボルケーノ」','XY5-y':'拡張パック「タイダルストーム」',
+    'XY8-b':'拡張パック「青い衝撃」','XY8-r':'拡張パック「赤い閃光」',
+    'XYH':'ポケットモンスターカードゲーム スターターパック',
+    'MMB-b':'メガマスターデッキビルドBOX「パワースタイル」',
+    'MMB-r':'メガマスターデッキビルドBOX「スピードスタイル」',
+    'XY/171':'ハイクラスパック「THE BEST OF XY」',
+    'XY/171-M':'THE BEST OF XY (ミラー仕様)',
+    'SNP-o':'映画公開記念 幻・伝説ドリームキラコレクション (ボルケニオン側)',
+    'SNP-p':'映画公開記念 幻・伝説ドリームキラコレクション (マギアナ側)',
+    'X30':'ゼルネアスデッキ30','Y30':'イベルタルデッキ30',
+    'XY-BE':'エクストラレギュレーションBOX/XY',
+    'XY/048':'エクストラレギュレーションBOX/XY',
+    'M-BE':'エクストラレギュレーションBOX/メガバトル',
+    'M-P':'メガバトルデッキ60 プロモーションカード',
+  },
+  'サン＆ムーン':{
+    'SM-P':'プロモーションカード「SM-P」',
+    'SM12a':'ハイクラスパック「TAG TEAM GX タッグオールスターズ」',
+    'SM12':'拡張パック「オルタージェネシス」',
+    'SM11b':'強化拡張パック「ドリームリーグ」','SM11a':'強化拡張パック「リミックスバウト」',
+    'SMM':'スターターセット「TAG TEAM GX エーフィ&デオキシスGX、ブラッキー&ダークライGX」',
+    'SM11':'拡張パック「ミラクルツイン」',
+    'SMP2':'ムービースペシャルパック「名探偵ピカチュウ」',
+    'SM10b':'強化拡張パック「スカイレジェンド」',
+    'SM10a':'強化拡張パック「ジージーエンド」',
+    'SML':'ファミリーポケモンカードゲーム',
+    'SM-DB':'デッキビルドBOX「TAG TEAM GX」',
+    'SM10':'拡張パック「ダブルブレイズ」','SM9b':'強化拡張パック「フルメタルウォール」',
+    'SMD':'トレーナーバトルデッキ「ハナダシティジムのカスミ、ニビシティジムのタケシ」',
+    'SM9a':'強化拡張パック「ナイトユニゾン」',
+    'SM-PB':'プレミアムトレーナーボックス「TAG TEAM GX」',
+    'SM9':'拡張パック「タッグボルト」',
+    'SMI':'スターターセット「炎のブースターGX～雷のサンダースGX」',
+    'SM8b':'ハイクラスパック「GXウルトラシャイニー」',
+    'SM8a':'強化拡張パック「ダークオーダー」','SM8':'拡張パック「超爆インパクト」',
+    'SM7b':'強化拡張パック「フェアリーライズ」',
+    'SMH':'GXスタートデッキ「草ラランテス～フェアリーゼルネアス」',
+    'SM7a':'強化拡張パック「迅雷スパーク」','SM7':'拡張パック「裂空のカリスマ」',
+    'SM6b':'強化拡張パック「チャンピオンロード」',
+    'SM6a':'強化拡張パック「ドラゴンストーム」','SM6':'拡張パック「禁断の光」',
+    'SM5+':'強化拡張パック「ウルトラフォース」',
+    'SM5M':'拡張パック「ウルトラムーン」','SM5S':'拡張パック「ウルトラサン」',
+    'SMG':'スターターセット伝説「ソルガレオGX ルナアーラGX」',
+    'SM4+':'ハイクラスパック「GXバトルブースト」',
+    'SM4S':'拡張パック「覚醒の勇者」','SM4A':'拡張パック「超次元の暴獣」',
+    'SM3+':'強化拡張パック「ひかる伝説」',
+    'SM3N':'拡張パック「光を喰らう闇」','SM3H':'拡張パック「闘う虹を見たか」',
+    'SM2a':'強化拡張パック「新たなる試練の向こう」',
+    'SMF':'スターターセット改造「カプ・ブルルGX」',
+    'SM2L':'拡張パック「アローラの月光」','SM2K':'拡張パック「キミを待つ島々」',
+    'SM1+':'強化拡張パック「サン＆ムーン」',
+    'SM1M':'ポケモンカードゲーム教室配布デッキ:SM1M',
+    'SM1S':'ポケモンカードゲーム教室配布デッキ:SM1S',
+    'SMA':'ポケモンカードゲーム教室配布デッキ:SMA',
+    'SMP1':'月刊コロコロコミック 2017年1月号付録「イワンコ全力デッキ」',
+    'SME':'スターターセット「草ジュナイパーGX～水アシレーヌGX」',
+    'SM1M-HK':'ポケモンカードゲーム教室配布デッキ (SM1M)',
+    'SM1S-HK':'ポケモンカードゲーム教室配布デッキ (SM1S)',
+    'SMA-HK':'ポケモンカードゲーム教室配布デッキ (SMA)',
+    'SM12a-M':'TAG TEAM GX タッグオールスターズ (ミラー仕様)',
+    'SM8b-M':'ハイクラスパック「GXウルトラシャイニー」(ミラー仕様)',
+    'SMB':'スターターセット「炎のブースターGX」',
+    'SMC':'スターターセット「水のシャワーズGX」',
+    'SMJ':'スターターセット「草ジュナイパーGX」',
+    'SMK':'スターターセット「炎ガオガエンGX」',
+    'SMN':'スターターセット「水アシレーヌGX」',
+    'M2':'拡張パック「キミを待つ島々」',
+    'M2a':'強化拡張パック「新たなる試練の向こう」',
+    'M3':'拡張パック「光を喰らう闇」','M4':'拡張パック「覚醒の勇者」',
+    'MA':'強化拡張パック「サン＆ムーン」',
+    'MBD':'デッキビルドBOX「ウルトラサン・ウルトラムーン」',
+    'MBG':'デッキビルドBOX「ウルトラサン・ウルトラムーン」',
+    'MC':'ハイクラスパック「GXバトルブースト」',
+    'MC-M':'ハイクラスパック「GXバトルブースト」(ミラー仕様)',
+    'MP1':'月刊コロコロコミック 2017年1月号付録「イワンコ全力デッキ」',
+    'SM-BE':'基本エネルギー:SM',
+    'SM0':'ピカチュウと新しい仲間たち',
+    'SM1p':'強化拡張パック「サン＆ムーン」',
+    'SM2p':'強化拡張パック「新たなる試練の向こう」',
+    'SM3p':'強化拡張パック「ひかる伝説」',
+    'SM4p':'ハイクラスパック「GXバトルブースト」',
+    'SM5p':'強化拡張パック「ウルトラフォース」',
+    'XY/018':'プレミアムトレーナーボックス サン&ムーン',
+    'XY/020':'プレミアムトレーナーボックス「ウルトラサン・ウルトラムーン」',
+    'XY/041':'デッキビルドBOX「ウルトラサン・ウルトラムーン」',
+  },
+  'ソード＆シールド':{
+    'S-P':'プロモーションカード「S-P」',
+    'S12a':'ハイクラスパック 「VSTARユニバース」',
+    'SEF':'スペシャルデッキセット「リザードンVSTAR vs レックウザVMAX」',
+    'S12':'拡張パック「パラダイムトリガー」',
+    'S11a':'強化拡張パック「白熱のアルカナ」','S-VS':'VSTARスペシャルセット',
+    'S11':'拡張パック「ロストアビス」',
+    'SGI':'VSTAR&VMAX ハイクラスデッキ「ゼラオラ」',
+    'S10b':'強化拡張パック「Pokemon GO」','S10a':'強化拡張パック「ダークファンタズマ」',
+    'S10D':'拡張パック「タイムゲイザー」','S10P':'拡張パック「スペースジャグラー」',
+    'S9a':'強化拡張パック「バトルリージョン」',
+    'SLL':'スターターセットVSTAR「ダークライ」','SLD':'スターターセットVSTAR「ルカリオ」',
+    'S9':'拡張パック「スターバース」','S-PB':'プレミアムトレーナーボックスVSTAR',
+    'SI':'スタートデッキ100 コロコロコミックver.',
+    'S8b':'ハイクラスパック「VMAXクライマックス」',
+    'S8a-G':'25th ANNIVERSARY GOLDEN BOX',
+    'S8a-P':'プロモカードパック 25th ANNIVERSARY edition',
+    'S8a':'拡張パック「25th ANNIVERSARY COLLECTION」',
+    'S8':'拡張パック「フュージョンアーツ」','SP4':'スペシャルカードセット「V-UNION」',
+    'S7R':'拡張パック「蒼空ストリーム」','S7D':'拡張パック「摩天パーフェクト」',
+    'SH':'ファミリーポケモンカードゲーム「バンギラスV」',
+    'SP3':'VMAXスペシャルセット「イーブイヒーローズ」',
+    'S6a':'強化拡張パック「イーブイヒーローズ」',
+    'SGG':'ハイクラスデッキ「ゲンガーVMAX」',
+    'SP2':'ジャンボパックセット「白銀のランス&漆黒のガイスト」',
+    'S6K':'拡張パック「漆黒のガイスト」','S6H':'拡張パック「白銀のランス」',
+    'S5a':'強化拡張パック「双璧のファイター」',
+    'S5R':'拡張パック「連撃マスター」','S5I':'拡張パック「一撃マスター」',
+    'SEK':'スターターセットVMAX「カメックス」',
+    'SC':'スターターセットVMAX「リザードン」',
+    'S4a':'ハイクラスパック「シャイニースターV」','SP1':'VMAXスペシャルセット',
+    'S4':'拡張パック「仰天のボルテッカー」',
+    'SD':'Vスタートデッキ「草フシギバナ～無色イーブイ」',
+    'S3a':'強化拡張パック「伝説の鼓動」','S3':'拡張パック「ムゲンゾーン」',
+    'S2a':'強化拡張パック「爆炎ウォーカー」',
+    'SCG':'スターターセットVMAX「オーロンゲ」','S2':'拡張パック「反逆クラッシュ」',
+    'S1a':'強化拡張パック「VMAXライジング」','S-ZB':'ザシアン+ザマゼンタBOX',
+    'S1H':'拡張パック「シールド」','S1W':'拡張パック「ソード」',
+    'SA':'スターターセットV「闘」',
+    'S12a-M':'VSTARユニバース (ミラー仕様)',
+    'S8b-M':'VMAXクライマックス (ミラー仕様)',
+    'SA-frM':'スターターセットV「炎」(ミラー)',
+    'SA-wM':'スターターセットV「水」(ミラー)',
+    'SA-gM':'スターターセットV「草」(ミラー)',
+    'SA-lM':'スターターセットV「雷」(ミラー)',
+    'SA-fgM':'スターターセットV「闘」(ミラー)',
+    'SI-M':'スタートデッキ100 (ミラー仕様)',
+    'SA-fg':'スターターセットV「闘」','SA-fr':'スターターセットV「炎」',
+    'SA-g':'スターターセットV「草」','SA-l':'スターターセットV「雷」',
+    'SA-w':'スターターセットV「水」',
+    'SB':'Vスタートデッキ','SF':'Vスタートデッキ',
+    'SH-da':'ファミリーポケモンカードゲーム「バンギラスV」',
+    'SH-fr':'ファミリーポケモンカードゲーム「エースバーンV」',
+    'SH-l':'ファミリーポケモンカードゲーム「ピカチュウV」',
+    'SJ':'Vスタートデッキ「水」','SK':'Vスタートデッキ「雷」',
+    'SN':'Vスタートデッキ「闘」','SO':'Vスタートデッキ「悪」',
+    'SP5':'スペシャルカードセット','SP6':'スペシャルカードセット',
+    'SPD':'ザシアン+ザマゼンタBOX','SPZ':'ザシアン+ザマゼンタBOX',
+    'S4a-M':'ハイクラスパック「シャイニースターV」(ミラー仕様)',
+    'S9a-M':'強化拡張パック「バトルリージョン」(ミラー仕様)',
+    'S10a-M':'強化拡張パック「ダークファンタズマ」(ミラー仕様)',
+    'S11a-M':'強化拡張パック「白熱のアルカナ」(ミラー仕様)',
+    'S-BE':'基本エネルギー:SS',
+    'S8a-M':'拡張パック「25th ANNIVERSARY COLLECTION」(ミラー仕様)',
+    'SA-fgK':'スターターセットV「闘」','SA-frK':'スターターセットV「炎」',
+    'SA-gK':'スターターセットV「草」','SA-lK':'スターターセットV「雷」',
+    'SA-wK':'スターターセットV「水」',
+    'SC-da':'スターターセットVMAX「オーロンゲ」',
+    'SC-fr':'スターターセットVMAX「リザードン」',
+    'SC2':'スターターセットVMAX「リザードン」対戦トリプルスターターver.',
+  },
+  'スカーレット＆バイオレット':{
+    'SV-P':'プロモーションカード「SV-P」',
+    'SV11B':'拡張パック「ブラックボルト」','SV11W':'拡張パック「ホワイトフレア」',
+    'SV10':'拡張パック「ロケット団の栄光」',
+    'SV9a':'強化拡張パック「熱風のアリーナ」',
+    'SVN':'スターターセットex「マリィのモルペコ&オーロンゲex」',
+    'SV9':'拡張パック「バトルパートナーズ」','SV-DB':'デッキビルドBOX バトルパートナーズ',
+    'SV8a':'ハイクラスパック「テラスタルフェスex」','SVG':'スタートデッキGenerations',
+    'SV8':'拡張パック「超電ブレイカー」','SV7a':'強化拡張パック「楽園ドラゴーナ」',
+    'SVK':'スターターセット テラスタイプ:ステラ「ニンフィアex」',
+    'SV7':'拡張パック「ステラミラクル」','SV6a':'強化拡張パック「ナイトワンダラー」',
+    'SVI':'バトルマスターデッキ テラスタル リザードンex','SV6':'拡張パック「変幻の仮面」',
+    'SV5a':'強化拡張パック「クリムゾンヘイズ」','SWH':'バトルアカデミー「ニャオハex」',
+    'SV5K':'拡張パック「ワイルドフォース」','SV5M':'拡張パック「サイバージャッジ」',
+    'SVF':'スターターデッキ&ビルドセット「古代のコライドンex」',
+    'SV4a':'ハイクラスパック「シャイニートレジャーex」',
+    'SVE':'スペシャルデッキセット「フシギバナ・リザードン・カメックス」',
+    'SV4K':'拡張パック「古代の咆哮」','SV4M':'拡張パック「未来の一閃」',
+    'CLV':'ポケモンカードゲーム Classic「フシギバナ」',
+    'CLC':'ポケモンカードゲーム Classic「リザードン」',
+    'CLB':'ポケモンカードゲーム Classic「カメックス」',
+    'SV3a':'強化拡張パック「レイジングサーフ」',
+    'SVD':'スターターセット テラスタル「ラウドボーンex」',
+    'SV3':'拡張パック「黒炎の支配者」','SV2a':'強化拡張パック「ポケモンカード151」',
+    'SVS':'exスペシャルセット','SV2D':'拡張パック「クレイバースト」',
+    'SV2P':'拡張パック「スノーハザード」',
+    'SVC':'スターターセットex「ピカチュウex&パーモット」',
+    'SV1a':'強化拡張パック「トリプレットビート」',
+    'SV1V':'拡張パック「バイオレットex」','SV1S':'拡張パック「スカーレットex」',
+    'SV-PB':'プレミアムトレーナーボックスex',
+    'SVA':'スターターセットex「クワッス＆ミミッキュex」',
+    'WCS23':'ポケモンワールドチャンピオンシップス2023横浜 記念デッキ「ピカチュウ」',
+    'CLF':'ポケモンカードゲーム Classic「フシギバナ」',
+    'CLK':'ポケモンカードゲーム Classic「リザードン」',
+    'CLL':'ポケモンカードゲーム Classic「カメックス」',
+    'SVOM':'スターターセット テラスタイプ:ステラ「ソウブレイズex」',
+    'SVLN':'スターターセット テラスタイプ:ステラ「ソウブレイズex」',
+    'SVLS':'スターターセット テラスタイプ:ステラ「ニンフィアex」',
+    'SV4a-M':'ハイクラスパック「シャイニートレジャーex」(ミラー仕様)',
+    'SV8a-Ma':'ハイクラスパック「テラスタルフェスex」(マスターボールミラー)',
+    'SV8a-Mo':'ハイクラスパック「テラスタルフェスex」(モンスターボールミラー)',
+    'SVB':'スターターセットex',
+    'SVEL':'スターターセットex「ニャオハ＆ルカリオex」',
+    'SVEM':'スターターセットex「ホゲータ＆デンリュウex」',
+    'SVI-fg':'スターターセット テラスタル「闘」',
+    'SVI-g':'スターターセット テラスタル「草」',
+    'SVI-l':'スターターセット テラスタル「雷」',
+    'SVI-w':'スターターセット テラスタル「水」',
+    'SVM':'exスタートデッキ','SVOD':'exスタートデッキ',
+    'SV-BE':'基本エネルギー:SV',
+    'SVP1':'exスペシャルセット',
+    'SV11B-Ma':'ブラックボルト (マスターボールミラー)',
+    'SV11B-Mo':'ブラックボルト (モンスターボールミラー)',
+    'SV11W-Ma':'ホワイトフレア (マスターボールミラー)',
+    'SV11W-Mo':'ホワイトフレア (モンスターボールミラー)',
+    'SV2a-Ma':'ポケモンカード151 (マスターボールミラー)',
+    'SV2a-Mo':'ポケモンカード151 (モンスターボールミラー)',
+    'SVAL':'スターターセットex「ニャオハ＆ルカリオex」',
+    'SVAM':'スターターセットex「ホゲータ＆デンリュウex」',
+    'SVAW':'スターターセットex「クワッス＆ミミッキュex」',
+    'SVHK':'バトルアカデミー「ニャオハex」',
+    'SVHM':'バトルアカデミー「ピカチュウex」',
+    'SVJL':'バトルアカデミー「ゲッコウガex」',
+    'SVJP':'バトルアカデミー「ルカリオex」',
+  },
+};
+function _migratePMCG(data){
+  // フラットマップ構築（series未設定カード用・先着優先）
+  const flat={};
+  Object.entries(_TITLE_MAP2).forEach(([series,map])=>{
+    Object.entries(map).forEach(([code,title])=>{
+      if(!flat[code])flat[code]={series,title};
+    });
+  });
+  let changed=0;
+  (data.cards||[]).forEach(c=>{
+    if(!c.setName)return;
+    // series設定済み → series別マップで正確に検索
+    if(c.series&&_TITLE_MAP2[c.series]){
+      const t=_TITLE_MAP2[c.series][c.setName];
+      if(t){c.setName=t;changed++;return;}
+    }
+    // series未設定 → フラットマップで検索
+    const m=flat[c.setName];
+    if(m){c.setName=m.title;if(!c.series)c.series=m.series;changed++;}
+  });
+  return changed;
+}
+
+// ── 未変換コード一覧ツール ────────────────────────────
+// コンソールで listCodes() を実行すると、まだコードのままの setName 一覧を表示
+window.listCodes=function(){
+  const isCode=s=>s&&!/[　-鿿豈-﫿＀-￯]/.test(s);
+  const map=new Map();
+  db.cards.forEach(c=>{
+    if(!isCode(c.setName))return;
+    const key=`${c.series||'(シリーズ未設定)'}\t${c.setName}`;
+    if(!map.has(key))map.set(key,0);
+    map.set(key,map.get(key)+1);
+  });
+  if(map.size===0){console.log('未変換コードなし！');return;}
+  const rows=[...map.entries()].sort(([a],[b])=>a.localeCompare(b,'ja'));
+  console.log(`未変換コード ${rows.length} 件（シリーズ \\t コード \\t 枚数）:`);
+  rows.forEach(([k,n])=>console.log(`${k}\t${n}枚`));
+  console.log('---\nコピーして対応表を作ったら貼ってください');
+};
+console.log('ヒント: listCodes() を実行するとコードのままの収録タイトル一覧が出ます');
+
+
+// ── GITHUB GIST SYNC ──────────────────────────────────
+const GIST_FILE = 'pokecards_data.json';
+
+function _loadConfig() {
+  try { return JSON.parse(localStorage.getItem('pokecards_config') || '{}'); } catch(e) { return {}; }
+}
+function _saveConfig(cfg) {
+  localStorage.setItem('pokecards_config', JSON.stringify(cfg));
+}
+
+async function _gistGet() {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken || !cfg.gistId) return null;
+  try {
+    const r = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
+      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const content = j.files?.[GIST_FILE]?.content;
+    return content ? JSON.parse(content) : null;
+  } catch(e) { return null; }
+}
+
+async function _gistPut(data) {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken || !cfg.gistId) return false;
+  try {
+    const r = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(data) } } })
+    });
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+async function _gistCreate() {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken) return null;
+  try {
+    const r = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'PokéCard//SYS data', public: false, files: { [GIST_FILE]: { content: JSON.stringify(db) } } })
+    });
+    if (!r.ok) return null;
+    return (await r.json()).id;
+  } catch(e) { return null; }
+}
+
+// 同期ステータスバッジ更新
+function _setSyncStatus(state, msg) {
+  const el = document.getElementById('cfg-status');
+  if (!el) return;
+  el.className = 'cfg-status' + (state ? ' ' + state : '');
+  if (state === 'syncing') el.textContent = '🔄 同期中';
+  else if (state === 'synced') el.textContent = '✅ ' + (msg || '同期済');
+  else if (state === 'error') el.textContent = '❌ ' + (msg || 'エラー');
+  else el.textContent = '―';
+}
+
+// Gist デバウンス保存（8秒）
+let _gistTimer = null;
+function _scheduleGistSave() {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken || !cfg.gistId) return;
+  clearTimeout(_gistTimer);
+  _gistTimer = setTimeout(async () => {
+    _gistTimer = null;
+    _setSyncStatus('syncing');
+    const ok = await _gistPut(db);
+    if (ok) {
+      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+      _setSyncStatus('synced', t);
+    } else {
+      _setSyncStatus('error', '保存失敗');
+    }
+  }, 8000);
+}
+
+// ── SETTINGS MODAL ────────────────────────────────────
+document.getElementById('btn-cfg').addEventListener('click', () => {
+  const cfg = _loadConfig();
+  document.getElementById('cfg-token').value = cfg.gistToken || '';
+  document.getElementById('cfg-gist-id').value = cfg.gistId || '';
+  document.getElementById('cfg-test-msg').style.display = 'none';
+  document.getElementById('cfg-ov').classList.add('open');
+});
+document.getElementById('cfg-cls').addEventListener('click', () =>
+  document.getElementById('cfg-ov').classList.remove('open'));
+
+document.getElementById('cfg-save').addEventListener('click', async () => {
+  const token = document.getElementById('cfg-token').value.trim();
+  const gistId = document.getElementById('cfg-gist-id').value.trim();
+  _saveConfig({ gistToken: token, gistId });
+  document.getElementById('cfg-ov').classList.remove('open');
+  if (token && gistId) {
+    _setSyncStatus('syncing', '同期中...');
+    try {
+      const gistData = await _gistGet();
+      const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
+      const gistTime = gistData?.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
+      if (gistData && Array.isArray(gistData.cards) && gistData.cards.length > 0 && gistTime >= localTime) {
+        // Gistの方が新しい or 同じ → ダウンロード
+        db = gistData;
+        _idbPut(db);
+        renderAll();
+      } else if (db.cards && db.cards.length > 0) {
+        // ローカルの方が新しい or Gistが空 → アップロード
+        db.lastUpdated = new Date().toISOString();
+        await _gistPut(db);
+        _idbPut(db);
+      }
+      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+      _setSyncStatus('synced', t);
+    } catch(e) {
+      _setSyncStatus('error', 'エラー');
+    }
+  } else {
+    _setSyncStatus('', '');
+  }
+});
+
+document.getElementById('cfg-create-gist').addEventListener('click', async () => {
+  const token = document.getElementById('cfg-token').value.trim();
+  if (!token) { alert('先にGitHub Personal Access Tokenを入力してください'); return; }
+  const tempCfg = _loadConfig();
+  _saveConfig({ ...tempCfg, gistToken: token });
+  const msgEl = document.getElementById('cfg-test-msg');
+  msgEl.style.display = 'block';
+  msgEl.className = 'cfg-test-msg';
+  msgEl.textContent = '新規Gistを作成中...';
+  const id = await _gistCreate();
+  if (id) {
+    document.getElementById('cfg-gist-id').value = id;
+    msgEl.className = 'cfg-test-msg ok';
+    msgEl.textContent = `✓ 作成完了: ${id}`;
+  } else {
+    msgEl.className = 'cfg-test-msg err';
+    msgEl.textContent = '✗ 作成失敗: TokenにGistスコープが必要です';
+  }
+});
+
+document.getElementById('cfg-test').addEventListener('click', async () => {
+  const token = document.getElementById('cfg-token').value.trim();
+  const gistId = document.getElementById('cfg-gist-id').value.trim();
+  const msgEl = document.getElementById('cfg-test-msg');
+  msgEl.style.display = 'block';
+  msgEl.className = 'cfg-test-msg';
+  msgEl.textContent = '接続テスト中...';
+  if (!token || !gistId) {
+    msgEl.className = 'cfg-test-msg err';
+    msgEl.textContent = '✗ TokenとGist IDの両方を入力してください';
+    return;
+  }
+  try {
+    const r = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' }
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const hasFile = !!j.files?.[GIST_FILE];
+      msgEl.className = 'cfg-test-msg ok';
+      msgEl.textContent = hasFile
+        ? `✓ 接続成功: Gist「${j.description||gistId}」(データあり)`
+        : `✓ 接続成功: Gist「${j.description||gistId}」(データなし・初回保存時に作成)`;
+    } else {
+      msgEl.className = 'cfg-test-msg err';
+      msgEl.textContent = `✗ 失敗 (HTTP ${r.status}): Tokenまたは Gist IDを確認してください`;
+    }
+  } catch(e) {
+    msgEl.className = 'cfg-test-msg err';
+    msgEl.textContent = '✗ ネットワークエラー: ' + e.message;
+  }
+});
+
+// ── INIT ──────────────────────────────────────────────
+db={cards:[],version:1};renderAll();
+_idbReady.then(()=>loadDbAsync()).then(async d=>{
+  db=d;
+  // Gistからデータを取得し、lastUpdatedが新しい方を採用
+  const cfg = _loadConfig();
+  if (cfg.gistToken && cfg.gistId) {
+    _setSyncStatus('syncing');
+    try {
+      const gistData = await _gistGet();
+      if (gistData && Array.isArray(gistData.cards)) {
+        const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
+        const gistTime = gistData.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
+        if (gistTime > localTime) {
+          db = gistData;
+          _idbPut(db);
+          console.log('Gist data adopted (newer)');
+        }
+      }
+      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+      _setSyncStatus('synced', t);
+    } catch(e) {
+      _setSyncStatus('error', '読込失敗');
+    }
+  } else {
+    _setSyncStatus('', '');
+  }
+  const migrated=_migratePMCG(db);
+  if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
+  fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+  renderAll();
+});
+</script>
+<script>
+// ── PWA Manifest（動的生成） ──────────────────────────
+(()=>{
+  const manifest = {
+    name: 'PokéCard//SYS',
+    short_name: 'PokéCard',
+    start_url: './',
+    display: 'standalone',
+    background_color: '#0a0a1f',
+    theme_color: '#0a0a1f',
+    icons: [{ src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🃏</text></svg>', sizes: '192x192', type: 'image/svg+xml' }]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+  document.getElementById('pwa-manifest').href = URL.createObjectURL(blob);
+})();
+
+// ── Service Worker 登録（HTTPS または localhost のみ） ──
+if('serviceWorker' in navigator && location.protocol !== 'file:'){
+  navigator.serviceWorker.register(URL.createObjectURL(new Blob([`
+    const CACHE='pokecards-v1';
+    self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.add('/'))));
+    self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));
+  `],{type:'application/javascript'}))).catch(()=>{});
+}
+</script>
+</body>
+</html>
