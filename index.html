@@ -302,7 +302,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   #fp{ padding:6px 8px; }
   .frow{ flex-wrap:wrap; gap:4px; }
   .csel{ font-size:11px; padding:4px 6px; }
-  .srch{ font-size:12px; }
+  .srch{ font-size:12px; width:100%; box-sizing:border-box; }
   .tbtn, .tbtn2{ padding:5px 8px; font-size:11px; }
 
   .rc{ font-size:9px; padding:3px 8px; }
@@ -1360,9 +1360,14 @@ document.getElementById('sel-title').addEventListener('change',e=>{
 document.getElementById('sel-sort').addEventListener('change',e=>{
   fs.sort=e.target.value;renderCards();
 });
-document.getElementById('srch').addEventListener('input',e=>{
-  fs.search=e.target.value.trim();renderCards();
-});
+// 日本語IME対応（compositionend で確定後に検索実行）
+{
+  const srchEl=document.getElementById('srch');
+  let _ime=false;
+  srchEl.addEventListener('compositionstart',()=>{_ime=true;});
+  srchEl.addEventListener('compositionend',e=>{_ime=false;fs.search=e.target.value.trim();renderCards();});
+  srchEl.addEventListener('input',e=>{if(!_ime){fs.search=e.target.value.trim();renderCards();}});
+}
 document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');fs.ownership=b.dataset.ow;renderCards();
