@@ -412,17 +412,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 <div class="ov" id="cfg-ov">
   <div class="mbox">
     <button class="mcls" id="cfg-cls">✕</button>
-    <div class="mtit">⚙ 設定 — GitHub Gist 同期</div>
+    <div class="mtit">⚙ 設定 — GitHub 同期</div>
     <div class="ff">
-      <label class="flb">GitHub Personal Access Token（gist スコープ）</label>
+      <label class="flb">GitHub Personal Access Token（public_repo スコープ）</label>
       <input class="fi" id="cfg-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-    </div>
-    <div class="ff">
-      <label class="flb">Gist ID（空欄のまま「新規作成」で自動生成）</label>
-      <div class="cfg-row">
-        <input class="fi" id="cfg-gist-id" placeholder="既存のGist IDを貼り付け" style="flex:1">
-        <button class="hbtn" id="cfg-create-gist" style="border-color:rgba(0,245,255,.35);color:var(--cyan);white-space:nowrap">新規作成</button>
-      </div>
     </div>
     <div id="cfg-test-msg" class="cfg-test-msg" style="display:none"></div>
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -3204,100 +3197,51 @@ function _saveConfig(cfg) {
   localStorage.setItem('pokecards_config', JSON.stringify(cfg));
 }
 
-// ユーザーデータのみ抽出（owned/want/tags/price/hidden が非デフォルトのカードのみ）
-function _extractUserData() {
-  const ud = {};
-  (db.cards || []).forEach(c => {
-    const owned = c.owned || 0;
-    const want = c.want || false;
-    const tags = c.tags && c.tags.length > 0 ? c.tags : null;
-    const price = c.price || 0;
-    const hidden = c.hidden || false;
-    if (owned || want || tags || price || hidden) {
-      ud[c.id] = {};
-      if (owned) ud[c.id].owned = owned;
-      if (want) ud[c.id].want = true;
-      if (tags) ud[c.id].tags = tags;
-      if (price) ud[c.id].price = price;
-      if (hidden) ud[c.id].hidden = true;
-    }
-  });
-  return ud;
-}
-
-// Gistから取得したユーザーデータをdbに適用
-function _applyUserData(ud) {
-  if (!ud || typeof ud !== 'object') return 0;
-  const map = {};
-  (db.cards || []).forEach(c => { map[c.id] = c; });
-  let changed = 0;
-  Object.entries(ud).forEach(([id, u]) => {
-    const c = map[id];
-    if (!c) return;
-    if (u.owned !== undefined && c.owned !== u.owned) { c.owned = u.owned; changed++; }
-    if (u.want !== undefined && c.want !== u.want) { c.want = u.want; changed++; }
-    if (u.tags !== undefined) { c.tags = u.tags; changed++; }
-    if (u.price !== undefined && c.price !== u.price) { c.price = u.price; changed++; }
-    if (u.hidden !== undefined && c.hidden !== u.hidden) { c.hidden = u.hidden; changed++; }
-  });
-  return changed;
-}
-
-async function _gistGet() {
+// GitHubリポジトリ情報を自動検出
+function _detectRepo() {
+  if (location.hostname.endsWith('.github.io')) {
+    const owner = location.hostname.replace('.github.io', '');
+    const repo = location.pathname.split('/').filter(Boolean)[0] || '';
+    return { owner, repo };
+  }
   const cfg = _loadConfig();
-  if (!cfg.gistToken || !cfg.gistId) return null;
+  return { owner: cfg.repoOwner || '', repo: cfg.repoName || '' };
+}
+
+// GitHub raw URLからデータ取得（認証不要・CORS不問）
+async function _repoGet() {
   try {
-    const r = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
+    const { owner, repo } = _detectRepo();
+    if (!owner || !repo) return null;
+    const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?t=${Date.now()}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+// GitHubリポジトリにデータをコミット（public_repoスコープ必要）
+async function _repoPut(data) {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken) return false;
+  const { owner, repo } = _detectRepo();
+  if (!owner || !repo) return false;
+  try {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data.json`;
+    let sha = null;
+    const getR = await fetch(apiUrl, {
       headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' }
     });
-    if (!r.ok) return null;
-    const j = await r.json();
-    const file = j.files?.[GIST_FILE];
-    if (!file) return null;
-    let content;
-    if (file.truncated) {
-      // 認証ヘッダーなしでraw_urlを取得（CORSプリフライト回避）
-      const rawR = await fetch(file.raw_url);
-      if (!rawR.ok) return null;
-      content = await rawR.text();
-    } else {
-      content = file.content;
-    }
-    return content ? JSON.parse(content) : null;
-  } catch(e) { return null; }
-}
-
-async function _gistPut(data) {
-  const cfg = _loadConfig();
-  if (!cfg.gistToken || !cfg.gistId) return false;
-  try {
-    // ユーザーデータのみを保存（サイズ削減）
-    const payload = {
-      version: 2,
-      lastUpdated: data.lastUpdated || new Date().toISOString(),
-      userData: _extractUserData()
-    };
-    const r = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
-      method: 'PATCH',
+    if (getR.ok) sha = (await getR.json()).sha;
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    const body = { message: 'pokecards sync', content };
+    if (sha) body.sha = sha;
+    const putR = await fetch(apiUrl, {
+      method: 'PUT',
       headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload) } } })
+      body: JSON.stringify(body)
     });
-    return r.ok;
+    return putR.ok;
   } catch(e) { return false; }
-}
-
-async function _gistCreate() {
-  const cfg = _loadConfig();
-  if (!cfg.gistToken) return null;
-  try {
-    const r = await fetch('https://api.github.com/gists', {
-      method: 'POST',
-      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: 'PokéCard//SYS data', public: false, files: { [GIST_FILE]: { content: JSON.stringify(db) } } })
-    });
-    if (!r.ok) return null;
-    return (await r.json()).id;
-  } catch(e) { return null; }
 }
 
 // 同期ステータスバッジ更新
@@ -3311,37 +3255,25 @@ function _setSyncStatus(state, msg) {
   else el.textContent = '―';
 }
 
-// Gist デバウンス保存（8秒）
-let _gistTimer = null;
+// デバウンス保存（自動同期なし・手動のみ）
+let _syncTimer = null;
 function _scheduleGistSave() {
-  const cfg = _loadConfig();
-  if (!cfg.gistToken || !cfg.gistId) return;
-  clearTimeout(_gistTimer);
-  _gistTimer = setTimeout(async () => {
-    _gistTimer = null;
-    _setSyncStatus('syncing');
-    const ok = await _gistPut(db);
-    if (ok) {
-      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-      _setSyncStatus('synced', t);
-    } else {
-      _setSyncStatus('error', '保存失敗');
-    }
-  }, 8000);
+  // 自動同期は重いため、手動↑同期ボタンのみ使用
 }
 
 // ── SYNC BUTTON ───────────────────────────────────────
 document.getElementById('btn-sync').addEventListener('click', async () => {
   const cfg = _loadConfig();
-  if (!cfg.gistToken || !cfg.gistId) { alert('先に⚙設定でGistを設定してください'); return; }
+  if (!cfg.gistToken) { alert('先に⚙設定でTokenを設定してください'); return; }
+  const { owner, repo } = _detectRepo();
+  if (!owner || !repo) { alert('GitHubリポジトリを検出できません。GitHub Pagesで開いてください。'); return; }
   _setSyncStatus('syncing', '同期中...');
   try {
     db.lastUpdated = new Date().toISOString();
-    const ok = await _gistPut(db);
+    const ok = await _repoPut(db);
     _idbPut(db);
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー');
-    if (ok) console.log('手動同期完了');
+    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー(public_repoスコープ確認)');
   } catch(e) {
     _setSyncStatus('error', 'エラー');
   }
@@ -3351,7 +3283,6 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
 document.getElementById('btn-cfg').addEventListener('click', () => {
   const cfg = _loadConfig();
   document.getElementById('cfg-token').value = cfg.gistToken || '';
-  document.getElementById('cfg-gist-id').value = cfg.gistId || '';
   document.getElementById('cfg-test-msg').style.display = 'none';
   document.getElementById('cfg-ov').classList.add('open');
 });
@@ -3360,79 +3291,30 @@ document.getElementById('cfg-cls').addEventListener('click', () =>
 
 document.getElementById('cfg-save').addEventListener('click', async () => {
   const token = document.getElementById('cfg-token').value.trim();
-  const gistId = document.getElementById('cfg-gist-id').value.trim();
-  _saveConfig({ gistToken: token, gistId });
+  _saveConfig({ gistToken: token });
   document.getElementById('cfg-ov').classList.remove('open');
-  if (token && gistId) {
-    _setSyncStatus('syncing', '同期中...');
-    try {
-      const gistData = await _gistGet();
-      if (gistData && gistData.version === 2 && gistData.userData) {
-        // Gistにユーザーデータあり → 適用
-        const changed = _applyUserData(gistData.userData);
-        if (changed > 0) { db.lastUpdated = gistData.lastUpdated; _idbPut(db); renderAll(); }
-      } else if (db.cards && db.cards.length > 0) {
-        // Gistが空またはv1 → 今のデータをアップロード
-        db.lastUpdated = new Date().toISOString();
-        await _gistPut(db);
-        _idbPut(db);
-      }
-      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-      _setSyncStatus('synced', t);
-    } catch(e) {
-      _setSyncStatus('error', 'エラー');
-    }
-  } else {
-    _setSyncStatus('', '');
-  }
-});
-
-document.getElementById('cfg-create-gist').addEventListener('click', async () => {
-  const token = document.getElementById('cfg-token').value.trim();
-  if (!token) { alert('先にGitHub Personal Access Tokenを入力してください'); return; }
-  const tempCfg = _loadConfig();
-  _saveConfig({ ...tempCfg, gistToken: token });
-  const msgEl = document.getElementById('cfg-test-msg');
-  msgEl.style.display = 'block';
-  msgEl.className = 'cfg-test-msg';
-  msgEl.textContent = '新規Gistを作成中...';
-  const id = await _gistCreate();
-  if (id) {
-    document.getElementById('cfg-gist-id').value = id;
-    msgEl.className = 'cfg-test-msg ok';
-    msgEl.textContent = `✓ 作成完了: ${id}`;
-  } else {
-    msgEl.className = 'cfg-test-msg err';
-    msgEl.textContent = '✗ 作成失敗: TokenにGistスコープが必要です';
-  }
+  _setSyncStatus(token ? 'synced' : '', token ? '設定済' : '');
 });
 
 document.getElementById('cfg-test').addEventListener('click', async () => {
   const token = document.getElementById('cfg-token').value.trim();
-  const gistId = document.getElementById('cfg-gist-id').value.trim();
   const msgEl = document.getElementById('cfg-test-msg');
   msgEl.style.display = 'block';
   msgEl.className = 'cfg-test-msg';
   msgEl.textContent = '接続テスト中...';
-  if (!token || !gistId) {
-    msgEl.className = 'cfg-test-msg err';
-    msgEl.textContent = '✗ TokenとGist IDの両方を入力してください';
-    return;
-  }
+  if (!token) { msgEl.className = 'cfg-test-msg err'; msgEl.textContent = '✗ Tokenを入力してください'; return; }
   try {
-    const r = await fetch(`https://api.github.com/gists/${gistId}`, {
+    const r = await fetch('https://api.github.com/user', {
       headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' }
     });
     if (r.ok) {
       const j = await r.json();
-      const hasFile = !!j.files?.[GIST_FILE];
+      const { owner, repo } = _detectRepo();
       msgEl.className = 'cfg-test-msg ok';
-      msgEl.textContent = hasFile
-        ? `✓ 接続成功: Gist「${j.description||gistId}」(データあり)`
-        : `✓ 接続成功: Gist「${j.description||gistId}」(データなし・初回保存時に作成)`;
+      msgEl.textContent = `✓ 認証成功: @${j.login} / リポジトリ: ${owner}/${repo}`;
     } else {
       msgEl.className = 'cfg-test-msg err';
-      msgEl.textContent = `✗ 失敗 (HTTP ${r.status}): Tokenまたは Gist IDを確認してください`;
+      msgEl.textContent = `✗ 失敗 (HTTP ${r.status}): Tokenを確認してください`;
     }
   } catch(e) {
     msgEl.className = 'cfg-test-msg err';
@@ -3444,22 +3326,20 @@ document.getElementById('cfg-test').addEventListener('click', async () => {
 db={cards:[],version:1};renderAll();
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
-  // Gistからユーザーデータを取得して適用
+  // GitHubリポジトリからデータを取得して適用
   const cfg = _loadConfig();
-  if (cfg.gistToken && cfg.gistId) {
+  const { owner, repo } = _detectRepo();
+  if (cfg.gistToken && owner && repo) {
     _setSyncStatus('syncing');
     try {
-      const gistData = await _gistGet();
-      if (gistData && gistData.version === 2 && gistData.userData) {
+      const repoData = await _repoGet();
+      if (repoData && Array.isArray(repoData.cards)) {
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
-        const gistTime = gistData.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
-        if (gistTime > localTime) {
-          const changed = _applyUserData(gistData.userData);
-          if (changed > 0) {
-            db.lastUpdated = gistData.lastUpdated;
-            _idbPut(db);
-            console.log('Gist userData applied:', changed, '件');
-          }
+        const repoTime = repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
+        if (repoTime > localTime || (db.cards.length === 0 && repoData.cards.length > 0)) {
+          db = repoData;
+          _idbPut(db);
+          console.log('GitHub repo data adopted:', repoData.cards.length, '件');
         }
       }
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
