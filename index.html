@@ -3213,7 +3213,19 @@ async function _gistGet() {
     });
     if (!r.ok) return null;
     const j = await r.json();
-    const content = j.files?.[GIST_FILE]?.content;
+    const file = j.files?.[GIST_FILE];
+    if (!file) return null;
+    let content;
+    if (file.truncated) {
+      // 1MB超の場合はraw_urlから完全なデータを取得
+      const rawR = await fetch(file.raw_url, {
+        headers: { Authorization: `token ${cfg.gistToken}` }
+      });
+      if (!rawR.ok) return null;
+      content = await rawR.text();
+    } else {
+      content = file.content;
+    }
     return content ? JSON.parse(content) : null;
   } catch(e) { return null; }
 }
