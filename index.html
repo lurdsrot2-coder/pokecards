@@ -353,6 +353,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <button class="hbtn" id="btn-export" style="border-color:rgba(255,230,0,.35);color:var(--gold)">💾 バックアップ</button>
   <label class="hbtn" id="btn-import-bk" style="border-color:rgba(255,230,0,.35);color:var(--gold);cursor:pointer">📂 復元<input type="file" id="import-bk-file" accept=".json" style="display:none"></label>
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
+  <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -3273,6 +3274,23 @@ function _scheduleGistSave() {
     }
   }, 8000);
 }
+
+// ── SYNC BUTTON ───────────────────────────────────────
+document.getElementById('btn-sync').addEventListener('click', async () => {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken || !cfg.gistId) { alert('先に⚙設定でGistを設定してください'); return; }
+  _setSyncStatus('syncing', '同期中...');
+  try {
+    db.lastUpdated = new Date().toISOString();
+    const ok = await _gistPut(db);
+    _idbPut(db);
+    const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー');
+    if (ok) console.log('手動同期完了');
+  } catch(e) {
+    _setSyncStatus('error', 'エラー');
+  }
+});
 
 // ── SETTINGS MODAL ────────────────────────────────────
 document.getElementById('btn-cfg').addEventListener('click', () => {
