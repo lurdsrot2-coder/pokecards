@@ -3401,10 +3401,12 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
       if (gistData && Array.isArray(gistData.cards)) {
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
         const gistTime = gistData.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
-        if (gistTime > localTime) {
+        const gistNewer = gistTime > localTime;
+        const localEmpty = db.cards.length === 0 && gistData.cards.length > 0;
+        if (gistNewer || localEmpty) {
           db = gistData;
           _idbPut(db);
-          console.log('Gist data adopted (newer)');
+          console.log('Gist data adopted');
         }
       }
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
