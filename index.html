@@ -3204,6 +3204,45 @@ function _saveConfig(cfg) {
   localStorage.setItem('pokecards_config', JSON.stringify(cfg));
 }
 
+// ユーザーデータのみ抽出（owned/want/tags/price/hidden が非デフォルトのカードのみ）
+function _extractUserData() {
+  const ud = {};
+  (db.cards || []).forEach(c => {
+    const owned = c.owned || 0;
+    const want = c.want || false;
+    const tags = c.tags && c.tags.length > 0 ? c.tags : null;
+    const price = c.price || 0;
+    const hidden = c.hidden || false;
+    if (owned || want || tags || price || hidden) {
+      ud[c.id] = {};
+      if (owned) ud[c.id].owned = owned;
+      if (want) ud[c.id].want = true;
+      if (tags) ud[c.id].tags = tags;
+      if (price) ud[c.id].price = price;
+      if (hidden) ud[c.id].hidden = true;
+    }
+  });
+  return ud;
+}
+
+// Gistから取得したユーザーデータをdbに適用
+function _applyUserData(ud) {
+  if (!ud || typeof ud !== 'object') return 0;
+  const map = {};
+  (db.cards || []).forEach(c => { map[c.id] = c; });
+  let changed = 0;
+  Object.entries(ud).forEach(([id, u]) => {
+    const c = map[id];
+    if (!c) return;
+    if (u.owned !== undefined && c.owned !== u.owned) { c.owned = u.owned; changed++; }
+    if (u.want !== undefined && c.want !== u.want) { c.want = u.want; changed++; }
+    if (u.tags !== undefined) { c.tags = u.tags; changed++; }
+    if (u.price !== undefined && c.price !== u.price) { c.price = u.price; changed++; }
+    if (u.hidden !== undefined && c.hidden !== u.hidden) { c.hidden = u.hidden; changed++; }
+  });
+  return changed;
+}
+
 async function _gistGet() {
   const cfg = _loadConfig();
   if (!cfg.gistToken || !cfg.gistId) return null;
@@ -3217,10 +3256,8 @@ async function _gistGet() {
     if (!file) return null;
     let content;
     if (file.truncated) {
-      // 1MB超の場合はraw_urlから完全なデータを取得
-      const rawR = await fetch(file.raw_url, {
-        headers: { Authorization: `token ${cfg.gistToken}` }
-      });
+      // 認証ヘッダーなしでraw_urlを取得（CORSプリフライト回避）
+      const rawR = await fetch(file.raw_url);
       if (!rawR.ok) return null;
       content = await rawR.text();
     } else {
@@ -3234,10 +3271,16 @@ async function _gistPut(data) {
   const cfg = _loadConfig();
   if (!cfg.gistToken || !cfg.gistId) return false;
   try {
+    // ユーザーデータのみを保存（サイズ削減）
+    const payload = {
+      version: 2,
+      lastUpdated: data.lastUpdated || new Date().toISOString(),
+      userData: _extractUserData()
+    };
     const r = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
       method: 'PATCH',
       headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(data) } } })
+      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload) } } })
     });
     return r.ok;
   } catch(e) { return false; }
@@ -3324,15 +3367,12 @@ document.getElementById('cfg-save').addEventListener('click', async () => {
     _setSyncStatus('syncing', '同期中...');
     try {
       const gistData = await _gistGet();
-      const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
-      const gistTime = gistData?.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
-      if (gistData && Array.isArray(gistData.cards) && gistData.cards.length > 0 && gistTime >= localTime) {
-        // Gistの方が新しい or 同じ → ダウンロード
-        db = gistData;
-        _idbPut(db);
-        renderAll();
+      if (gistData && gistData.version === 2 && gistData.userData) {
+        // Gistにユーザーデータあり → 適用
+        const changed = _applyUserData(gistData.userData);
+        if (changed > 0) { db.lastUpdated = gistData.lastUpdated; _idbPut(db); renderAll(); }
       } else if (db.cards && db.cards.length > 0) {
-        // ローカルの方が新しい or Gistが空 → アップロード
+        // Gistが空またはv1 → 今のデータをアップロード
         db.lastUpdated = new Date().toISOString();
         await _gistPut(db);
         _idbPut(db);
@@ -3404,21 +3444,22 @@ document.getElementById('cfg-test').addEventListener('click', async () => {
 db={cards:[],version:1};renderAll();
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
-  // Gistからデータを取得し、lastUpdatedが新しい方を採用
+  // Gistからユーザーデータを取得して適用
   const cfg = _loadConfig();
   if (cfg.gistToken && cfg.gistId) {
     _setSyncStatus('syncing');
     try {
       const gistData = await _gistGet();
-      if (gistData && Array.isArray(gistData.cards)) {
+      if (gistData && gistData.version === 2 && gistData.userData) {
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
         const gistTime = gistData.lastUpdated ? new Date(gistData.lastUpdated).getTime() : 0;
-        const gistNewer = gistTime > localTime;
-        const localEmpty = db.cards.length === 0 && gistData.cards.length > 0;
-        if (gistNewer || localEmpty) {
-          db = gistData;
-          _idbPut(db);
-          console.log('Gist data adopted');
+        if (gistTime > localTime) {
+          const changed = _applyUserData(gistData.userData);
+          if (changed > 0) {
+            db.lastUpdated = gistData.lastUpdated;
+            _idbPut(db);
+            console.log('Gist userData applied:', changed, '件');
+          }
         }
       }
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
