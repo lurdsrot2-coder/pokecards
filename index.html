@@ -354,6 +354,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <label class="hbtn" id="btn-import-bk" style="border-color:rgba(255,230,0,.35);color:var(--gold);cursor:pointer">📂 復元<input type="file" id="import-bk-file" accept=".json" style="display:none"></label>
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
   <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
+  <button class="hbtn" id="btn-pull" style="border-color:rgba(0,229,149,.35);color:#00e595">↓ 取得</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -3216,22 +3217,39 @@ function _detectRepo() {
   return { owner: '', repo: '' };
 }
 
-// GitHub からデータ取得（raw URL・キャッシュ無効）
+// GitHub からデータ取得（API経由でCDNキャッシュを完全に回避）
 async function _repoGet() {
+  const { owner, repo } = _detectRepo();
+  if (!owner || !repo) return null;
+  const cfg = _loadConfig();
+  const hdrs = { Accept: 'application/vnd.github+json' };
+  if (cfg.gistToken) hdrs.Authorization = `token ${cfg.gistToken}`;
+
   try {
-    const { owner, repo } = _detectRepo();
-    if (!owner || !repo) return null;
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/data.json`;
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) return null;
-    return await r.json();
+    // Contents API でファイルのSHAを取得（CDNではなくGitHub APIサーバー直）
+    const metaR = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/data.json`,
+      { headers: hdrs, cache: 'no-store' }
+    );
+    if (!metaR.ok) throw new Error('meta:' + metaR.status);
+    const { sha } = await metaR.json();
+
+    // Blobs APIでrawコンテンツを取得（SHA固有URLはCDN汚染なし）
+    const blobR = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
+      { headers: { ...hdrs, Accept: 'application/vnd.github.raw' }, cache: 'no-store' }
+    );
+    if (!blobR.ok) throw new Error('blob:' + blobR.status);
+    return await blobR.json();
   } catch(e) {
-    // cache:no-storeがCORSで弾かれた場合はタイムスタンプパラメータで再試行
+    console.warn('_repoGet API失敗:', e.message, '→ rawフォールバック');
     try {
-      const { owner, repo } = _detectRepo();
-      const r2 = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?_=${Date.now()}`);
-      if (!r2.ok) return null;
-      return await r2.json();
+      const r = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?_=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+      if (!r.ok) return null;
+      return await r.json();
     } catch(e2) { return null; }
   }
 }
@@ -3277,6 +3295,30 @@ let _syncTimer = null;
 function _scheduleGistSave() {
   // 自動同期は重いため、手動↑同期ボタンのみ使用
 }
+
+// ── PULL BUTTON（↓ 取得：GitHubから強制取得） ────────
+document.getElementById('btn-pull').addEventListener('click', async () => {
+  const cfg = _loadConfig();
+  if (!cfg.gistToken) { alert('先に⚙設定でTokenを設定してください'); return; }
+  const { owner, repo } = _detectRepo();
+  if (!owner || !repo) { alert('GitHubリポジトリを検出できません'); return; }
+  _setSyncStatus('syncing', '取得中...');
+  try {
+    const repoData = await _repoGet();
+    if (repoData && Array.isArray(repoData.cards)) {
+      db = repoData;
+      _idbPut(db);
+      renderAll();
+      const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+      _setSyncStatus('synced', '取得済 ' + t);
+      console.log('↓取得完了:', repoData.cards.length, '件 lastUpdated:', repoData.lastUpdated);
+    } else {
+      _setSyncStatus('error', '取得失敗');
+    }
+  } catch(e) {
+    _setSyncStatus('error', 'エラー');
+  }
+});
 
 // ── SYNC BUTTON ───────────────────────────────────────
 document.getElementById('btn-sync').addEventListener('click', async () => {
