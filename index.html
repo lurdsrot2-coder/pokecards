@@ -3222,32 +3222,34 @@ function _detectRepo() {
   return { owner: '', repo: '' };
 }
 
-// GitHub からデータ取得（API経由でCDNキャッシュを完全に回避）
+// GitHub からデータ取得（コミットSHA経由でCDNキャッシュを完全に回避）
 async function _repoGet() {
   const { owner, repo } = _detectRepo();
   if (!owner || !repo) return null;
   const cfg = _loadConfig();
-  const hdrs = { Accept: 'application/vnd.github+json' };
+  const hdrs = {};
   if (cfg.gistToken) hdrs.Authorization = `token ${cfg.gistToken}`;
 
   try {
-    // Contents API でファイルのSHAを取得（CDNではなくGitHub APIサーバー直）
-    const metaR = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/data.json`,
+    // mainの最新コミットSHAをAPI経由で取得（CDNなし・常に最新）
+    const refR = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/main`,
       { headers: hdrs, cache: 'no-store' }
     );
-    if (!metaR.ok) throw new Error('meta:' + metaR.status);
-    const { sha } = await metaR.json();
+    if (!refR.ok) throw new Error('ref:' + refR.status);
+    const refData = await refR.json();
+    const commitSha = refData.object.sha;
 
-    // Blobs APIでrawコンテンツを取得（SHA固有URLはCDN汚染なし）
-    const blobR = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
-      { headers: { ...hdrs, Accept: 'application/vnd.github.raw' }, cache: 'no-store' }
+    // コミットSHA固有のraw URLで取得（このURLはCDNに存在しないので必ず最新）
+    const rawR = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/${commitSha}/data.json`,
+      { cache: 'no-store' }
     );
-    if (!blobR.ok) throw new Error('blob:' + blobR.status);
-    return await blobR.json();
+    if (!rawR.ok) throw new Error('raw:' + rawR.status);
+    console.log('_repoGet OK: commitSha=', commitSha.slice(0,7));
+    return await rawR.json();
   } catch(e) {
-    console.warn('_repoGet API失敗:', e.message, '→ rawフォールバック');
+    console.warn('_repoGet失敗:', e.message, '→ fallback');
     try {
       const r = await fetch(
         `https://raw.githubusercontent.com/${owner}/${repo}/main/data.json?_=${Date.now()}`,
@@ -3402,11 +3404,17 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
       if (repoData && Array.isArray(repoData.cards)) {
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
         const repoTime = repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
+        console.log('SYNC比較 local:', db.lastUpdated, '/ repo:', repoData.lastUpdated, '/ repoNewer:', repoTime > localTime);
         if (repoTime > localTime || (db.cards.length === 0 && repoData.cards.length > 0)) {
           db = repoData;
           _idbPut(db);
-          console.log('GitHub repo data adopted:', repoData.cards.length, '件');
+          renderAll();
+          console.log('✅ GitHubデータ採用:', repoData.cards.length, '件');
+        } else {
+          console.log('⏭ ローカルの方が新しいためスキップ (local >= repo)');
         }
+      } else {
+        console.warn('repoData取得失敗またはcards配列なし:', repoData);
       }
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
       _setSyncStatus('synced', t);
