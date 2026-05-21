@@ -2299,7 +2299,7 @@ document.getElementById('e-img').addEventListener('input',e=>{
   else{imgEl.style.display='none';ph.style.display='block';}
 });
 
-function saveEdit(){
+async function saveEdit(){
   document.getElementById('edt-ov').classList.remove('open');
   const id=document.getElementById('edt-id').value;
   const c=getCard(id);
@@ -2316,6 +2316,13 @@ function saveEdit(){
     upsertCard(c);
   }
   renderAll();
+  // GitHubにも自動プッシュ（PC編集が上書きされないように）
+  const cfg=_loadConfig();const {owner,repo}=_detectRepo();
+  if(cfg.gistToken&&owner&&repo){
+    const ok=await _repoPut(db);
+    const t=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    _setSyncStatus(ok?'synced':'error',ok?t:'保存エラー');
+  }
 }
 function deleteEdit(){
   const name=document.getElementById('e-name').value||'このカード';
@@ -2484,11 +2491,22 @@ document.getElementById('be-body').addEventListener('change',e=>{
   beDirty.add(c.id);
   document.querySelector(`#be-body tr[data-id="${c.id}"]`)?.classList.add('dirty');
 });
-document.getElementById('be-save').addEventListener('click',()=>{
+document.getElementById('be-save').addEventListener('click',async ()=>{
   saveDb();beDirty.clear();renderBulk();renderAll();
   const btn=document.getElementById('be-save');
-  btn.textContent='✓ 保存完了';
-  setTimeout(()=>btn.textContent='💾 保存',1500);
+  btn.textContent='💾 保存中...';
+  // トークンがあればGitHubにも自動プッシュ（PC編集が上書きされないように）
+  const cfg=_loadConfig();
+  const {owner,repo}=_detectRepo();
+  if(cfg.gistToken&&owner&&repo){
+    const ok=await _repoPut(db);
+    const t=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    _setSyncStatus(ok?'synced':'error',ok?t+'(保存済)':'保存エラー');
+    btn.textContent=ok?'✓ 保存&同期完了':'✓ 保存完了(同期失敗)';
+  } else {
+    btn.textContent='✓ 保存完了';
+  }
+  setTimeout(()=>btn.textContent='💾 保存',2000);
 });
 document.getElementById('chk-all').addEventListener('change',function(){
   document.querySelectorAll('.br').forEach(c=>c.checked=this.checked);
