@@ -158,6 +158,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .csub{display:flex;justify-content:space-between;padding-top:2px}
 .cnum{color:rgba(255,255,255,.2);font-size:7.5px}
 .crar{font-size:7.5px;font-weight:700;color:rgba(255,0,255,.6)}
+.cmemo{font-size:8px;font-weight:700;color:#ffd54a;margin-top:2px;line-height:1.3;overflow-wrap:anywhere}
 .ci.owned .crar{color:var(--pink)}
 .ctrl{display:flex;align-items:center;border-top:1px solid rgba(255,255,255,.05)}
 .cbtn{flex:1;background:transparent;border:none;color:rgba(255,255,255,.2);font-size:14px;cursor:pointer;padding:3px 0;transition:color var(--t);line-height:1}
@@ -206,6 +207,16 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .shop-btn .sb-ico{font-size:13px}
 .shop-btn .sb-arr{margin-left:auto;color:var(--sub);font-size:11px}
 .shop-hint{color:var(--sub);font-size:8px;margin-top:6px;line-height:1.4}
+.prc-row{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.prc-thumb{flex-shrink:0;width:48px;height:67px;background:#0d0d28;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px}
+.prc-thumb img{width:100%;height:100%;object-fit:contain}
+.prc-mid{flex:1;min-width:0}
+.prc-name{color:var(--txt);font-size:11px;font-weight:700;line-height:1.3}
+.prc-num{color:var(--sub);font-size:9px;margin-top:1px}
+.prc-memo{color:#ffd54a;font-size:10px;font-weight:700;margin-top:3px}
+.prc-shops{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.prc-shops a{text-decoration:none;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;color:var(--txt);font-size:9px;font-weight:700}
+.prc-shops a:hover{border-color:#ffd54a;background:rgba(255,213,74,.1)}
 /* ── Card Lightbox ── */
 #card-lb{display:none;position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);align-items:center;justify-content:center;cursor:zoom-out}
 #card-lb-wrap{position:relative;display:inline-block}
@@ -367,6 +378,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
   <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
   <button class="hbtn" id="btn-pull" style="border-color:rgba(0,229,149,.35);color:#00e595">↓ 取得</button>
+  <button class="hbtn" id="btn-prices" style="border-color:rgba(255,213,74,.4);color:#ffd54a">💰 相場一覧</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -573,6 +585,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <input class="fi" id="e-img" placeholder="https://...">
         </div>
         <div class="ff"><label class="flb">クイックタグ（カンマ区切り）</label><input class="fi" id="e-tags" placeholder="151マスボ, デルタ種 ..."></div>
+        <div class="ff"><label class="flb">💰 価格メモ（見た最安値を記録）</label><input class="fi" id="e-memo" placeholder="例: カードラッシュ ¥1,200 (5/30)"></div>
         <button class="bsec" onclick="edtFetchFromImage()" style="width:100%;margin-top:8px">📷 画像からカード情報を読み取る</button>
         <div id="edt-tcg-res" style="display:none;margin-top:6px;max-height:220px;overflow-y:auto;border:1px solid var(--bd2);border-radius:6px;background:var(--bg-c2)"></div>
         <div style="display:flex;gap:8px;margin-top:8px">
@@ -581,6 +594,16 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 相場チェック一覧 Modal -->
+<div class="ov" id="prc-ov">
+  <div class="mbox wide">
+    <button class="mcls" onclick="document.getElementById('prc-ov').classList.remove('open')">✕</button>
+    <div class="mtit">💰 相場チェック一覧</div>
+    <div id="prc-sub" style="color:var(--sub);font-size:10px;margin-bottom:10px"></div>
+    <div id="prc-list" style="max-height:70vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -921,7 +944,7 @@ function exitSelMode(){
 document.addEventListener('keydown',e=>{
   // ESC: 開いているモーダルを閉じる / 選択モード解除
   if(e.key==='Escape'){
-    const ovIds=['edt-ov','add-ov','url-ov','imp-ov','cfg-ov'];
+    const ovIds=['edt-ov','add-ov','url-ov','imp-ov','cfg-ov','prc-ov'];
     for(const id of ovIds){
       const el=document.getElementById(id);
       if(el?.classList.contains('open')){el.classList.remove('open');return;}
@@ -1094,6 +1117,7 @@ function cardHTML(c){
         <span class="cnum">${esc(c.cardNumber)}</span>
         <span class="crar">${esc(c.rarityLabel)}</span>
       </div>
+      ${c.priceMemo?`<div class="cmemo">💰 ${esc(c.priceMemo)}</div>`:''}
     </div>
     <div class="ctrl">
       <button class="cbtn m" data-act="dec" data-id="${c.id}">－</button>
@@ -2306,6 +2330,7 @@ function openEdit(id){
   document.getElementById('e-art').value=c.illustrator||'';
   document.getElementById('e-img').value=c.customImage||'';
   document.getElementById('e-tags').value=(c.quickTags||[]).join(', ');
+  document.getElementById('e-memo').value=c.priceMemo||'';
 
   // カード画像（フルカラーで表示）
   const src=c.customImage||c.image||'';
@@ -2326,29 +2351,66 @@ function openEdit(id){
 }
 
 // ── 相場リンク生成（静的サイトのため各ショップ検索を新タブで開く方式）──
+// 各ショップの検索URLを返す（編集画面・相場一覧で共用）
+function shopSearchUrls(c){
+  const name=(c.name||'').trim();
+  const num=(c.cardNumber||'').trim();
+  const full=[name,num].filter(Boolean).join(' ');
+  if(!full) return [];
+  const e=encodeURIComponent(full);
+  const eName=encodeURIComponent(name); // フリマは番号なしの方がヒットしやすい
+  // bot/ログイン保護でサイト内検索が不安定な店はGoogleサイト内検索で確実に到達させる
+  const g=(q)=>`https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  return [
+    {ico:'⚡',label:'カードラッシュ', url:`https://www.cardrush-pokemon.jp/product-list?keyword=${e}`},
+    {ico:'🐉',label:'ドラゴンスター', url:g(`${full} site:dorasuta.jp`)},
+    {ico:'💴',label:'トレトク',     url:g(`${full} site:toretoku.jp`)},
+    {ico:'🏕️',label:'トレカキャンプ',url:g(`${full} site:torecacamp.com`)},
+    {ico:'🍀',label:'福福トレカ',   url:g(`${full} 福福トレカ`)},
+    {ico:'🛍️',label:'メルカリ(安い順)',url:`https://jp.mercari.com/search?keyword=${eName}&sort=price&order=asc&status=on_sale`},
+    {ico:'🟡',label:'ヤフーフリマ',  url:`https://paypayfleamarket.yahoo.co.jp/search/${eName}`}
+  ];
+}
 function buildShopLinks(c){
   const el=document.getElementById('edt-shop-links');
   if(!el)return;
-  // 検索語: カード名 + カード番号（型番があると精度が上がる）
-  const name=(c.name||'').trim();
-  const num=(c.cardNumber||'').trim();
-  const q=[name,num].filter(Boolean).join(' ');
-  if(!q){ el.innerHTML='<div style="color:var(--sub);font-size:9px">カード名が未設定です</div>'; return; }
-  const e=encodeURIComponent(q);
-  const eName=encodeURIComponent(name); // フリマは番号なしの方がヒットしやすい
-  const shops=[
-    {ico:'🛒',label:'駿河屋',     url:`https://www.suruga-ya.jp/search?search_word=${e}&category=`},
-    {ico:'🃏',label:'晴れる屋2',  url:`https://www.hareruya2.com/?s=${e}&post_type=product`},
-    {ico:'⚡',label:'カードラッシュ',url:`https://www.cardrush-pokemon.jp/product-list?keyword=${e}`},
-    {ico:'🅿️',label:'ポケカ公式相場(magi)',url:`https://magi.camp/categories/4?q=${e}`},
-    {ico:'🛍️',label:'メルカリ',   url:`https://jp.mercari.com/search?keyword=${eName}`},
-    {ico:'🔨',label:'ヤフオク',   url:`https://auctions.yahoo.co.jp/search/search?p=${eName}`}
-  ];
+  const shops=shopSearchUrls(c);
+  if(!shops.length){ el.innerHTML='<div style="color:var(--sub);font-size:9px">カード名が未設定です</div>'; return; }
   el.innerHTML=shops.map(s=>
     `<a class="shop-btn" href="${s.url}" target="_blank" rel="noopener noreferrer">`+
     `<span class="sb-ico">${s.ico}</span><span>${esc(s.label)}</span><span class="sb-arr">↗</span></a>`
   ).join('');
 }
+
+// ── 相場チェック一覧（現在の絞り込み結果＝お気に入りフィルタ中ならお気に入りのみ）──
+function openPriceList(){
+  const cards=filtered();
+  const sub=document.getElementById('prc-sub');
+  const list=document.getElementById('prc-list');
+  const favOnly=fs.ownership==='fav';
+  sub.textContent=`${cards.length}件 ${favOnly?'(★お気に入りのみ)':'(現在の絞り込み結果)'}・各ショップのリンクをタップで検索結果が新タブで開きます`;
+  if(!cards.length){
+    list.innerHTML='<div style="color:var(--sub);font-size:11px;padding:20px;text-align:center">対象カードがありません。<br>★お気に入りで絞り込むか、フィルタを確認してください。</div>';
+  } else {
+    list.innerHTML=cards.map(c=>{
+      const src=c.customImage||c.image||'';
+      const thumb=src?`<img src="${src}" loading="lazy" onerror="this.style.display='none'">`:'🃏';
+      const shops=shopSearchUrls(c).map(s=>
+        `<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.ico} ${esc(s.label)}</a>`).join('');
+      return `<div class="prc-row">
+        <div class="prc-thumb">${thumb}</div>
+        <div class="prc-mid">
+          <div class="prc-name">${esc(c.name)}</div>
+          <div class="prc-num">${esc(c.cardNumber||'')} ${esc(c.rarityLabel||'')}</div>
+          ${c.priceMemo?`<div class="prc-memo">💰 ${esc(c.priceMemo)}</div>`:''}
+          <div class="prc-shops">${shops}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('prc-ov').classList.add('open');
+}
+document.getElementById('btn-prices').addEventListener('click',openPriceList);
 
 // 画像URL変更時にプレビューも更新
 document.getElementById('e-img').addEventListener('input',e=>{
@@ -2373,6 +2435,7 @@ async function saveEdit(){
     c.illustrator=document.getElementById('e-art').value.trim();
     c.customImage=document.getElementById('e-img').value.trim()||null;
     c.quickTags  =document.getElementById('e-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+    c.priceMemo  =document.getElementById('e-memo').value.trim();
     upsertCard(c);
   }
   renderAll();
@@ -2595,7 +2658,7 @@ document.getElementById('be-abtn').addEventListener('click',()=>{
 });
 
 // Overlay click to close
-['imp-ov','edt-ov','add-ov','url-ov'].forEach(id=>{
+['imp-ov','edt-ov','add-ov','url-ov','prc-ov'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id) document.getElementById(id).classList.remove('open');
   });
