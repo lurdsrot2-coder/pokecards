@@ -168,6 +168,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .ci.drop-target{border-color:var(--pink)!important;box-shadow:0 0 22px rgba(255,0,255,.55)!important;transform:scale(1.04)!important}
 .ci.drop-target .cimg::after{content:'📷 DROP';position:absolute;inset:0;background:rgba(255,0,255,.45);color:#fff;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center;letter-spacing:.05em}
 .cimg{position:relative}
+.cfav{position:absolute;top:4px;right:4px;z-index:6;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:24px;height:24px;font-size:14px;line-height:1;cursor:pointer;color:rgba(255,255,255,.45);display:flex;align-items:center;justify-content:center;transition:transform .12s,color .12s;padding:0}
+.cfav:hover{transform:scale(1.2);color:#ffd54a}
+.ci.fav .cfav{color:#ffd54a;text-shadow:0 0 8px rgba(255,213,74,.8)}
+.ci.fav{border-color:rgba(255,213,74,.5)}
 
 /* ── Modals ── */
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:1100;align-items:center;justify-content:center}
@@ -374,6 +378,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <button class="tbtn on" data-ow="all">ALL</button>
           <button class="tbtn" data-ow="owned">OWNED</button>
           <button class="tbtn" data-ow="want">WANT</button>
+          <button class="tbtn" data-ow="fav" style="border-color:rgba(255,213,74,.4);color:#ffd54a">★ お気に入り</button>
         </div>
         <button class="tbtn" id="btn-showhidden">🚫 非表示含む</button>
         <button class="tbtn" id="btn-showall">全件表示</button>
@@ -866,6 +871,7 @@ function filtered(){
     }
     if(fs.ownership==='owned' && c.owned<=0) return false;
     if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.ownership==='fav'   && !c.favorite) return false;
     if(fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
     if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
     return true;
@@ -991,6 +997,7 @@ function _filteredExcluding(exclude){
     }
     if(fs.ownership==='owned' && c.owned<=0) return false;
     if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.ownership==='fav'   && !c.favorite) return false;
     if(fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
     if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
     return true;
@@ -1038,6 +1045,7 @@ function _filteredWithoutRarity(){
     }
     if(fs.ownership==='owned' && c.owned<=0) return false;
     if(fs.ownership==='want'  && c.owned>0)  return false;
+    if(fs.ownership==='fav'   && !c.favorite) return false;
     if(fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
     return true;
   });
@@ -1064,7 +1072,8 @@ function cardHTML(c){
     ?`<img src="${src}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'">`
     :`<span>🃏</span>`;
   const isSel=selIds.has(c.id);
-  return `<div class="ci ${c.owned>0?'owned':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
+  return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
+    <button class="cfav" data-act="fav" data-id="${c.id}" title="お気に入り">${c.favorite?'★':'☆'}</button>
     <div class="ciwrap"><div class="cimg">${img}</div></div>
     <div class="cinf">
       <div class="cname" title="${esc(c.name)}">${esc(c.name)}</div>
@@ -1159,6 +1168,17 @@ document.getElementById('grid').addEventListener('click',e=>{
   if(btn){
     e.stopPropagation();
     const c=getCard(btn.dataset.id);if(!c)return;
+    if(btn.dataset.act==='fav'){
+      c.favorite=!c.favorite;
+      const i=db.cards.findIndex(x=>x.id===c.id);
+      if(i>=0)db.cards[i]=c;
+      saveDbDebounced();
+      const ci=document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`);
+      if(ci){ci.classList.toggle('fav',c.favorite);ci.querySelector('.cfav').textContent=c.favorite?'★':'☆';}
+      if(fs.ownership==='fav')renderCards();
+      renderStats();
+      return;
+    }
     if(btn.dataset.act==='inc') c.owned=(c.owned||0)+1;
     else c.owned=Math.max(0,(c.owned||0)-1);
     // DB はメモリ更新 + デバウンス保存（全再描画しない）
