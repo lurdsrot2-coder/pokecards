@@ -388,7 +388,6 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
   <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
   <button class="hbtn" id="btn-pull" style="border-color:rgba(0,229,149,.35);color:#00e595">↓ 取得</button>
-  <button class="hbtn" id="btn-prices" style="border-color:rgba(255,213,74,.4);color:#ffd54a">💰 相場一覧</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -2430,7 +2429,6 @@ function openPriceList(){
   }
   document.getElementById('prc-ov').classList.add('open');
 }
-document.getElementById('btn-prices').addEventListener('click',openPriceList);
 
 // 画像URL変更時にプレビューも更新
 document.getElementById('e-img').addEventListener('input',e=>{
