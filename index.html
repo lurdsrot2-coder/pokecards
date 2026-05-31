@@ -112,6 +112,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .tgrp{display:flex;gap:3px}
 .tbtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:3px;color:var(--sub);font-size:9px;padding:3px 9px;cursor:pointer;transition:var(--t)}
 .tbtn.on{background:rgba(0,245,255,.12);border-color:rgba(0,245,255,.5);color:var(--cyan)}
+.tbtn[data-ow="fav"]{border-color:rgba(255,213,74,.35)}
+.tbtn[data-ow="fav"].on{background:rgba(255,213,74,.14);border-color:rgba(255,213,74,.7);color:#ffd54a;text-shadow:0 0 6px rgba(255,213,74,.6)}
 
 /* ── Quick Filters ── */
 .qf{border-left:1px solid rgba(255,255,255,.07);padding-left:12px;flex-shrink:0}
@@ -331,7 +333,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .fleft .frow:first-child .farr{ display:none; }
   .fleft .frow:first-child .csel{ flex:1 1 0; min-width:0; max-width:100%; }
   .srch{ font-size:16px; width:100%; box-sizing:border-box; }/* 16px未満だとiOSが自動ズームするため16pxに固定 */
-  .tbtn, .tbtn2{ padding:5px 8px; font-size:11px; }
+  .tbtn, .tbtn2{ padding:5px 7px; font-size:11px; }
+  /* スマホではボタンを短縮表示（ALL/OWNED/WANT/★/非表示）して1行に収める */
+  .hm{ display:none; }
+  .tgrp{ gap:4px; }
 
   /* クイックフィルターを画面内に収めて横スクロール帯にする */
   .qf{ border-left:none; padding-left:0; flex:1 1 100%; width:100%; min-width:0; box-sizing:border-box; }
@@ -407,9 +412,9 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <button class="tbtn on" data-ow="all">ALL</button>
           <button class="tbtn" data-ow="owned">OWNED</button>
           <button class="tbtn" data-ow="want">WANT</button>
-          <button class="tbtn" data-ow="fav" style="border-color:rgba(255,213,74,.4);color:#ffd54a">★ お気に入り</button>
+          <button class="tbtn" data-ow="fav">★<span class="hm"> お気に入り</span></button>
         </div>
-        <button class="tbtn" id="btn-showhidden">🚫 非表示含む</button>
+        <button class="tbtn" id="btn-showhidden"><span class="hm">🚫 </span>非表示<span class="hm">含む</span></button>
         <button class="tbtn" id="btn-showall">全件表示</button>
         <button id="btn-clr-filter" title="フィルタをすべて解除 [ESC]">✕ フィルタ解除</button>
         <select class="csel" id="sel-sort" style="border-color:rgba(255,230,0,.2);color:#ffe680">
@@ -1445,8 +1450,10 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
   });
 }
 document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');fs.ownership=b.dataset.ow;renderCards();
+  // すでに選択中のボタン（ALL以外）を再度押したらALLに戻す
+  const next=(b.classList.contains('on')&&b.dataset.ow!=='all')?'all':b.dataset.ow;
+  document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.toggle('on',x.dataset.ow===next));
+  fs.ownership=next;renderCards();
 }));
 document.getElementById('rscroll').addEventListener('click',e=>{
   const c=e.target.closest('.rc');if(!c)return;
