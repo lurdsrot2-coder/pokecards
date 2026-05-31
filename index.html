@@ -393,7 +393,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
       </div>
       <div class="frow">
-        <input class="srch" id="srch" placeholder="🔍 カード名・イラストレーター・タイトル">
+        <input class="srch" id="srch" enterkeyhint="search" placeholder="🔍 カード名・イラストレーター・タイトル">
         <div class="tgrp">
           <button class="tbtn on" data-ow="all">ALL</button>
           <button class="tbtn" data-ow="owned">OWNED</button>
@@ -1424,6 +1424,15 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
   srchEl.addEventListener('compositionstart',()=>{_ime=true;});
   srchEl.addEventListener('compositionend',e=>{_ime=false;fs.search=e.target.value.trim();renderCards();});
   srchEl.addEventListener('input',e=>{if(!_ime){fs.search=e.target.value.trim();renderCards();}});
+  // Enterで検索実行＋フォーカスを外す（iOSのズームが元に戻る）。IME変換確定のEnterは無視
+  srchEl.addEventListener('keydown',e=>{
+    if(e.key==='Enter' && !e.isComposing && !_ime){
+      e.preventDefault();
+      fs.search=e.target.value.trim();
+      renderCards();
+      srchEl.blur();
+    }
+  });
 }
 document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.remove('on'));
