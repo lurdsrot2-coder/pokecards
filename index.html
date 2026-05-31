@@ -2680,6 +2680,13 @@ document.getElementById('be-abtn').addEventListener('click',()=>{
     if(e.target.id===id) document.getElementById(id).classList.remove('open');
   });
 });
+// 編集画面：カード画像まわりの黒い余白（コンテナ自体）をタップしても閉じる
+document.getElementById('edt-ov').addEventListener('click',e=>{
+  const t=e.target;
+  if(t.classList.contains('mbox')||t.classList.contains('edt-layout')||t.classList.contains('edt-img-col')){
+    document.getElementById('edt-ov').classList.remove('open');
+  }
+});
 
 // ── BULK EDITOR OPEN (onclick経由) ────────────────────
 function openBulkEditor(){
