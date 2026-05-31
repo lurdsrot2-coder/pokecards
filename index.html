@@ -328,6 +328,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .srch{ font-size:16px; width:100%; box-sizing:border-box; }/* 16px未満だとiOSが自動ズームするため16pxに固定 */
   .tbtn, .tbtn2{ padding:5px 8px; font-size:11px; }
 
+  /* クイックフィルターを画面内に収めて横スクロール帯にする */
+  .qf{ border-left:none; padding-left:0; flex:1 1 100%; width:100%; min-width:0; box-sizing:border-box; }
+  .qgrid{ flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-height:none; -webkit-overflow-scrolling:touch; }
+  .qbtn{ flex:0 0 auto; white-space:nowrap; }
+
   .rc{ font-size:9px; padding:3px 8px; }
 
   #grid{ grid-template-columns: repeat(4, 1fr); gap:4px; padding:6px; }
