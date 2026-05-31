@@ -327,7 +327,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   #btn-add, #btn-sel, #btn-import { display:none; }
 
   #fp{ padding:6px 8px; }
-  .frow{ flex-wrap:wrap; gap:4px; }
+  .frow{ flex-wrap:wrap; gap:3px; }
   .csel{ font-size:10px; padding:5px 18px 5px 6px; max-width:100%; min-width:0; box-sizing:border-box; background-position:right 4px center; }
   /* 種別・シリーズ・タイトルの3つのプルダウンを1行に均等配置して縦の場所を節約 */
   .fleft .frow:first-child{ flex-wrap:nowrap; gap:4px; }
@@ -335,13 +335,16 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .fleft .frow:first-child .farr{ display:none; }
   .fleft .frow:first-child .csel{ flex:1 1 0; min-width:0; max-width:100%; }
   .srch{ font-size:16px; width:100%; box-sizing:border-box; }/* 16px未満だとiOSが自動ズームするため16pxに固定 */
-  .tbtn, .tbtn2{ padding:5px 7px; font-size:11px; }
+  .tbtn, .tbtn2{ padding:5px 6px; font-size:11px; }
+  #btn-clr-filter{ padding:5px 6px; font-size:11px; }
+  #sel-sort{ padding:5px 16px 5px 6px; }
   /* スマホではボタンを短縮表示（ALL/OWNED/WANT/★/非表示）して1行に収める */
   .hm{ display:none; }
-  .tgrp{ gap:4px; }
+  .tgrp{ gap:3px; }
 
   /* クイックフィルターを画面内に収めて横スクロール帯にする */
   .qf{ border-left:none; padding-left:0; flex:1 1 100%; width:100%; min-width:0; box-sizing:border-box; }
+  .qlbl{ display:none; }/* スマホではQUICK FILTERラベルを非表示にして1行ぶん詰める */
   .qgrid{ flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-height:none; -webkit-overflow-scrolling:touch; }
   .qbtn{ flex:0 0 auto; white-space:nowrap; }
 
@@ -417,7 +420,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <button class="tbtn" data-ow="fav">★<span class="hm"> お気に入り</span></button>
         </div>
         <button class="tbtn" id="btn-showhidden"><span class="hm">🚫 </span>非表示<span class="hm">含む</span></button>
-        <button id="btn-clr-filter" title="フィルタをすべて解除 [ESC]">✕ フィルタ解除</button>
+        <button id="btn-clr-filter" title="フィルタをすべて解除 [ESC]">✕ <span class="hm">フィルタ</span>解除</button>
         <select class="csel" id="sel-sort" style="border-color:rgba(255,230,0,.2);color:#ffe680">
           <option value="default">追加順</option>
           <option value="name">名前順</option>
