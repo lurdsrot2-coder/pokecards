@@ -1424,15 +1424,26 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
   srchEl.addEventListener('compositionstart',()=>{_ime=true;});
   srchEl.addEventListener('compositionend',e=>{_ime=false;fs.search=e.target.value.trim();renderCards();});
   srchEl.addEventListener('input',e=>{if(!_ime){fs.search=e.target.value.trim();renderCards();}});
-  // Enterで検索実行＋フォーカスを外す（iOSのズームが元に戻る）。IME変換確定のEnterは無視
+  // iOSのズームを強制リセット（viewportを一瞬maximum-scale=1にして戻す）
+  function resetMobileZoom(){
+    const vp=document.querySelector('meta[name=viewport]');
+    if(!vp)return;
+    const base='width=device-width, initial-scale=1.0';
+    vp.setAttribute('content', base+', maximum-scale=1.0');
+    setTimeout(()=>vp.setAttribute('content', base), 200);
+  }
+  // Enterで検索実行＋キーボードを閉じてズームを元に戻す。IME変換確定のEnterは無視
   srchEl.addEventListener('keydown',e=>{
     if(e.key==='Enter' && !e.isComposing && !_ime){
       e.preventDefault();
       fs.search=e.target.value.trim();
       renderCards();
       srchEl.blur();
+      resetMobileZoom();
     }
   });
+  // 入力欄から離れたとき（他をタップ等）もズームを戻す
+  srchEl.addEventListener('blur',resetMobileZoom);
 }
 document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.tbtn[data-ow]').forEach(x=>x.classList.remove('on'));
