@@ -417,7 +417,6 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <button class="tbtn" data-ow="fav">★<span class="hm"> お気に入り</span></button>
         </div>
         <button class="tbtn" id="btn-showhidden"><span class="hm">🚫 </span>非表示<span class="hm">含む</span></button>
-        <button class="tbtn" id="btn-showall">全件表示</button>
         <button id="btn-clr-filter" title="フィルタをすべて解除 [ESC]">✕ フィルタ解除</button>
         <select class="csel" id="sel-sort" style="border-color:rgba(255,230,0,.2);color:#ffe680">
           <option value="default">追加順</option>
@@ -1143,7 +1142,6 @@ function cardHTML(c){
   </div>`;
 }
 
-let _gridShowAll=false;
 let _gridLimit=200;
 let _gridObs=null;
 
@@ -1179,10 +1177,6 @@ function renderCards(){
         ?'カードが登録されていません<span>「IMPORT SET」でカードを追加してください</span>'
         :'条件に一致するカードがありません'
     }</div></div>`;
-    return;
-  }
-  if(_gridShowAll){
-    g.innerHTML=cards.map(cardHTML).join('');
     return;
   }
   _gridLimit=200;
@@ -1372,13 +1366,6 @@ document.getElementById('btn-showhidden').addEventListener('click',function(){
 });
 // フィルタ解除ボタン
 document.getElementById('btn-clr-filter').addEventListener('click',clearFilters);
-// 全件表示トグル
-document.getElementById('btn-showall').addEventListener('click',function(){
-  _gridShowAll=!_gridShowAll;
-  this.classList.toggle('on',_gridShowAll);
-  this.textContent=_gridShowAll?'200枚ずつ':'全件表示';
-  renderCards();
-});
 
 // ── インポート直後フィルター ───────────────────────────────
 function applyImportFilter(ids){
