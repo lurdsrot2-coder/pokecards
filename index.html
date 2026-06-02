@@ -3495,6 +3495,40 @@ async function _autoGistUpload(){
   }
 }
 
+// ── 自動取得（タブ復帰時＋一定間隔でクラウドが新しければ取り込み） ──
+let _autoPullBusy=false;
+function _hasUnsentChanges(){ return !!_gistSaveTimer || _gistSaving || _gistPending; }
+function _isEditing(){ return !!document.querySelector('.ov.open, #be.open, #edt-ov.open'); }
+async function _autoGistPull(){
+  const cfg=_loadConfig();
+  const { owner, repo }=_detectRepo();
+  if(!cfg.gistToken || !owner || !repo) return;       // 同期設定なし
+  if(_autoPullBusy) return;                            // 取得中
+  if(_hasUnsentChanges()) return;                      // 未送信のローカル変更あり→上書き事故防止
+  if(_isEditing()) return;                             // 編集モーダルを開いている間はスキップ
+  _autoPullBusy=true;
+  try{
+    const repoData=await _repoGet();
+    if(repoData && Array.isArray(repoData.cards)){
+      const localTime=db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
+      const repoTime =repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
+      // クラウドが新しい時だけ取り込み。取り込み直前に再度ガード
+      if(repoTime>localTime && !_hasUnsentChanges() && !_isEditing()){
+        db=repoData; _idbPut(db); renderAll();
+        const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+        _setSyncStatus('synced', '取得 '+t);
+        console.log('🔄 自動取得で更新:', repoData.cards.length, '件');
+      }
+    }
+  }catch(e){ /* 失敗時は静かに無視（次の機会に再試行） */ }
+  finally{ _autoPullBusy=false; }
+}
+// タブに戻ってきた / ウィンドウにフォーカスした瞬間に取得
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') _autoGistPull(); });
+window.addEventListener('focus', ()=>_autoGistPull());
+// 表示中は60秒ごとにクラウドをチェック
+setInterval(()=>{ if(document.visibilityState==='visible') _autoGistPull(); }, 60000);
+
 // ── PULL BUTTON（↓ 取得：GitHubから強制取得） ────────
 document.getElementById('btn-pull').addEventListener('click', async () => {
   const cfg = _loadConfig();
