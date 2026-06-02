@@ -3464,8 +3464,35 @@ function _setSyncStatus(state, msg) {
 
 // デバウンス保存（自動同期なし・手動のみ）
 let _syncTimer = null;
+// ── 自動アップロード（編集の数秒後に自動で↑同期） ──────
+let _gistSaveTimer=null, _gistSaving=false, _gistPending=false;
 function _scheduleGistSave() {
-  // 自動同期は重いため、手動↑同期ボタンのみ使用
+  const cfg=_loadConfig();
+  const { owner, repo }=_detectRepo();
+  if(!cfg.gistToken || !owner || !repo) return; // 同期設定がなければ何もしない
+  clearTimeout(_gistSaveTimer);
+  // 連打をまとめるため最後の編集から2.5秒後に1回だけ送信
+  _gistSaveTimer=setTimeout(_autoGistUpload, 2500);
+}
+async function _autoGistUpload(){
+  if(_gistSaving){ _gistPending=true; return; } // 送信中なら終了後に再送
+  const cfg=_loadConfig();
+  const { owner, repo }=_detectRepo();
+  if(!cfg.gistToken || !owner || !repo) return;
+  _gistSaving=true;
+  _setSyncStatus('syncing', '自動同期中...');
+  try{
+    db.lastUpdated=new Date().toISOString();
+    const ok=await _repoPut(db);
+    _idbPut(db);
+    const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー');
+  }catch(e){
+    _setSyncStatus('error', '自動同期失敗');
+  }finally{
+    _gistSaving=false;
+    if(_gistPending){ _gistPending=false; _scheduleGistSave(); } // 送信中に来た変更を反映
+  }
 }
 
 // ── PULL BUTTON（↓ 取得：GitHubから強制取得） ────────
