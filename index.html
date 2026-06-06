@@ -1967,36 +1967,47 @@ async function doUrlFetch(){
       if(!html2)throw new Error('ページを取得できませんでした');
       ({cards}=parseCardrushPage(html2,url));
     } else if(url.includes('hareruya2.com')){
-      prog.textContent='1ページ目取得中...';
-      const html4=await fetchViaProxy(url).catch(()=>'');
-      if(!html4)throw new Error('ページを取得できませんでした');
-      const r4=parseHareruya2Page(html4);
-      cards=[...r4.cards];
-      if(r4.nextUrl){
-        // ?page=N で URL を直接構築して3ページ並列取得
-        // nextUrlがあればページがまだある証拠
-        const baseUrl=url.replace(/[?&]page=\d+/,'');
-        const sep=baseUrl.includes('?')?'&':'?';
-        const BATCH=2;
-        let page=2;
-        let emptyStreak=0;
-        while(page<=200&&emptyStreak<BATCH){
-          const pageNums=Array.from({length:BATCH},(_,i)=>page+i);
-          prog.textContent=`${page}〜${page+BATCH-1}ページ取得中 (${cards.length}枚)...`;
-          const htmls=await Promise.all(
-            pageNums.map(p=>fetchViaProxy(`${baseUrl}${sep}page=${p}`).catch(()=>''))
-          );
-          let gotNew=false;
-          for(const h of htmls){
-            if(!h){emptyStreak++;continue;}
-            const r=parseHareruya2Page(h);
-            if(!r.cards.length){emptyStreak++;continue;}
-            cards.push(...r.cards);
-            gotNew=true;
-            emptyStreak=0;
+      cards=[];
+      const colM=url.match(/\/collections\/[^/?#]+/);
+      if(colM){
+        // ★ Shopify products.json を直接取得（プロキシ不要・CORS許可あり＝最も確実）
+        const colBase='https://www.hareruya2.com'+colM[0];
+        for(let page=1;page<=200;page++){
+          prog.textContent=`${page}ページ目取得中 (${cards.length}枚)...`;
+          let products=null;
+          try{
+            const r=await fetch(`${colBase}/products.json?limit=250&page=${page}`);
+            products=(await r.json()).products;
+          }catch(e){ break; }
+          if(!products||!products.length) break;
+          cards.push(...parseHareruya2Products(products));
+        }
+      } else {
+        // 検索結果など collections 以外は従来のプロキシ経由HTML解析
+        prog.textContent='1ページ目取得中...';
+        const html4=await fetchViaProxy(url).catch(()=>'');
+        if(!html4)throw new Error('ページを取得できませんでした');
+        const r4=parseHareruya2Page(html4);
+        cards=[...r4.cards];
+        if(r4.nextUrl){
+          const baseUrl=url.replace(/[?&]page=\d+/,'');
+          const sep=baseUrl.includes('?')?'&':'?';
+          const BATCH=2;
+          let page=2, emptyStreak=0;
+          while(page<=200&&emptyStreak<BATCH){
+            const pageNums=Array.from({length:BATCH},(_,i)=>page+i);
+            prog.textContent=`${page}〜${page+BATCH-1}ページ取得中 (${cards.length}枚)...`;
+            const htmls=await Promise.all(pageNums.map(p=>fetchViaProxy(`${baseUrl}${sep}page=${p}`).catch(()=>'')));
+            let gotNew=false;
+            for(const h of htmls){
+              if(!h){emptyStreak++;continue;}
+              const r=parseHareruya2Page(h);
+              if(!r.cards.length){emptyStreak++;continue;}
+              cards.push(...r.cards); gotNew=true; emptyStreak=0;
+            }
+            if(!gotNew)break;
+            page+=BATCH;
           }
-          if(!gotNew)break;
-          page+=BATCH;
         }
       }
       const dedup4=new Map();
@@ -2155,6 +2166,39 @@ function parseHareruya2Page(html){
   }
   if(nextUrl&&!nextUrl.startsWith('http'))nextUrl='https://www.hareruya2.com'+nextUrl;
   return{cards:[...seen.values()],nextUrl};
+}
+
+// 晴れる屋2のタイトル文字列を分解: カード名(レアリティ){種別}〈番号〉[セット]
+function _parseHareruya2Title(title){
+  const alt=title||'';
+  const rarM=alt.match(/\(([^)]+)\)/);
+  const typeM=alt.match(/\{([^}]+)\}/);
+  const numM=alt.match(/[〈<]([^〉>]+)[〉>]/);
+  const setM=alt.match(/\[([^\]]+)\]$/);
+  let name=alt.replace(/\([^)]*\)/g,'').replace(/\{[^}]*\}/g,'')
+    .replace(/[〈<][^〉>]*[〉>]/g,'').replace(/\[[^\]]*\]/g,'').trim();
+  if(!name)name=alt.trim();
+  return {name, rarity:rarM?rarM[1]:'', cardType:typeM?typeM[1]:'', cardNumber:numM?numM[1]:'', setId:setM?setM[1]:''};
+}
+// Shopify products.json の products配列からカード配列を生成
+function parseHareruya2Products(products){
+  const out=[];
+  for(const p of (products||[])){
+    const t=_parseHareruya2Title(p.title);
+    if(!t.name)continue;
+    let src=(p.images&&p.images[0]&&p.images[0].src)||'';
+    if(src.startsWith('//'))src='https:'+src;
+    src=src.replace(/[?&]width=\d+/,'').replace(/\?$/,'').replace(/&$/,'');
+    out.push({
+      id:'hareruya2-'+p.id, name:t.name, image:src,
+      customImage:null, price:0, owned:0,
+      cardType:t.cardType||'Pokémon', pokemonTypes:[], subtypes:[],
+      series:'', setName:t.setId, setId:(t.setId||'').toLowerCase(),
+      rarity:t.rarity, rarityLabel:t.rarity, cardNumber:t.cardNumber,
+      illustrator:'', quickTags:[]
+    });
+  }
+  return out;
 }
 
 function showUrlPreview(all){
