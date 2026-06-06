@@ -428,6 +428,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
           <option value="type">種別順</option>
           <option value="rarity">レアリティ順</option>
           <option value="owned">所持数順</option>
+          <option value="ownedAt">最近＋1した順</option>
         </select>
       </div>
     </div>
@@ -905,6 +906,7 @@ function _sortCards(arr){
       case 'type':    return ja(a.cardType,b.cardType)||ja(a.name,b.name);
       case 'rarity':  return ja(a.rarityLabel,b.rarityLabel)||ja(a.name,b.name);
       case 'owned':   return (b.owned||0)-(a.owned||0)||ja(a.name,b.name);
+      case 'ownedAt': return (b.ownedAt?Date.parse(b.ownedAt):0)-(a.ownedAt?Date.parse(a.ownedAt):0)||ja(a.name,b.name); // 最近＋1した順
       default:        return 0;
     }
   });
@@ -1229,7 +1231,7 @@ document.getElementById('grid').addEventListener('click',e=>{
       renderStats();
       return;
     }
-    if(btn.dataset.act==='inc') c.owned=(c.owned||0)+1;
+    if(btn.dataset.act==='inc'){ c.owned=(c.owned||0)+1; c.ownedAt=new Date().toISOString(); } // ＋1した日時を記録
     else c.owned=Math.max(0,(c.owned||0)-1);
     // DB はメモリ更新 + デバウンス保存（全再描画しない）
     const i=db.cards.findIndex(x=>x.id===c.id);
