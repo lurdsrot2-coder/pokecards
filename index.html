@@ -1875,17 +1875,29 @@ function parsePokecahackPage(html){
 }
 
 // プロキシ経由でHTMLを取得する共通関数
+// プロキシのエラーページ（codetabs 5xx / cloudflare / JSONエラー等）を弾く判定
+function _isBadProxyHtml(t){
+  if(!t||t.length<1500)return true;
+  if(t.trimStart().startsWith('{'))return true; // エラーJSON
+  return /codetabs\.com \| 5\d\d|Connection timed out|Just a moment\.\.\.|Attention Required|cloudflare/i.test(t.slice(0,3000));
+}
 async function fetchViaProxy(targetUrl){
   const to=ms=>new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),ms));
-  const rs=await Promise.allSettled([
-    Promise.race([fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`).then(r=>r.text()),to(30000)]),
-    Promise.race([fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`).then(r=>r.json()).then(j=>j.contents||''),to(30000)])
-  ]);
-  let a='',b='';
-  // HTMLフェッチ：{で始まるものはエラーJSONとして除外
-  if(rs[0].status==='fulfilled'){const t=rs[0].value||'';if(t.length>500&&!t.startsWith('{'))a=t;}
-  if(rs[1].status==='fulfilled'){const t=rs[1].value||'';if(t.length>500)b=t;}
-  return a.length>=b.length?a:b;
+  const enc=encodeURIComponent(targetUrl);
+  // 優先順位順に試し、最初に有効なHTMLが取れたものを返す（cors.lolが完全なHTMLを返すため最優先）
+  const attempts=[
+    ()=>fetch(`https://api.cors.lol/?url=${enc}`).then(r=>r.text()),
+    ()=>fetch(`https://api.codetabs.com/v1/proxy/?quest=${enc}`).then(r=>r.text()),
+    ()=>fetch(`https://api.allorigins.win/raw?url=${enc}`).then(r=>r.text()),
+    ()=>fetch(`https://api.allorigins.win/get?url=${enc}`).then(r=>r.json()).then(j=>j.contents||'')
+  ];
+  for(const run of attempts){
+    try{
+      const t=await Promise.race([run(),to(25000)]);
+      if(!_isBadProxyHtml(t))return t;
+    }catch(e){/* 次のプロキシへ */}
+  }
+  return '';
 }
 
 // プロキシ経由でJSONを取得する関数（WP REST API用）
@@ -1965,7 +1977,7 @@ async function doUrlFetch(){
         // nextUrlがあればページがまだある証拠
         const baseUrl=url.replace(/[?&]page=\d+/,'');
         const sep=baseUrl.includes('?')?'&':'?';
-        const BATCH=3;
+        const BATCH=2;
         let page=2;
         let emptyStreak=0;
         while(page<=200&&emptyStreak<BATCH){
