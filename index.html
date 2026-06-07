@@ -1048,7 +1048,9 @@ function renderStats(){
   const el=document.getElementById('s-assets');
   el.textContent=fmtYen(pf.marketValue);
   el.title=`コレクション時価(時価×所持): ${fmtYen(pf.marketValue)}\n`+
-    `─ 購入記録ありカード ─\n投下原価: ${fmtYen(pf.cost)}\n`+
+    `─ 購入記録ありカード ─\n購入累計(投下原価): ${fmtYen(pf.cost)}\n`+
+    `未売却原価(支出): ${fmtYen(pf.remainingCost)}\n`+
+    `売却回収累計: ${fmtYen(pf.proceeds)}\n`+
     `含み損益: ${fmtYen(pf.unrealized)} (${pf.unrealizedPct})\n`+
     `実現損益: ${fmtYen(pf.realized)}\n元本回収率: ${pf.recovery}`;
 }
@@ -3732,7 +3734,8 @@ function _portfolio(){
   }
   const recovery=cost>0?Math.round(proceeds/cost*100)+'%':'—';
   const unrealizedPct=remainingCost>0?`(${unrealized>=0?'+':''}${Math.round(unrealized/remainingCost*100)}%)`:'—';
-  return {marketValue,cost,proceeds,realized,unrealized,recovery,unrealizedPct};
+  const netOutlay=cost-proceeds; // 実質純支出（購入累計−売却回収）
+  return {marketValue,cost,proceeds,realized,unrealized,recovery,unrealizedPct,remainingCost,netOutlay};
 }
 function _cardPLBadge(c){
   if(!isTracked(c))return '';
@@ -3766,6 +3769,7 @@ function renderAssetSection(id){
    <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;background:var(--bg-c2,#10142b);padding:8px;border-radius:6px;margin-bottom:8px">
      <div>投下原価</div><div style="text-align:right">${fmtYen(s.cost)} <span style="color:var(--sub);font-size:9px">(${s.boughtQty}枚)</span></div>
      <div>平均取得単価</div><div style="text-align:right">${s.boughtQty?fmtYen(s.avgCost):'—'}</div>
+     <div style="color:var(--gold,#ffb400)">未売却原価（支出）</div><div style="text-align:right;color:var(--gold,#ffb400)">${fmtYen(s.remainingCost)} <span style="font-size:9px">(残${s.remainingQty}枚)</span></div>
      <div>含み損益 (残${s.remainingQty}枚)</div><div style="text-align:right;color:${plColor(s.unrealized)}">${fmtYenSigned(s.unrealized)} ${s.unrealizedPct}</div>
      <div>実現損益 (売${s.soldQty}枚)</div><div style="text-align:right;color:${plColor(s.realized)}">${fmtYenSigned(s.realized)}</div>
      <div>元本回収率</div><div style="text-align:right">${s.recovery}</div>
@@ -3941,6 +3945,8 @@ function openPortfolioTrend(){
   box.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;font-size:12px">
       <div>コレクション時価 ${cur(pf.marketValue)}</div>
+      <div style="color:var(--gold,#ffb400)">未売却原価（支出）<b style="color:var(--gold,#ffb400)">${fmtYen(pf.remainingCost)}</b></div>
+      <div>購入累計 <b>${fmtYen(pf.cost)}</b> / 売却回収 <b>${fmtYen(pf.proceeds)}</b></div>
       <div>含み損益 ${cur(pf.unrealized,1)} <span style="color:var(--sub)">${pf.unrealizedPct}</span></div>
       <div>実現損益 ${cur(pf.realized,1)}</div>
       <div>元本回収率 <b>${pf.recovery}</b></div>
