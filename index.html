@@ -398,6 +398,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
   <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
   <button class="hbtn" id="btn-pull" style="border-color:rgba(0,229,149,.35);color:#00e595">↓ 取得</button>
+  <button class="hbtn" id="btn-reprice" style="border-color:rgba(255,180,0,.45);color:var(--gold)" title="所持カードの時価を晴れる屋カタログから一括更新">🔄 時価更新</button>
+  <button class="hbtn" id="btn-pftrend" style="border-color:rgba(0,229,149,.45);color:#00e595" title="含み損益・保有時価の推移グラフ">📈 推移</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -605,6 +607,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         </div>
         <div class="ff"><label class="flb">クイックタグ（カンマ区切り）</label><input class="fi" id="e-tags" placeholder="151マスボ, デルタ種 ..."></div>
         <div class="ff"><label class="flb">💰 価格メモ（見た最安値を記録）</label><input class="fi" id="e-memo" placeholder="例: カードラッシュ ¥1,200 (5/30)"></div>
+        <div class="ff" style="border-top:1px solid var(--bd2);padding-top:10px;margin-top:6px">
+          <label class="flb">📊 資産管理（購入記録・時価・損益）</label>
+          <div id="e-asset"></div>
+        </div>
         <button class="bsec" onclick="edtFetchFromImage()" style="width:100%;margin-top:8px">📷 画像からカード情報を読み取る</button>
         <div id="edt-tcg-res" style="display:none;margin-top:6px;max-height:220px;overflow-y:auto;border:1px solid var(--bd2);border-radius:6px;background:var(--bg-c2)"></div>
         <div style="display:flex;gap:8px;margin-top:8px">
@@ -613,6 +619,16 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 資産推移 Modal -->
+<div class="ov" id="pf-ov">
+  <div class="mbox wide">
+    <button class="mcls" onclick="document.getElementById('pf-ov').classList.remove('open')">✕</button>
+    <div class="mtit">📈 資産推移（含み損益・保有時価）</div>
+    <div id="pf-sub" style="color:var(--sub);font-size:10px;margin-bottom:10px"></div>
+    <div id="pf-body" style="max-height:74vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -1028,7 +1044,13 @@ function updateDelBtn(){
 function renderStats(){
   document.getElementById('s-total').textContent=db.cards.length;
   document.getElementById('s-owned').textContent=db.cards.reduce((s,c)=>s+(c.owned||0),0);
-  document.getElementById('s-assets').textContent='¥0';
+  const pf=_portfolio();
+  const el=document.getElementById('s-assets');
+  el.textContent=fmtYen(pf.marketValue);
+  el.title=`コレクション時価(時価×所持): ${fmtYen(pf.marketValue)}\n`+
+    `─ 購入記録ありカード ─\n投下原価: ${fmtYen(pf.cost)}\n`+
+    `含み損益: ${fmtYen(pf.unrealized)} (${pf.unrealizedPct})\n`+
+    `実現損益: ${fmtYen(pf.realized)}\n元本回収率: ${pf.recovery}`;
 }
 
 // ── RENDER: DROPDOWNS ─────────────────────────────────
@@ -1138,6 +1160,7 @@ function cardHTML(c){
         <span class="crar">${esc(c.rarityLabel)}</span>
       </div>
       ${c.priceMemo?`<div class="cmemo">💰 ${esc(c.priceMemo)}</div>`:''}
+      ${_cardPLBadge(c)}
     </div>
     <div class="ctrl">
       <button class="cbtn m" data-act="dec" data-id="${c.id}">－</button>
@@ -2189,9 +2212,12 @@ function parseHareruya2Products(products){
     let src=(p.images&&p.images[0]&&p.images[0].src)||'';
     if(src.startsWith('//'))src='https:'+src;
     src=src.replace(/[?&]width=\d+/,'').replace(/\?$/,'').replace(/&$/,'');
+    let prc=0;const _v=(p.variants&&p.variants[0]);
+    if(_v){const _n=parseFloat(_v.price);if(!isNaN(_n))prc=Math.round(_n);}
     out.push({
       id:'hareruya2-'+p.id, name:t.name, image:src,
-      customImage:null, price:0, owned:0,
+      priceHandle:p.handle||'',
+      customImage:null, price:prc, owned:0,
       cardType:t.cardType||'Pokémon', pokemonTypes:[], subtypes:[],
       series:'', setName:t.setId, setId:(t.setId||'').toLowerCase(),
       rarity:t.rarity, rarityLabel:t.rarity, cardNumber:t.cardNumber,
@@ -2422,6 +2448,7 @@ function openEdit(id){
   }
 
   buildShopLinks(c);
+  renderAssetSection(c.id);
 
   document.getElementById('edt-ov').classList.add('open');
 }
@@ -3676,6 +3703,260 @@ document.getElementById('cfg-test').addEventListener('click', async () => {
 
 // ── INIT ──────────────────────────────────────────────
 db={cards:[],version:1};renderAll();
+/* ========== 資産管理＋時価更新エンジン ========== */
+function _num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
+function fmtYen(n){const v=Math.round(_num(n));return (v<0?'-':'')+'¥'+Math.abs(v).toLocaleString('ja-JP');}
+function fmtYenSigned(n){const v=Math.round(_num(n));return (v>0?'+':v<0?'-':'')+'¥'+Math.abs(v).toLocaleString('ja-JP');}
+function _today(){return new Date().toISOString().slice(0,10);}
+function isTracked(c){return !!(c&&c.buyLots&&c.buyLots.length);}
+function cardStats(c){
+  const lots=(c&&c.buyLots)||[],sales=(c&&c.sales)||[];
+  let boughtQty=0,cost=0;lots.forEach(l=>{boughtQty+=_num(l.q);cost+=_num(l.q)*_num(l.p);});
+  let soldQty=0,proceeds=0;sales.forEach(l=>{soldQty+=_num(l.q);proceeds+=_num(l.q)*_num(l.p);});
+  const avgCost=boughtQty>0?cost/boughtQty:0;
+  const realized=proceeds-avgCost*soldQty;
+  const remainingQty=Math.max(0,boughtQty-soldQty);
+  const remainingCost=avgCost*remainingQty;
+  const price=_num(c&&c.price);
+  const marketValue=price*remainingQty;
+  const unrealized=(price-avgCost)*remainingQty;
+  const unrealizedPct=(remainingCost>0&&price>0)?`(${unrealized>=0?'+':''}${Math.round(unrealized/remainingCost*100)}%)`:'';
+  const recovery=cost>0?Math.round(proceeds/cost*100)+'%':'—';
+  return {boughtQty,cost,avgCost,soldQty,proceeds,realized,remainingQty,remainingCost,marketValue,unrealized,unrealizedPct,recovery};
+}
+function _portfolio(){
+  let marketValue=0,cost=0,proceeds=0,realized=0,unrealized=0,remainingCost=0;
+  for(const c of db.cards){
+    marketValue+=_num(c.price)*_num(c.owned);
+    if(isTracked(c)){const s=cardStats(c);cost+=s.cost;proceeds+=s.proceeds;realized+=s.realized;unrealized+=s.unrealized;remainingCost+=s.remainingCost;}
+  }
+  const recovery=cost>0?Math.round(proceeds/cost*100)+'%':'—';
+  const unrealizedPct=remainingCost>0?`(${unrealized>=0?'+':''}${Math.round(unrealized/remainingCost*100)}%)`:'—';
+  return {marketValue,cost,proceeds,realized,unrealized,recovery,unrealizedPct};
+}
+function _cardPLBadge(c){
+  if(!isTracked(c))return '';
+  const s=cardStats(c);const parts=[];
+  if(_num(c.price)>0)parts.push(`時価${fmtYen(c.price)}`);
+  if(s.remainingQty>0){const col=s.unrealized>0?'#00e595':(s.unrealized<0?'#ff5d6c':'var(--sub)');parts.push(`<span style="color:${col}">${fmtYenSigned(s.unrealized)}</span>`);}
+  else if(s.soldQty>0){const col=s.realized>=0?'#00e595':'#ff5d6c';parts.push(`<span style="color:${col}">確定${fmtYenSigned(s.realized)}</span>`);}
+  if(!parts.length)return '';
+  return `<div class="cmemo" style="border:0;padding:1px 0">📊 ${parts.join(' / ')}</div>`;
+}
+function renderAssetSection(id){
+  const c=getCard(id);const el=document.getElementById('e-asset');if(!el)return;
+  if(!c){el.innerHTML='';return;}
+  c.buyLots=c.buyLots||[];c.sales=c.sales||[];
+  const s=cardStats(c);const today=_today();
+  const plColor=v=>v>0?'#00e595':(v<0?'#ff5d6c':'var(--sub)');
+  const priceLine=_num(c.price)>0
+    ? `現在時価 <b style="color:var(--gold)">${fmtYen(c.price)}</b> <span style="color:var(--sub);font-size:9px">${c.priceUpdatedAt?'('+c.priceUpdatedAt+')':''}</span>`
+    : `<span style="color:var(--sub)">時価未取得</span>`;
+  const refreshBtn=c.priceHandle
+    ? `<button class="bsec" style="padding:2px 8px;font-size:10px" onclick="refreshOne('${id}')">🔄 時価取得</button>`
+    : `<span style="color:var(--sub);font-size:9px">※自動取得不可</span>`;
+  const rowHtml=(arr,kind)=>(arr.length?arr.map((l,i)=>`<div style="display:flex;gap:4px;align-items:center;font-size:10px;margin:2px 0">
+     <span style="flex:1">${esc(l.d||'')}</span><span style="width:42px;text-align:right">${_num(l.q)}枚</span>
+     <span style="width:70px;text-align:right">${fmtYen(l.p)}</span>
+     <button onclick="del${kind}('${id}',${i})" style="background:none;border:none;color:#ff5d6c;cursor:pointer;font-size:11px">✕</button>
+   </div>`).join(''):`<div style="color:var(--sub);font-size:10px">記録なし</div>`);
+  el.innerHTML=`
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+     <div style="font-size:12px">${priceLine}</div>${refreshBtn}</div>
+   <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;background:var(--bg-c2,#10142b);padding:8px;border-radius:6px;margin-bottom:8px">
+     <div>投下原価</div><div style="text-align:right">${fmtYen(s.cost)} <span style="color:var(--sub);font-size:9px">(${s.boughtQty}枚)</span></div>
+     <div>平均取得単価</div><div style="text-align:right">${s.boughtQty?fmtYen(s.avgCost):'—'}</div>
+     <div>含み損益 (残${s.remainingQty}枚)</div><div style="text-align:right;color:${plColor(s.unrealized)}">${fmtYenSigned(s.unrealized)} ${s.unrealizedPct}</div>
+     <div>実現損益 (売${s.soldQty}枚)</div><div style="text-align:right;color:${plColor(s.realized)}">${fmtYenSigned(s.realized)}</div>
+     <div>元本回収率</div><div style="text-align:right">${s.recovery}</div>
+   </div>
+   ${_cardChartHTML(c)}
+   <div style="font-size:10px;color:var(--cyan);margin:10px 0 3px">🛒 購入ロット</div>${rowHtml(c.buyLots,'Lot')}
+   <div style="display:flex;gap:4px;margin:4px 0 10px">
+     <input id="lot-d" type="date" value="${today}" class="fi" style="flex:1;font-size:10px;padding:3px">
+     <input id="lot-q" type="number" min="1" value="1" class="fi" style="width:46px;font-size:10px;padding:3px" title="枚数">
+     <input id="lot-p" type="number" min="0" placeholder="単価¥" class="fi" style="width:72px;font-size:10px;padding:3px">
+     <button class="bsec" style="padding:2px 8px;font-size:10px" onclick="addLot('${id}')">＋購入</button></div>
+   <div style="font-size:10px;color:#00e595;margin-bottom:3px">💴 売却</div>${rowHtml(c.sales,'Sale')}
+   <div style="display:flex;gap:4px;margin:4px 0 0">
+     <input id="sale-d" type="date" value="${today}" class="fi" style="flex:1;font-size:10px;padding:3px">
+     <input id="sale-q" type="number" min="1" value="1" class="fi" style="width:46px;font-size:10px;padding:3px" title="枚数">
+     <input id="sale-p" type="number" min="0" placeholder="単価¥" class="fi" style="width:72px;font-size:10px;padding:3px">
+     <button class="bsec" style="padding:2px 8px;font-size:10px" onclick="addSale('${id}')">＋売却</button></div>`;
+}
+function addLot(id){const c=getCard(id);if(!c)return;const q=parseInt(document.getElementById('lot-q').value,10)||0;if(q<=0){alert('枚数を入力してください');return;}c.buyLots=c.buyLots||[];c.buyLots.push({d:document.getElementById('lot-d').value||_today(),q,p:_num(document.getElementById('lot-p').value)});
+  // 既に時価があれば値動きグラフの起点を即座に記録
+  if(_num(c.price)>0){c.priceHistory=c.priceHistory||[];const today=_today();const last=c.priceHistory[c.priceHistory.length-1];if(!last||last.d!==today)c.priceHistory.push({d:today,p:_num(c.price)});}
+  upsertCard(c);renderAssetSection(id);renderStats();}
+function delLot(id,i){const c=getCard(id);if(!c||!c.buyLots)return;c.buyLots.splice(i,1);upsertCard(c);renderAssetSection(id);renderStats();}
+function addSale(id){const c=getCard(id);if(!c)return;const q=parseInt(document.getElementById('sale-q').value,10)||0;if(q<=0){alert('枚数を入力してください');return;}c.sales=c.sales||[];c.sales.push({d:document.getElementById('sale-d').value||_today(),q,p:_num(document.getElementById('sale-p').value)});upsertCard(c);renderAssetSection(id);renderStats();}
+function delSale(id,i){const c=getCard(id);if(!c||!c.sales)return;c.sales.splice(i,1);upsertCard(c);renderAssetSection(id);renderStats();}
+async function _fetchHandlePrice(handle){
+  try{
+    const r=await fetch(`https://www.hareruya2.com/products/${encodeURIComponent(handle)}.json`,{cache:'no-store'});
+    if(!r.ok)return null;
+    const p=((await r.json())||{}).product;const v=p&&p.variants&&p.variants[0];
+    if(!v)return null;const n=parseFloat(v.price);return isNaN(n)?null:Math.round(n);
+  }catch(e){return null;}
+}
+async function refreshCardPrice(c){
+  if(!c.priceHandle)return false;
+  const price=await _fetchHandlePrice(c.priceHandle);
+  if(price==null)return false;
+  c.price=price;const today=_today();c.priceUpdatedAt=today;
+  c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];
+  if(last&&last.d===today)last.p=price;else c.priceHistory.push({d:today,p:price});
+  if(c.priceHistory.length>400)c.priceHistory=c.priceHistory.slice(-400);
+  return true;
+}
+async function refreshOne(id){
+  const c=getCard(id);if(!c)return;
+  if(!c.priceHandle){alert('このカードは晴れる屋ハンドル未設定のため自動取得できません。');return;}
+  _setSyncStatus('syncing','時価取得中');
+  const ok=await refreshCardPrice(c);
+  if(ok){upsertCard(c);renderAssetSection(id);renderStats();renderCards();_setSyncStatus('synced','取得 '+c.priceUpdatedAt);}
+  else _setSyncStatus('error','取得失敗');
+}
+async function _runPool(items,worker,conc){
+  let i=0;const run=async()=>{while(i<items.length){const idx=i++;try{await worker(items[idx]);}catch(e){}}};
+  await Promise.all(Array.from({length:Math.min(conc||5,Math.max(1,items.length))},run));
+}
+async function dailyAutoRefresh(){
+  try{
+    const last=+localStorage.getItem('pc_autoReprice')||0;
+    if(Date.now()-last<20*3600*1000)return;
+    const today=_today();
+    const tracked=db.cards.filter(c=>isTracked(c)&&c.priceHandle&&c.priceUpdatedAt!==today);
+    localStorage.setItem('pc_autoReprice',String(Date.now()));
+    if(!tracked.length)return;
+    let done=0,changed=0;
+    _setSyncStatus('syncing',`時価更新中 0/${tracked.length}`);
+    await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;if(done%4===0)_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);},5);
+    if(changed){saveDb();renderStats();renderCards();}
+    _setSyncStatus('synced',`時価更新 ${changed}件`);
+  }catch(e){console.warn('autoReprice',e);}
+}
+async function refreshAllOwned(){
+  if(!confirm('晴れる屋カタログから所持カードの時価を一括更新します。\n最大100ページ取得するため30秒〜1分ほどかかります。実行しますか？'))return;
+  const byId={};
+  db.cards.forEach(c=>{if((c.owned||0)>=1&&c.id.startsWith('hareruya2-'))byId[c.id.slice(10)]=c;});
+  const today=_today();let updated=0;
+  _setSyncStatus('syncing','時価一括更新 0p');
+  for(let page=1;page<=100;page++){
+    let products=null;
+    try{const r=await fetch(`https://www.hareruya2.com/products.json?limit=250&page=${page}`,{cache:'no-store'});if(!r.ok)break;products=((await r.json())||{}).products;}catch(e){break;}
+    if(!products||!products.length)break;
+    for(const p of products){
+      const c=byId[String(p.id)];if(!c)continue;
+      const v=p.variants&&p.variants[0];if(!v)continue;const n=parseFloat(v.price);if(isNaN(n))continue;
+      c.price=Math.round(n);c.priceUpdatedAt=today;
+      if(p.handle&&!c.priceHandle)c.priceHandle=p.handle;
+      if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
+      updated++;
+    }
+    if(page%5===0)_setSyncStatus('syncing',`時価一括更新 ${page}p / ${updated}件`);
+  }
+  saveDb();renderAll();
+  _setSyncStatus('synced',`時価更新 ${updated}件`);
+  alert(`${updated}件の時価を更新しました。`);
+}
+/* ---- 値動きグラフ（純SVG・依存なし） ---- */
+function _chartSVG(points,opt){
+  opt=opt||{};
+  const W=opt.w||520,H=opt.h||170,pad={l:6,r:10,t:14,b:18};
+  if(!points||!points.length)
+    return '<div style="color:var(--sub);font-size:11px;padding:18px;text-align:center">📭 データ蓄積中<br><span style="font-size:9px">時価更新が走るごとに点が増えます（日次）</span></div>';
+  const pts=points.slice().sort((a,b)=>new Date(a.d)-new Date(b.d));
+  const xs=pts.map(p=>new Date(p.d).getTime()),ys=pts.map(p=>_num(p.v));
+  let minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  if(opt.refLine!=null){minY=Math.min(minY,opt.refLine);maxY=Math.max(maxY,opt.refLine);}
+  if(opt.zero){minY=Math.min(minY,0);maxY=Math.max(maxY,0);}
+  if(minY===maxY){minY-=Math.abs(minY)*0.1+1;maxY+=Math.abs(maxY)*0.1+1;}
+  if(minX===maxX){minX-=86400000;maxX+=86400000;}
+  const padY=(maxY-minY)*0.08;minY-=padY;maxY+=padY;
+  const sx=v=>pad.l+(W-pad.l-pad.r)*((v-minX)/(maxX-minX));
+  const sy=v=>pad.t+(H-pad.t-pad.b)*(1-(v-minY)/(maxY-minY));
+  const up=ys[ys.length-1]>=ys[0];
+  const col=opt.color||(up?'#00e595':'#ff5d6c');
+  const baseY=H-pad.b;
+  const line=pts.map((p,i)=>`${i?'L':'M'}${sx(xs[i]).toFixed(1)},${sy(ys[i]).toFixed(1)}`).join(' ');
+  const area=`${line} L ${sx(maxX).toFixed(1)},${baseY} L ${sx(minX).toFixed(1)},${baseY} Z`;
+  const gid='g'+Math.random().toString(36).slice(2,7);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" style="display:block">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${col}" stop-opacity="0.28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>`;
+  if(opt.zero){const zy=sy(0).toFixed(1);svg+=`<line x1="${pad.l}" y1="${zy}" x2="${W-pad.r}" y2="${zy}" stroke="rgba(255,255,255,.28)" stroke-width="1" stroke-dasharray="3 3"/>`;}
+  if(opt.refLine!=null){const ry=sy(opt.refLine).toFixed(1);svg+=`<line x1="${pad.l}" y1="${ry}" x2="${W-pad.r}" y2="${ry}" stroke="var(--gold,#ffb400)" stroke-width="1" stroke-dasharray="4 3" opacity=".8"/><text x="${W-pad.r}" y="${(+ry-3)}" text-anchor="end" font-size="9" fill="var(--gold,#ffb400)">${esc(opt.refLabel||'')}</text>`;}
+  svg+=`<path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const lx=sx(xs[xs.length-1]),ly=sy(ys[ys.length-1]);
+  svg+=`<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.2" fill="${col}"/>`;
+  // 軸ラベル（最小/最大値・期間）
+  svg+=`<text x="${pad.l}" y="11" font-size="9" fill="var(--sub,#8b93b5)">${esc(String(opt.fmt?opt.fmt(maxY):Math.round(maxY)))}</text>`;
+  svg+=`<text x="${pad.l}" y="${baseY+13}" font-size="9" fill="var(--sub,#8b93b5)">${esc(String(opt.fmt?opt.fmt(minY):Math.round(minY)))}</text>`;
+  svg+=`<text x="${pad.l}" y="${baseY+13}" dx="40" font-size="9" fill="var(--sub,#8b93b5)">${esc(pts[0].d)}</text>`;
+  svg+=`<text x="${W-pad.r}" y="${baseY+13}" text-anchor="end" font-size="9" fill="var(--sub,#8b93b5)">${esc(pts[pts.length-1].d)}</text>`;
+  svg+=`</svg>`;
+  return svg;
+}
+function _cardChartHTML(c){
+  const hist=(c.priceHistory||[]).map(h=>({d:h.d,v:h.p}));
+  const s=cardStats(c);
+  const ref=(isTracked(c)&&s.avgCost>0)?s.avgCost:null;
+  let head='';
+  if(hist.length>=2){
+    const first=_num(hist[0].v),last=_num(hist[hist.length-1].v),chg=last-first;
+    const pct=first>0?Math.round(chg/first*100):0;
+    const col=chg>=0?'#00e595':'#ff5d6c';
+    head=`<span style="color:${col}">${fmtYenSigned(chg)} (${chg>=0?'+':''}${pct}%)</span> <span style="color:var(--sub);font-size:9px">蓄積${hist.length}点</span>`;
+  }else if(hist.length===1){head=`<span style="color:var(--sub);font-size:10px">記録1点・明日以降の更新で推移が見えます</span>`;}
+  return `<div style="font-size:10px;color:var(--cyan);margin:10px 0 2px;display:flex;justify-content:space-between"><span>📈 値動き${ref!=null?'（点線=平均取得単価）':''}</span><span>${head}</span></div>
+    <div style="background:var(--bg-c2,#10142b);border-radius:6px;padding:2px">${_chartSVG(hist,{h:140,refLine:ref,refLabel:ref!=null?'取得 '+fmtYen(ref):'',fmt:fmtYen})}</div>`;
+}
+function buildPortfolioSeries(){
+  // priceHistory を持つカードを対象に、日付ごとの時価・含み損益を集計
+  const cs=db.cards.filter(c=>c.priceHistory&&c.priceHistory.length);
+  const dateSet=new Set();cs.forEach(c=>c.priceHistory.forEach(h=>dateSet.add(h.d)));
+  const dates=[...dateSet].sort();
+  if(!dates.length)return {value:[],pl:[],hasTracked:cs.some(isTracked)};
+  // 各カードの「指定日以前の最新価格」を引く
+  const priceAsOf=(c,d)=>{let v=0;for(const h of c.priceHistory){if(h.d<=d)v=_num(h.p);else break;}return v;};
+  const value=[],pl=[];
+  for(const d of dates){
+    let mv=0,cost=0,held=0;
+    for(const c of cs){
+      const p=priceAsOf(c,d);if(p<=0)continue;
+      if(isTracked(c)){const s=cardStats(c);mv+=p*s.remainingQty;cost+=s.avgCost*s.remainingQty;held+=s.remainingQty;}
+    }
+    value.push({d,v:mv});pl.push({d,v:mv-cost});
+  }
+  return {value,pl,hasTracked:cs.some(isTracked)};
+}
+function openPortfolioTrend(){
+  const ser=buildPortfolioSeries();
+  const pf=_portfolio();
+  const sub=document.getElementById('pf-sub');
+  const box=document.getElementById('pf-body');
+  sub.textContent=`購入記録ありカードの時価をマーク・トゥ・マーケットした推移（日次の時価更新で点が増えます）`;
+  const cur=(v,sign)=>`<b style="color:${v>0?'#00e595':v<0?'#ff5d6c':'inherit'}">${sign?fmtYenSigned(v):fmtYen(v)}</b>`;
+  box.innerHTML=`
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;font-size:12px">
+      <div>コレクション時価 ${cur(pf.marketValue)}</div>
+      <div>含み損益 ${cur(pf.unrealized,1)} <span style="color:var(--sub)">${pf.unrealizedPct}</span></div>
+      <div>実現損益 ${cur(pf.realized,1)}</div>
+      <div>元本回収率 <b>${pf.recovery}</b></div>
+    </div>
+    <div style="font-size:11px;color:#00e595;margin:4px 0 2px">📈 含み損益の推移（点線＝損益ゼロ）</div>
+    <div style="background:var(--bg-c2,#10142b);border-radius:8px;padding:4px">${_chartSVG(ser.pl,{h:200,zero:true,fmt:fmtYenSigned})}</div>
+    <div style="font-size:11px;color:var(--cyan);margin:14px 0 2px">💎 保有時価の推移</div>
+    <div style="background:var(--bg-c2,#10142b);border-radius:8px;padding:4px">${_chartSVG(ser.value,{h:200,color:'#00f5ff',fmt:fmtYen})}</div>`;
+  document.getElementById('pf-ov').classList.add('open');
+}
+(function(){
+  const b=document.getElementById('btn-reprice');if(b)b.addEventListener('click',refreshAllOwned);
+  const t=document.getElementById('btn-pftrend');if(t)t.addEventListener('click',openPortfolioTrend);
+})();
+/* ========== /資産管理エンジン ========== */
+
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
   // GitHubリポジトリからデータを取得して適用
@@ -3712,6 +3993,8 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
   fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
   renderAll();
+  // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
+  setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
 });
 </script>
 <script>
