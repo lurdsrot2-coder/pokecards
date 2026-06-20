@@ -3795,23 +3795,32 @@ function addLot(id){const c=getCard(id);if(!c)return;const q=parseInt(document.g
 function delLot(id,i){const c=getCard(id);if(!c||!c.buyLots)return;c.buyLots.splice(i,1);upsertCard(c);renderAssetSection(id);renderStats();}
 function addSale(id){const c=getCard(id);if(!c)return;const q=parseInt(document.getElementById('sale-q').value,10)||0;if(q<=0){alert('枚数を入力してください');return;}c.sales=c.sales||[];c.sales.push({d:document.getElementById('sale-d').value||_today(),q,p:_num(document.getElementById('sale-p').value)});upsertCard(c);renderAssetSection(id);renderStats();}
 function delSale(id,i){const c=getCard(id);if(!c||!c.sales)return;c.sales.splice(i,1);upsertCard(c);renderAssetSection(id);renderStats();}
-async function _fetchHandlePrice(handle){
+function _normImg(src){if(!src)return '';if(src.startsWith('//'))src='https:'+src;return src.replace(/[?&]width=\d+/,'').replace(/\?$/,'').replace(/&$/,'');}
+async function _fetchHandleProduct(handle){
   try{
     const r=await fetch(`https://www.hareruya2.com/products/${encodeURIComponent(handle)}.json`,{cache:'no-store'});
     if(!r.ok)return null;
-    const p=((await r.json())||{}).product;const v=p&&p.variants&&p.variants[0];
-    if(!v)return null;const n=parseFloat(v.price);return isNaN(n)?null:Math.round(n);
+    const p=((await r.json())||{}).product;if(!p)return null;
+    const v=p.variants&&p.variants[0];const n=v?parseFloat(v.price):NaN;
+    const img=_normImg(((p.images&&p.images[0])||{}).src||'');
+    return {price:isNaN(n)?null:Math.round(n), image:img};
   }catch(e){return null;}
 }
 async function refreshCardPrice(c){
   if(!c.priceHandle)return false;
-  const price=await _fetchHandlePrice(c.priceHandle);
-  if(price==null)return false;
-  c.price=price;const today=_today();c.priceUpdatedAt=today;
-  c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];
-  if(last&&last.d===today)last.p=price;else c.priceHistory.push({d:today,p:price});
-  if(c.priceHistory.length>400)c.priceHistory=c.priceHistory.slice(-400);
-  return true;
+  const info=await _fetchHandleProduct(c.priceHandle);
+  if(!info)return false;
+  let changed=false;
+  if(info.price!=null){
+    c.price=info.price;const today=_today();c.priceUpdatedAt=today;
+    c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];
+    if(last&&last.d===today)last.p=info.price;else c.priceHistory.push({d:today,p:info.price});
+    if(c.priceHistory.length>400)c.priceHistory=c.priceHistory.slice(-400);
+    changed=true;
+  }
+  // 画像URLの自己修復（晴れる屋のCDN移行で旧URLが404になるため最新へ）
+  if(info.image && info.image!==c.image){c.image=info.image;changed=true;}
+  return changed;
 }
 async function refreshOne(id){
   const c=getCard(id);if(!c)return;
@@ -3841,28 +3850,31 @@ async function dailyAutoRefresh(){
   }catch(e){console.warn('autoReprice',e);}
 }
 async function refreshAllOwned(){
-  if(!confirm('晴れる屋カタログから所持カードの時価を一括更新します。\n最大100ページ取得するため30秒〜1分ほどかかります。実行しますか？'))return;
+  if(!confirm('晴れる屋カタログから時価と画像URLを一括更新します。\n最大100ページ取得するため30秒〜1分ほどかかります。実行しますか？'))return;
   const byId={};
-  db.cards.forEach(c=>{if((c.owned||0)>=1&&c.id.startsWith('hareruya2-'))byId[c.id.slice(10)]=c;});
-  const today=_today();let updated=0;
-  _setSyncStatus('syncing','時価一括更新 0p');
+  db.cards.forEach(c=>{if(c.id.startsWith('hareruya2-'))byId[c.id.slice(10)]=c;});
+  const today=_today();let updated=0,imgFixed=0;
+  _setSyncStatus('syncing','一括更新 0p');
   for(let page=1;page<=100;page++){
     let products=null;
     try{const r=await fetch(`https://www.hareruya2.com/products.json?limit=250&page=${page}`,{cache:'no-store'});if(!r.ok)break;products=((await r.json())||{}).products;}catch(e){break;}
     if(!products||!products.length)break;
     for(const p of products){
       const c=byId[String(p.id)];if(!c)continue;
+      // 画像URLの自己修復
+      const im=_normImg(((p.images&&p.images[0])||{}).src||'');
+      if(im&&im!==c.image){c.image=im;imgFixed++;}
       const v=p.variants&&p.variants[0];if(!v)continue;const n=parseFloat(v.price);if(isNaN(n))continue;
       c.price=Math.round(n);c.priceUpdatedAt=today;
       if(p.handle&&!c.priceHandle)c.priceHandle=p.handle;
       if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
       updated++;
     }
-    if(page%5===0)_setSyncStatus('syncing',`時価一括更新 ${page}p / ${updated}件`);
+    if(page%5===0)_setSyncStatus('syncing',`一括更新 ${page}p / 時価${updated} 画像${imgFixed}`);
   }
   saveDb();renderAll();
-  _setSyncStatus('synced',`時価更新 ${updated}件`);
-  alert(`${updated}件の時価を更新しました。`);
+  _setSyncStatus('synced',`更新 時価${updated}/画像${imgFixed}`);
+  alert(`時価 ${updated}件・画像 ${imgFixed}件を更新しました。`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
 function _chartSVG(points,opt){
