@@ -3523,14 +3523,22 @@ async function _repoGet() {
 }
 
 // GitHubリポジトリにデータをコミット（public_repoスコープ必要）
+let _lastSyncErr = '';
 async function _repoPut(data) {
+  _lastSyncErr = '';
   const cfg = _loadConfig();
-  if (!cfg.gistToken) return false;
+  if (!cfg.gistToken) { _lastSyncErr='Token未設定'; return false; }
   const { owner, repo } = _detectRepo();
-  if (!owner || !repo) return false;
+  if (!owner || !repo) { _lastSyncErr='リポジトリ不明'; return false; }
   const H = { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' };
   const HJ = { ...H, 'Content-Type': 'application/json' };
   const api = `https://api.github.com/repos/${owner}/${repo}`;
+  // ステータス付きでJSON取得するヘルパ（失敗時は理由を記録）
+  const step = async (label, url, opts) => {
+    const r = await fetch(url, opts);
+    if (!r.ok) { _lastSyncErr = `${label} ${r.status}`; throw new Error(_lastSyncErr); }
+    return r;
+  };
   try {
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
     // 小さい場合はContents APIで高速に。base64で約700KB(=元データ~500KB)未満なら安全
@@ -3542,26 +3550,31 @@ async function _repoPut(data) {
       if (sha) body.sha = sha;
       const putR = await fetch(`${api}/contents/data.json`, { method:'PUT', headers:HJ, body:JSON.stringify(body) });
       if (putR.ok) return true;
+      _lastSyncErr = `contents ${putR.status}`;
       // 失敗した場合は下のGit Data APIへフォールバック
     }
     // 大きいファイル用: Git Data API（Blob/Tree/Commit/Ref）= 最大100MBまで対応
-    const repoInfo = await (await fetch(api, { headers: H })).json();
+    const repoInfo = await (await step('repo', api, { headers: H })).json();
     const branch = repoInfo.default_branch || 'main';
-    const ref = await (await fetch(`${api}/git/ref/heads/${branch}`, { headers: H })).json();
+    const ref = await (await step('ref', `${api}/git/ref/heads/${branch}`, { headers: H })).json();
     const baseCommitSha = ref.object && ref.object.sha;
-    if (!baseCommitSha) return false;
-    const baseCommit = await (await fetch(`${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
+    if (!baseCommitSha) { _lastSyncErr='ref sha無し'; return false; }
+    const baseCommit = await (await step('commit-get', `${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
     const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
-    if (!baseTreeSha) return false;
-    const blob = await (await fetch(`${api}/git/blobs`, { method:'POST', headers:HJ, body:JSON.stringify({ content, encoding:'base64' }) })).json();
-    if (!blob.sha) return false;
-    const tree = await (await fetch(`${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
-    if (!tree.sha) return false;
-    const commit = await (await fetch(`${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
-    if (!commit.sha) return false;
-    const upd = await fetch(`${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
-    return upd.ok;
-  } catch(e) { return false; }
+    if (!baseTreeSha) { _lastSyncErr='tree sha無し'; return false; }
+    const blob = await (await step('blob', `${api}/git/blobs`, { method:'POST', headers:HJ, body:JSON.stringify({ content, encoding:'base64' }) })).json();
+    if (!blob.sha) { _lastSyncErr='blob sha無し'; return false; }
+    const tree = await (await step('tree', `${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
+    if (!tree.sha) { _lastSyncErr='tree作成失敗'; return false; }
+    const commit = await (await step('commit', `${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
+    if (!commit.sha) { _lastSyncErr='commit作成失敗'; return false; }
+    await step('ref-update', `${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
+    return true;
+  } catch(e) {
+    if (!_lastSyncErr) _lastSyncErr = e.message || '不明';
+    console.error('sync失敗:', _lastSyncErr);
+    return false;
+  }
 }
 
 // 同期ステータスバッジ更新
@@ -3599,7 +3612,7 @@ async function _autoGistUpload(){
     const ok=await _repoPut(db);
     _idbPut(db);
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー');
+    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   }catch(e){
     _setSyncStatus('error', '自動同期失敗');
   }finally{
@@ -3678,9 +3691,9 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
     const ok = await _repoPut(db);
     _idbPut(db);
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : 'エラー(public_repoスコープ確認)');
+    _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   } catch(e) {
-    _setSyncStatus('error', 'エラー');
+    _setSyncStatus('error', 'エラー: '+(_lastSyncErr||e.message||'不明'));
   }
 });
 
@@ -4060,9 +4073,21 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
 // ── Service Worker 登録（HTTPS または localhost のみ） ──
 if('serviceWorker' in navigator && location.protocol !== 'file:'){
   navigator.serviceWorker.register(URL.createObjectURL(new Blob([`
-    const CACHE='pokecards-v1';
-    self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.add('/'))));
-    self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));
+    const CACHE='pokecards-v2';
+    self.addEventListener('install',e=>{self.skipWaiting();});
+    self.addEventListener('activate',e=>e.waitUntil(
+      caches.keys().then(ks=>Promise.all(ks.map(k=>k!==CACHE&&caches.delete(k)))).then(()=>self.clients.claim())
+    ));
+    self.addEventListener('fetch',e=>{
+      const req=e.request;
+      // HTML/ナビゲーションは常にネットワーク優先（最新コードを取得）。失敗時のみキャッシュ
+      if(req.mode==='navigate' || req.destination==='document'){
+        e.respondWith(fetch(req).then(r=>{const cp=r.clone();caches.open(CACHE).then(c=>c.put(req,cp));return r;}).catch(()=>caches.match(req)));
+        return;
+      }
+      // その他はキャッシュ優先（オフライン対応）
+      e.respondWith(caches.match(req).then(r=>r||fetch(req)));
+    });
   `],{type:'application/javascript'}))).catch(()=>{});
 }
 </script>
