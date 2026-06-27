@@ -3528,22 +3528,39 @@ async function _repoPut(data) {
   if (!cfg.gistToken) return false;
   const { owner, repo } = _detectRepo();
   if (!owner || !repo) return false;
+  const H = { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' };
+  const HJ = { ...H, 'Content-Type': 'application/json' };
+  const api = `https://api.github.com/repos/${owner}/${repo}`;
   try {
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/data.json`;
-    let sha = null;
-    const getR = await fetch(apiUrl, {
-      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json' }
-    });
-    if (getR.ok) sha = (await getR.json()).sha;
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-    const body = { message: 'pokecards sync', content };
-    if (sha) body.sha = sha;
-    const putR = await fetch(apiUrl, {
-      method: 'PUT',
-      headers: { Authorization: `token ${cfg.gistToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    return putR.ok;
+    // 小さい場合はContents APIで高速に。base64で約700KB(=元データ~500KB)未満なら安全
+    if (content.length < 700000) {
+      let sha = null;
+      const getR = await fetch(`${api}/contents/data.json`, { headers: H });
+      if (getR.ok) sha = (await getR.json()).sha;
+      const body = { message: 'pokecards sync', content };
+      if (sha) body.sha = sha;
+      const putR = await fetch(`${api}/contents/data.json`, { method:'PUT', headers:HJ, body:JSON.stringify(body) });
+      if (putR.ok) return true;
+      // 失敗した場合は下のGit Data APIへフォールバック
+    }
+    // 大きいファイル用: Git Data API（Blob/Tree/Commit/Ref）= 最大100MBまで対応
+    const repoInfo = await (await fetch(api, { headers: H })).json();
+    const branch = repoInfo.default_branch || 'main';
+    const ref = await (await fetch(`${api}/git/ref/heads/${branch}`, { headers: H })).json();
+    const baseCommitSha = ref.object && ref.object.sha;
+    if (!baseCommitSha) return false;
+    const baseCommit = await (await fetch(`${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
+    const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
+    if (!baseTreeSha) return false;
+    const blob = await (await fetch(`${api}/git/blobs`, { method:'POST', headers:HJ, body:JSON.stringify({ content, encoding:'base64' }) })).json();
+    if (!blob.sha) return false;
+    const tree = await (await fetch(`${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
+    if (!tree.sha) return false;
+    const commit = await (await fetch(`${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
+    if (!commit.sha) return false;
+    const upd = await fetch(`${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
+    return upd.ok;
   } catch(e) { return false; }
 }
 
