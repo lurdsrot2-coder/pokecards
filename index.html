@@ -3905,6 +3905,45 @@ async function _fetchAllPage(page){
   }
   return []; // リトライ尽きたらこのページはskip（続行）
 }
+// 検索結果HTMLからカード画像を抽出（再出品でID変更/在庫薄カードの復旧用）
+function _extractSearchImgs(html){
+  const out=[];const re=/<img[^>]+>/g;let m;
+  while((m=re.exec(html))){
+    const tag=m[0];
+    let alt=(tag.match(/alt="([^"]*)"/)||[])[1]||'';
+    if(!/[〈<][^〉>]+[〉>]/.test(alt))continue;          // カード形式のalt(番号入り)のみ
+    alt=alt.replace(/\s*[｜|].*$/,'');                    // 「｜ポケカ販売…晴れる屋2」を除去
+    let src=(tag.match(/(?:data-src|src)="([^" ]*)/)||[])[1]||'';
+    if(src.startsWith('//'))src='https:'+src;
+    src=_normImg(src);
+    if(!src)continue;
+    const num=(alt.match(/[〈<]([^〉>]+)[〉>]/)||[])[1]||'';
+    const t=_parseHareruya2Title(alt);
+    out.push({num, name:t.name, src});
+  }
+  return out;
+}
+// セットID指定でサイト検索し、番号→画像URL のマップを作る
+// 検索ページはCORS不可のためプロキシ(fetchViaProxy)経由でHTMLを取得
+async function _searchSetMap(setId){
+  const byNum={}, byNameNum={};
+  for(let page=1;page<=12;page++){
+    const target=`https://www.hareruya2.com/search?q=${encodeURIComponent('['+setId+']')}&type=product&page=${page}`;
+    let html='';
+    try{ html=await fetchViaProxy(target); }catch(e){}
+    if(!html)break;
+    const imgs=_extractSearchImgs(html);
+    if(!imgs.length)break;
+    let added=0;
+    for(const it of imgs){
+      if(it.num&&!byNum[it.num]){byNum[it.num]=it.src;added++;}
+      if(it.name){const k=it.name+'|'+it.num;if(!byNameNum[k])byNameNum[k]=it.src;}
+    }
+    if(added===0)break; // 新規なし→終端
+    await new Promise(s=>setTimeout(s,180));
+  }
+  return {byNum, byNameNum};
+}
 async function refreshAllOwned(){
   if(!confirm('晴れる屋カタログから最新の画像URLと時価を一括取得して、リンク切れ画像を修復します。\nカード数が多いと数分かかることがあります。実行しますか？'))return;
   const byId={};
@@ -3935,6 +3974,28 @@ async function refreshAllOwned(){
     if(page%3===0){_setSyncStatus('syncing',`画像修復 ${page}p / 直した${imgFixed} 残${needImg.size}`);saveDb();renderCards();}
     if(needImg.size===0)break; // 全部見つかったら早期終了
     await new Promise(s=>setTimeout(s,150)); // レート制限回避の小休止
+  }
+  saveDb();renderCards();
+  // ── 第2パス: /collections/all に無いカード（再出品/在庫薄）をセット別サイト検索で復旧 ──
+  const remaining=[...needImg].map(id=>byId[id]).filter(Boolean);
+  const bySet={};
+  remaining.forEach(c=>{const s=(c.setId||'').trim();if(s&&s!=='?')(bySet[s]=bySet[s]||[]).push(c);});
+  const setList=Object.keys(bySet);
+  let emptyStreak=0;
+  for(let k=0;k<setList.length;k++){
+    const setId=setList[k];
+    _setSyncStatus('syncing',`検索修復 ${k+1}/${setList.length}セット / 直した${imgFixed} 残${needImg.size}`);
+    let maps;try{maps=await _searchSetMap(setId);}catch(e){maps={byNum:{},byNameNum:{}};}
+    const gotAny=Object.keys(maps.byNum).length>0;
+    // プロキシが全滅している場合は空が続く→早期中断（無駄な待ちを防ぐ）
+    if(!gotAny){ if(++emptyStreak>=6){console.warn('検索プロキシ応答なし→検索修復を中断');break;} }
+    else emptyStreak=0;
+    for(const c of bySet[setId]){
+      const im=maps.byNum[c.cardNumber] || maps.byNameNum[c.name+'|'+c.cardNumber];
+      if(im&&im!==c.image){c.image=im;imgFixed++;needImg.delete(c.id.slice(10));}
+    }
+    if((k+1)%3===0){saveDb();renderCards();}
+    await new Promise(s=>setTimeout(s,150));
   }
   saveDb();renderAll();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件 / 時価${updated} (残${needImg.size})`);
