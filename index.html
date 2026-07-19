@@ -1158,7 +1158,7 @@ function esc(v){return(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 function cardHTML(c){
   const src=c.customImage||c.image||'';
   const img=src
-    ?`<img src="${src}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'">`
+    ?`<img src="${src}" alt="${esc(c.name)}" loading="lazy" onerror="this.outerHTML='<span>🃏</span>'">`
     :`<span>🃏</span>`;
   const isSel=selIds.has(c.id);
   return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
@@ -2450,10 +2450,15 @@ function openEdit(id){
   const imgEl=document.getElementById('edt-img');
   const ph=document.getElementById('edt-img-placeholder');
   if(src){
+    // 画像が404等で失敗したら🃏プレースホルダーを表示
+    imgEl.onerror=()=>{imgEl.style.display='none';ph.style.display='block';};
+    imgEl.onload=()=>{imgEl.style.display='block';ph.style.display='none';};
     imgEl.src=src;
     imgEl.style.display='block';
     ph.style.display='none';
   } else {
+    imgEl.onerror=null;
+    imgEl.removeAttribute('src');
     imgEl.style.display='none';
     ph.style.display='block';
   }
