@@ -3945,61 +3945,42 @@ async function _searchSetMap(setId){
   return {byNum, byNameNum};
 }
 async function refreshAllOwned(){
-  if(!confirm('晴れる屋カタログから最新の画像URLと時価を一括取得して、リンク切れ画像を修復します。\nカード数が多いと数分かかることがあります。実行しますか？'))return;
-  const byId={};
-  db.cards.forEach(c=>{if(c.id.startsWith('hareruya2-'))byId[c.id.slice(10)]=c;});
-  // 画像が晴れる屋2ドメイン（=リンク切れの可能性）のものを優先的に直す対象
-  const needImg=new Set();
-  db.cards.forEach(c=>{if(c.id.startsWith('hareruya2-') && (c.image||'').includes('hareruya2.com')) needImg.add(c.id.slice(10));});
-  const today=_today();let updated=0,imgFixed=0;
-  const MAXP=400;let consecutiveEmpty=0;
-  _setSyncStatus('syncing',`画像修復 0p (残${needImg.size})`);
-  for(let page=1;page<=MAXP;page++){
-    const products=await _fetchAllPage(page);
-    if(!products.length){ if(++consecutiveEmpty>=3) break; continue; }
-    consecutiveEmpty=0;
-    for(const p of products){
-      const c=byId[String(p.id)];if(!c)continue;
-      // 画像URLの自己修復（新しい cdn.shopify.com URL に差し替え）
-      const im=_normImg(((p.images&&p.images[0])||{}).src||'');
-      if(im&&im!==c.image){c.image=im;imgFixed++;}
-      needImg.delete(String(p.id));
-      const v=p.variants&&p.variants[0];if(v){const n=parseFloat(v.price);if(!isNaN(n)){
-        c.price=Math.round(n);c.priceUpdatedAt=today;
-        if(p.handle&&!c.priceHandle)c.priceHandle=p.handle;
-        if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
-        updated++;
-      }}
+  // リンク切れ（www.hareruya2.com ドメイン）の画像を持つカードが対象
+  const targets=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||'').includes('hareruya2.com'));
+  if(!targets.length){alert('修復が必要なリンク切れ画像はありません。');return;}
+  if(!confirm(`リンク切れ画像 ${targets.length}件 を晴れる屋2から取り直します。\n（商品ページ /products/ID.json から直接取得・プロキシ不要）\n数分かかることがあります。実行しますか？`))return;
+  const today=_today();let imgFixed=0,priceUpd=0,gone=0,done=0;
+  _setSyncStatus('syncing',`画像修復 0/${targets.length}`);
+  // handle=数値ID なので /products/<ID>.json を直接叩ける（ACAO:* でCORS可）
+  await _runPool(targets, async c=>{
+    const id=c.id.slice(10);
+    let p=null;
+    for(let a=0;a<3;a++){
+      try{
+        const r=await fetch(`https://www.hareruya2.com/products/${id}.json`,{cache:'no-store'});
+        if(r.status===404){gone++;break;}                 // 廃番/在庫消滅
+        if(r.ok){p=((await r.json())||{}).product||null;break;}
+        if(r.status===503||r.status===429){await new Promise(s=>setTimeout(s,1200));continue;}
+        break;
+      }catch(e){await new Promise(s=>setTimeout(s,1000));}
     }
-    if(page%3===0){_setSyncStatus('syncing',`画像修復 ${page}p / 直した${imgFixed} 残${needImg.size}`);saveDb();renderCards();}
-    if(needImg.size===0)break; // 全部見つかったら早期終了
-    await new Promise(s=>setTimeout(s,150)); // レート制限回避の小休止
-  }
-  saveDb();renderCards();
-  // ── 第2パス: /collections/all に無いカード（再出品/在庫薄）をセット別サイト検索で復旧 ──
-  const remaining=[...needImg].map(id=>byId[id]).filter(Boolean);
-  const bySet={};
-  remaining.forEach(c=>{const s=(c.setId||'').trim();if(s&&s!=='?')(bySet[s]=bySet[s]||[]).push(c);});
-  const setList=Object.keys(bySet);
-  let emptyStreak=0;
-  for(let k=0;k<setList.length;k++){
-    const setId=setList[k];
-    _setSyncStatus('syncing',`検索修復 ${k+1}/${setList.length}セット / 直した${imgFixed} 残${needImg.size}`);
-    let maps;try{maps=await _searchSetMap(setId);}catch(e){maps={byNum:{},byNameNum:{}};}
-    const gotAny=Object.keys(maps.byNum).length>0;
-    // プロキシが全滅している場合は空が続く→早期中断（無駄な待ちを防ぐ）
-    if(!gotAny){ if(++emptyStreak>=6){console.warn('検索プロキシ応答なし→検索修復を中断');break;} }
-    else emptyStreak=0;
-    for(const c of bySet[setId]){
-      const im=maps.byNum[c.cardNumber] || maps.byNameNum[c.name+'|'+c.cardNumber];
-      if(im&&im!==c.image){c.image=im;imgFixed++;needImg.delete(c.id.slice(10));}
-    }
-    if((k+1)%3===0){saveDb();renderCards();}
-    await new Promise(s=>setTimeout(s,150));
-  }
+    done++;
+    if(done%10===0){_setSyncStatus('syncing',`画像修復 ${done}/${targets.length} (直した${imgFixed})`);}
+    if(done%60===0){saveDb();renderCards();}
+    if(!p)return;
+    const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
+    if(im&&im!==c.image){c.image=im;imgFixed++;}
+    const v=p.variants&&p.variants[0];
+    if(v){const n=parseFloat(v.price);if(!isNaN(n)){
+      c.price=Math.round(n);c.priceUpdatedAt=today;
+      if(p.handle&&!c.priceHandle)c.priceHandle=p.handle;
+      if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
+      priceUpd++;
+    }}
+  }, 5);
   saveDb();renderAll();
-  _setSyncStatus('synced',`画像修復 ${imgFixed}件 / 時価${updated} (残${needImg.size})`);
-  alert(`画像を ${imgFixed}件 修復しました。\n時価 ${updated}件 更新。\n${needImg.size>0?`${needImg.size}件は在庫切れ等で見つかりませんでした（🃏のまま）。`:'対象すべて見つかりました。'}`);
+  _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
+  alert(`画像を ${imgFixed}件 修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
 function _chartSVG(points,opt){
