@@ -125,6 +125,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 
 /* ── Rarity Chips ── */
 .rrow{display:flex;gap:7px;align-items:center}
+/* 進捗バー（画像修復など長時間処理用） */
+#prog-bar{position:fixed;left:0;right:0;bottom:0;z-index:3000;background:rgba(5,5,20,.96);border-top:1px solid var(--bd2);padding:9px 16px;box-shadow:0 -4px 20px rgba(0,0,0,.55)}
+.pb-inner{height:12px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
+.pb-fill{height:100%;width:0;background:linear-gradient(90deg,#00f5ff,#00e595);transition:width .25s ease;border-radius:7px}
+.pb-txt{margin-top:6px;font-size:12px;color:var(--txt);text-align:center;letter-spacing:.5px}
 /* PC: フィルタを左2行＋右クイックフィルター2行に集約しカード表示領域を拡大 */
 @media(min-width:601px){
   #fp .fleft .frow{ flex-wrap:nowrap; }            /* 各行を1行に固定 */
@@ -379,6 +384,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 </style>
 </head>
 <body>
+<div id="prog-bar" style="display:none">
+  <div class="pb-inner"><div class="pb-fill" id="pb-fill"></div></div>
+  <div class="pb-txt" id="pb-txt"></div>
+</div>
 <div id="app">
 
 <div id="top-ui">
@@ -3592,6 +3601,10 @@ function _setSyncStatus(state, msg) {
   else if (state === 'error') el.textContent = '❌ ' + (msg || 'エラー');
   else el.textContent = '―';
 }
+// 進捗バー（長時間処理用）
+function _progShow(label){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='0%';document.getElementById('pb-txt').textContent=label||'処理中...';b.style.display='block';}
+function _progSet(done,total,label){const b=document.getElementById('prog-bar');if(!b)return;const pct=total>0?Math.min(100,Math.round(done/total*100)):0;document.getElementById('pb-fill').style.width=pct+'%';document.getElementById('pb-txt').textContent=`${label||''} ${done}/${total} (${pct}%)`;}
+function _progDone(msg){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='100%';document.getElementById('pb-txt').textContent=msg||'完了';setTimeout(()=>{b.style.display='none';},2500);}
 
 // デバウンス保存（自動同期なし・手動のみ）
 let _syncTimer = null;
@@ -3951,6 +3964,7 @@ async function refreshAllOwned(){
   if(!confirm(`リンク切れ画像 ${targets.length}件 を晴れる屋2から取り直します。\n（商品ページ /products/ID.json から直接取得・プロキシ不要）\n数分かかることがあります。実行しますか？`))return;
   const today=_today();let imgFixed=0,priceUpd=0,gone=0,done=0;
   _setSyncStatus('syncing',`画像修復 0/${targets.length}`);
+  _progShow('画像修復中...');
   // handle=数値ID なので /products/<ID>.json を直接叩ける（ACAO:* でCORS可）
   await _runPool(targets, async c=>{
     const id=c.id.slice(10);
@@ -3965,7 +3979,7 @@ async function refreshAllOwned(){
       }catch(e){await new Promise(s=>setTimeout(s,1000));}
     }
     done++;
-    if(done%10===0){_setSyncStatus('syncing',`画像修復 ${done}/${targets.length} (直した${imgFixed})`);}
+    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${targets.length} (直した${imgFixed})`);_progSet(done,targets.length,'画像修復中');}
     if(done%60===0){saveDb();renderCards();}
     if(!p)return;
     const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
@@ -3980,6 +3994,7 @@ async function refreshAllOwned(){
   }, 5);
   saveDb();renderAll();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
+  _progDone(`✅ 完了：画像 ${imgFixed}件修復 / 時価 ${priceUpd}件更新${gone?` / ${gone}件は取得不可`:''}`);
   alert(`画像を ${imgFixed}件 修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
