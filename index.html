@@ -3958,15 +3958,27 @@ async function _searchSetMap(setId){
   return {byNum, byNameNum};
 }
 async function refreshAllOwned(){
-  // リンク切れ（www.hareruya2.com ドメイン）の画像を持つカードが対象
-  const targets=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||'').includes('hareruya2.com'));
-  if(!targets.length){alert('修復が必要なリンク切れ画像はありません。');return;}
-  if(!confirm(`リンク切れ画像 ${targets.length}件 を晴れる屋2から取り直します。\n（商品ページ /products/ID.json から直接取得・プロキシ不要）\n数分かかることがあります。実行しますか？`))return;
-  const today=_today();let imgFixed=0,priceUpd=0,gone=0,done=0;
-  _setSyncStatus('syncing',`画像修復 0/${targets.length}`);
+  const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||''));
+  if(!hare.length){alert('対象カードがありません。');return;}
+  if(!confirm(`全カードの画像リンクをチェックし、切れているものを晴れる屋2から修復します。\n①画像チェック(${hare.length}件) → ②修復 の2段階で、数分〜十数分かかることがあります。\n実行しますか？`))return;
+  const today=_today();
+  // ── ① 死活チェック（cdn.shopify等はACAO:*なのでHEADで判定可。ドメイン問わず切れ画像を検出） ──
+  _progShow('画像リンクをチェック中...');
+  const dead=[];let checked=0;
+  await _runPool(hare, async c=>{
+    let u=c.image; if(u.startsWith('//'))u='https:'+u;
+    let ok=false;
+    try{const r=await fetch(u,{method:'HEAD',cache:'no-store'});ok=r.ok;}catch(e){ok=false;}
+    if(!ok)dead.push(c);
+    checked++;
+    if(checked%25===0)_progSet(checked,hare.length,'画像チェック中');
+  }, 12);
+  if(!dead.length){_progDone('✅ リンク切れ画像はありませんでした');alert('リンク切れ画像は見つかりませんでした。');return;}
+  // ── ② 修復（handle=数値ID なので /products/<ID>.json を直接取得・プロキシ不要） ──
+  let imgFixed=0,priceUpd=0,gone=0,done=0;
   _progShow('画像修復中...');
-  // handle=数値ID なので /products/<ID>.json を直接叩ける（ACAO:* でCORS可）
-  await _runPool(targets, async c=>{
+  _setSyncStatus('syncing',`画像修復 0/${dead.length}`);
+  await _runPool(dead, async c=>{
     const id=c.id.slice(10);
     let p=null;
     for(let a=0;a<3;a++){
@@ -3979,7 +3991,7 @@ async function refreshAllOwned(){
       }catch(e){await new Promise(s=>setTimeout(s,1000));}
     }
     done++;
-    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${targets.length} (直した${imgFixed})`);_progSet(done,targets.length,'画像修復中');}
+    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
     if(done%60===0){saveDb();renderCards();}
     if(!p)return;
     const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
@@ -3991,11 +4003,11 @@ async function refreshAllOwned(){
       if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
       priceUpd++;
     }}
-  }, 5);
+  }, 6);
   saveDb();renderAll();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
-  _progDone(`✅ 完了：画像 ${imgFixed}件修復 / 時価 ${priceUpd}件更新${gone?` / ${gone}件は取得不可`:''}`);
-  alert(`画像を ${imgFixed}件 修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}`);
+  _progDone(`✅ 完了：${imgFixed}件修復${gone?` / ${gone}件は廃番`:''}`);
+  alert(`リンク切れ ${dead.length}件のうち、${imgFixed}件の画像を修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
 function _chartSVG(points,opt){
