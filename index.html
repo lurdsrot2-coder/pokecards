@@ -3570,20 +3570,33 @@ async function _repoPut(data) {
     // 大きいファイル用: Git Data API（Blob/Tree/Commit/Ref）= 最大100MBまで対応
     const repoInfo = await (await step('repo', api, { headers: H })).json();
     const branch = repoInfo.default_branch || 'main';
-    const ref = await (await step('ref', `${api}/git/ref/heads/${branch}`, { headers: H })).json();
-    const baseCommitSha = ref.object && ref.object.sha;
-    if (!baseCommitSha) { _lastSyncErr='ref sha無し'; return false; }
-    const baseCommit = await (await step('commit-get', `${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
-    const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
-    if (!baseTreeSha) { _lastSyncErr='tree sha無し'; return false; }
+    // blobは内容に依存するだけなので1回作れば使い回せる
     const blob = await (await step('blob', `${api}/git/blobs`, { method:'POST', headers:HJ, body:JSON.stringify({ content, encoding:'base64' }) })).json();
     if (!blob.sha) { _lastSyncErr='blob sha無し'; return false; }
-    const tree = await (await step('tree', `${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
-    if (!tree.sha) { _lastSyncErr='tree作成失敗'; return false; }
-    const commit = await (await step('commit', `${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
-    if (!commit.sha) { _lastSyncErr='commit作成失敗'; return false; }
-    await step('ref-update', `${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
-    return true;
+    // ref-updateが早送り以外で拒否(422)される＝他の同期がブランチを進めた競合。
+    // 最新のrefを取り直してtree/commitを作り直し、数回までリトライする
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const ref = await (await step('ref', `${api}/git/ref/heads/${branch}`, { headers: H })).json();
+      const baseCommitSha = ref.object && ref.object.sha;
+      if (!baseCommitSha) { _lastSyncErr='ref sha無し'; return false; }
+      const baseCommit = await (await step('commit-get', `${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
+      const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
+      if (!baseTreeSha) { _lastSyncErr='tree sha無し'; return false; }
+      const tree = await (await step('tree', `${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
+      if (!tree.sha) { _lastSyncErr='tree作成失敗'; return false; }
+      const commit = await (await step('commit', `${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
+      if (!commit.sha) { _lastSyncErr='commit作成失敗'; return false; }
+      const updR = await fetch(`${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
+      if (updR.ok) return true;
+      if (updR.status === 422 && attempt < 3) {
+        // 他の同期と競合→最新状態を取り直してリトライ
+        await new Promise(r => setTimeout(r, 400 + attempt * 400));
+        continue;
+      }
+      _lastSyncErr = `ref-update ${updR.status}`;
+      return false;
+    }
+    return false;
   } catch(e) {
     if (!_lastSyncErr) _lastSyncErr = e.message || '不明';
     console.error('sync失敗:', _lastSyncErr);
