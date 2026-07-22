@@ -3970,23 +3970,20 @@ async function _searchSetMap(setId){
   }
   return {byNum, byNameNum};
 }
+// 画像ファイル名が「レアリティ+番号+セット」の規則的な名前(復旧済み/新規)か、
+// ランダムハッシュ名(=リンク切れの可能性が高い旧仕様)かを判定。通信なしの一瞬の絞り込み用。
+function _looksLikeStructuredImg(url){
+  const file=((url||'').split('/').pop()||'').split('?')[0].toLowerCase().replace(/\.(jpg|jpeg|png|webp)$/,'');
+  return /^[a-z]{0,4}-?\d{5,7}[a-z0-9-]*$/.test(file);
+}
 async function refreshAllOwned(){
   const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||''));
   if(!hare.length){alert('対象カードがありません。');return;}
-  if(!confirm(`全カードの画像リンクをチェックし、切れているものを晴れる屋2から修復します。\n①画像チェック(${hare.length}件) → ②修復 の2段階で、数分〜十数分かかることがあります。\n実行しますか？`))return;
+  // ── ① 絞り込み（通信なし・一瞬）: ランダムハッシュ名の画像＝リンク切れの可能性が高いカードだけを対象に ──
+  const dead=hare.filter(c=>!_looksLikeStructuredImg(c.image));
+  if(!dead.length){alert('修復が必要そうなリンク切れ画像は見つかりませんでした。');return;}
+  if(!confirm(`リンク切れの可能性がある画像 ${dead.length}件 を晴れる屋2から修復します。\n数分かかることがあります。実行しますか？`))return;
   const today=_today();
-  // ── ① 死活チェック（cdn.shopify等はACAO:*なのでHEADで判定可。ドメイン問わず切れ画像を検出） ──
-  _progShow('画像リンクをチェック中...');
-  const dead=[];let checked=0;
-  await _runPool(hare, async c=>{
-    let u=c.image; if(u.startsWith('//'))u='https:'+u;
-    let ok=false;
-    try{const r=await fetch(u,{method:'HEAD',cache:'no-store'});ok=r.ok;}catch(e){ok=false;}
-    if(!ok)dead.push(c);
-    checked++;
-    if(checked%25===0)_progSet(checked,hare.length,'画像チェック中');
-  }, 12);
-  if(!dead.length){_progDone('✅ リンク切れ画像はありませんでした');alert('リンク切れ画像は見つかりませんでした。');return;}
   // ── ② 修復（handle=数値ID なので /products/<ID>.json を直接取得・プロキシ不要） ──
   let imgFixed=0,priceUpd=0,gone=0,done=0;
   _progShow('画像修復中...');
