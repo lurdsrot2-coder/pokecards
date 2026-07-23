@@ -3986,24 +3986,23 @@ async function refreshAllOwned(){
   const today=_today();
   // ── ② 修復（handle=数値ID なので /products/<ID>.json を直接取得・プロキシ不要） ──
   let imgFixed=0,priceUpd=0,gone=0,done=0;
+  const failed=[]; // 一時的な通信失敗で取得できなかったカード（廃番=404は含めない）
   _progShow('画像修復中...');
   _setSyncStatus('syncing',`画像修復 0/${dead.length}`);
-  await _runPool(dead, async c=>{
+  const repairOne=async c=>{
     const id=c.id.slice(10);
-    let p=null;
+    let p=null, isGone=false;
     for(let a=0;a<3;a++){
       try{
         const r=await fetch(`https://www.hareruya2.com/products/${id}.json`,{cache:'no-store'});
-        if(r.status===404){gone++;break;}                 // 廃番/在庫消滅
+        if(r.status===404){isGone=true;break;}             // 廃番/在庫消滅
         if(r.ok){p=((await r.json())||{}).product||null;break;}
         if(r.status===503||r.status===429){await new Promise(s=>setTimeout(s,1200));continue;}
         break;
       }catch(e){await new Promise(s=>setTimeout(s,1000));}
     }
-    done++;
-    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
-    if(done%60===0){saveDb();renderCards();}
-    if(!p)return;
+    if(isGone){gone++;return;}
+    if(!p){failed.push(c);return;}                         // 一時的失敗→後で再挑戦
     const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
     if(im&&im!==c.image){c.image=im;imgFixed++;}
     const v=p.variants&&p.variants[0];
@@ -4013,11 +4012,23 @@ async function refreshAllOwned(){
       if(isTracked(c)){c.priceHistory=c.priceHistory||[];const last=c.priceHistory[c.priceHistory.length-1];if(last&&last.d===today)last.p=c.price;else c.priceHistory.push({d:today,p:c.price});}
       priceUpd++;
     }}
+  };
+  await _runPool(dead, async c=>{
+    await repairOne(c);
+    done++;
+    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
+    if(done%60===0){saveDb();renderCards();}
   }, 6);
+  // 一時的な通信失敗ぶんを最後にもう一度だけ再挑戦
+  if(failed.length){
+    _progSet(dead.length-failed.length,dead.length,'再挑戦中');
+    const retryList=failed.slice();failed.length=0;
+    await _runPool(retryList, repairOne, 4);
+  }
   saveDb();renderAll();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
   _progDone(`✅ 完了：${imgFixed}件修復${gone?` / ${gone}件は廃番`:''}`);
-  alert(`リンク切れ ${dead.length}件のうち、${imgFixed}件の画像を修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}`);
+  alert(`リンク切れ ${dead.length}件のうち、${imgFixed}件の画像を修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}${failed.length?`\n${failed.length}件は通信エラーが続き取得できませんでした。もう一度「時価更新」を実行してみてください。`:''}`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
 function _chartSVG(points,opt){
