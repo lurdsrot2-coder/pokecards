@@ -145,6 +145,15 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .rc.on{background:rgba(255,0,255,.2);border-color:rgba(255,0,255,.8);color:var(--pink);font-weight:700}
 .rc.all{border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.5);background:rgba(255,255,255,.04)}
 .rc.all.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.7);color:#fff}
+/* ── 収集進捗の可視化（--p: 0〜1。進むほど濃く、100%=完成色） ── */
+.rc:not(.on):not(.all){background:rgba(255,0,255,calc(.04 + var(--p,0)*.32));border-color:rgba(255,0,255,calc(.15 + var(--p,0)*.62));color:rgba(255,0,255,calc(.45 + var(--p,0)*.5))}
+.rc:not(.on):not(.all):hover{border-color:rgba(255,0,255,.8);color:#fff}
+.rc.done:not(.on){background:rgba(0,229,149,.2);border-color:rgba(0,229,149,.85);color:#00e595;font-weight:700}
+.rc.done:not(.on):hover{border-color:#00e595;color:#7dffcb}
+.qbtn:not(.on){background:rgba(255,230,0,calc(.03 + var(--p,0)*.20));border-color:rgba(255,230,0,calc(.10 + var(--p,0)*.58));color:rgba(255,255,255,calc(.4 + var(--p,0)*.5))}
+.qbtn:not(.on):hover{border-color:rgba(255,230,0,.8);color:var(--gold)}
+.qbtn.done:not(.on){background:rgba(0,229,149,.18);border-color:rgba(0,229,149,.8);color:#00e595;font-weight:700}
+.qbtn.done:not(.on):hover{border-color:#00e595;color:#7dffcb}
 /* ── Clear Filter Button ── */
 #btn-clr-filter{display:none;background:rgba(255,80,0,.1);border:1px solid rgba(255,120,0,.5);border-radius:4px;font-size:9px;padding:4px 10px;cursor:pointer;color:rgba(255,160,50,.9);letter-spacing:1px;white-space:nowrap;transition:var(--t);flex-shrink:0}
 #btn-clr-filter.visible{display:inline-block}
@@ -1148,6 +1157,53 @@ function _filteredWithoutRarity(){
     return true;
   });
 }
+// 収集進捗の集計用プール。所持フィルタ(ALL/OWNED/WANT)は進捗が歪むので常に無視し、
+// skip指定のフィルタ（自分自身の軸）も外して母数を数える
+function _poolForProgress(skip){
+  skip=skip||{};
+  return db.cards.filter(c=>{
+    if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
+    if(c.hidden && !fs.showHidden) return false;
+    if(fs.cardType && c.cardType!==fs.cardType) return false;
+    if(fs.series===NONE_VAL){ if(c.series) return false; }
+    else if(fs.series && c.series!==fs.series) return false;
+    if(fs.title===NONE_VAL){ if(c.setName) return false; }
+    else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.search){
+      const q=fs.search.toLowerCase();
+      if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
+    }
+    if(!skip.rarity && fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
+    if(!skip.quickTag && fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
+    return true;
+  });
+}
+// レアリティ／タグの各ボタンに収集率を反映（DOMは作り直さず属性だけ更新）
+function _applyProgressStyles(){
+  const paint=(btn,own,tot)=>{
+    const p=tot>0?own/tot:0;
+    btn.style.setProperty('--p',p.toFixed(3));
+    btn.classList.toggle('done',tot>0&&own>=tot);
+    btn.title=tot>0?`${own}/${tot} 所持 (${Math.round(p*100)}%)`:'対象カードなし';
+  };
+  const rEls=document.querySelectorAll('#rscroll .rc:not(.all)');
+  if(rEls.length){
+    const tot={},own={};
+    _poolForProgress({rarity:true}).forEach(c=>{
+      const r=c.rarityLabel;if(!r)return;
+      tot[r]=(tot[r]||0)+1; if(c.owned>0)own[r]=(own[r]||0)+1;
+    });
+    rEls.forEach(b=>paint(b,own[b.dataset.r]||0,tot[b.dataset.r]||0));
+  }
+  const qEls=document.querySelectorAll('#qgrid .qbtn[data-tag]');
+  if(qEls.length){
+    const tot={},own={};
+    _poolForProgress({quickTag:true}).forEach(c=>{
+      (c.quickTags||[]).forEach(t=>{tot[t]=(tot[t]||0)+1; if(c.owned>0)own[t]=(own[t]||0)+1;});
+    });
+    qEls.forEach(b=>paint(b,own[b.dataset.tag]||0,tot[b.dataset.tag]||0));
+  }
+}
 function renderRarity(){
   const anyOtherFilter=fs.cardType||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
   const pool=anyOtherFilter?_filteredWithoutRarity():db.cards;
@@ -1159,6 +1215,7 @@ function renderRarity(){
     b.className='rc'+(fs.rarities.has(r)?' on':'');
     b.dataset.r=r;b.textContent=r;el.appendChild(b);
   });
+  _applyProgressStyles();
 }
 
 // ── RENDER: CARDS ─────────────────────────────────────
@@ -1241,6 +1298,7 @@ function renderQuickFilter(){
     return;
   }
   el.innerHTML=tags.map(t=>`<button class="qbtn${fs.quickTag===t?' on':''}" data-tag="${esc(t)}">${esc(t)}</button>`).join('');
+  _applyProgressStyles();
 }
 
 function _updateClrFilterBtn(){
@@ -1282,6 +1340,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     saveDbDebounced();
     patchOwnedEl(c);
     renderStats();
+    _applyProgressStyles(); // 所持数が変わったのでレアリティ/タグの進捗色も更新
     return;
   }
   const ci=e.target.closest('.ci');
