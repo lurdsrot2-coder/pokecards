@@ -827,10 +827,23 @@ const _idbReady=new Promise(res=>{
     r.onerror=()=>res(false);
   }catch(e){res(false);}
 });
+// 保存できていない状態を黙って見逃さないための警告バナー
+// （file:// で開くとIndexedDBが使えず、保存が無言で失敗して再起動時に全消失する事故を防ぐ）
+function _warnNoPersist(reason){
+  if(document.getElementById('persist-warn'))return;
+  const d=document.createElement('div');
+  d.id='persist-warn';
+  d.style.cssText='position:fixed;left:0;right:0;top:0;z-index:5000;background:#7a0010;color:#fff;'+
+    'padding:10px 16px;font-size:13px;line-height:1.6;box-shadow:0 2px 14px rgba(0,0,0,.6)';
+  d.innerHTML='⚠️ <b>データを保存できません</b>（'+reason+'）。このまま編集しても<b>閉じると消えます</b>。<br>'+
+    'GitHub Pages版 <a href="https://lurdsrot2-coder.github.io/pokecards/" style="color:#7fd4ff">lurdsrot2-coder.github.io/pokecards/</a> で開いてください。'+
+    ' <button onclick="this.parentNode.remove()" style="margin-left:8px;background:#fff2;color:#fff;border:1px solid #fff6;border-radius:4px;padding:2px 8px;cursor:pointer">閉じる</button>';
+  document.body.appendChild(d);
+}
 function _idbPut(data){
-  if(!_idb)return;
+  if(!_idb){_warnNoPersist(location.protocol==='file:'?'file:// では保存領域が使えません':'IndexedDBが利用できません');return;}
   try{_idb.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(data,IDB_KEY);}
-  catch(e){console.error('idbPut',e);}
+  catch(e){console.error('idbPut',e);_warnNoPersist('保存エラー: '+e.message);}
 }
 function _idbGet(){
   return new Promise(res=>{
