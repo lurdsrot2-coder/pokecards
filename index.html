@@ -235,6 +235,18 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .shop-btn .sb-ico{font-size:13px}
 .shop-btn .sb-arr{margin-left:auto;color:var(--sub);font-size:11px}
 .shop-hint{color:var(--sub);font-size:8px;margin-top:6px;line-height:1.4}
+/* 在庫ありの最安値取得 */
+.lowest-btn{width:100%;background:rgba(0,229,149,.12);border:1px solid rgba(0,229,149,.5);border-radius:5px;color:#00e595;font-size:10px;font-weight:700;padding:7px 6px;cursor:pointer;margin-bottom:6px;transition:var(--t)}
+.lowest-btn:hover:not(:disabled){background:rgba(0,229,149,.22);border-color:#00e595}
+.lowest-btn:disabled{opacity:.6;cursor:default}
+.lowest-result{background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:7px 8px;margin-bottom:7px;font-size:9px;line-height:1.6}
+.lw-row{display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.lw-row:last-child{border-bottom:none}
+.lw-shop{color:var(--sub);flex-shrink:0}
+.lw-price{color:#00e595;font-weight:700;white-space:nowrap}
+.lw-price.ng{color:rgba(255,255,255,.3);font-weight:400}
+.lw-cond{color:rgba(255,255,255,.45);font-size:8px}
+.lw-note{color:var(--sub);font-size:8px;margin-top:5px;line-height:1.4}
 .prc-row{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)}
 .prc-thumb{flex-shrink:0;width:48px;height:67px;background:#0d0d28;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px}
 .prc-thumb img{width:100%;height:100%;object-fit:contain}
@@ -612,6 +624,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         </div>
         <div class="shop-box">
           <div class="shop-lbl">💰 相場を調べる</div>
+          <button id="btn-lowest" class="lowest-btn">🔍 在庫ありの最安値を取得</button>
+          <div id="lowest-result" class="lowest-result" style="display:none"></div>
           <div class="shop-links" id="edt-shop-links"></div>
           <div class="shop-hint">各ショップで検索結果が新しいタブで開きます</div>
         </div>
@@ -2586,6 +2600,100 @@ function shopSearchUrls(c){
     {ico:'🟡',label:'ヤフーフリマ',  url:`https://paypayfleamarket.yahoo.co.jp/search/${eName}`}
   ];
 }
+// ── 在庫ありの最安値取得（カードラッシュ／福福トレカ） ──────────────
+// 両店ともCORS非対応のためプロキシ経由。失敗しやすいので数回リトライする
+async function _fetchShopHtml(url,rounds){
+  for(let i=0;i<(rounds||3);i++){
+    try{
+      const h=await fetchViaProxy(url);
+      if(h && h.length>20000) return h;
+    }catch(e){}
+    await new Promise(s=>setTimeout(s,1500));
+  }
+  return '';
+}
+const _stripTags=s=>(s||'').replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim();
+// 番号の表記ゆれを吸収（全角・空白除去して比較）
+function _numKey(n){return (n||'').replace(/[\s　]/g,'').replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));}
+// カードラッシュ: 検索結果は在庫がある商品のみ掲載される
+function _parseCardrush(html){
+  const out=[];
+  const items=html.match(/<li class="list_item_cell[^"]*"[\s\S]*?<\/li>/g)||[];
+  for(const x of items){
+    const nm=x.match(/<span class="goods_name">([\s\S]*?)<\/p>/);
+    const raw=nm?_stripTags(nm[1]):'';
+    if(!raw)continue;
+    const price=+(((x.match(/<span class="figure">([\d,]+)円/)||[])[1])||'').replace(/,/g,'');
+    if(!price)continue;
+    const stock=+(((x.match(/<p class="stock">在庫数\s*(\d+)/)||[])[1])||0);
+    if(stock<=0)continue;
+    out.push({
+      num:_numKey((raw.match(/\{([^}]+)\}/)||[])[1]||''),
+      // 〔状態C〕などのコンディション表記を拾う
+      cond:(raw.match(/[〔［\[]状態[^〕］\]]*[〕］\]]/)||[''])[0],
+      name:raw.replace(/【[^】]*】/g,'').replace(/\{[^}]*\}/g,'').replace(/\[[^\]]*\]/g,'').trim(),
+      price,stock
+    });
+  }
+  return out;
+}
+// 福福トレカ: 品切れ商品はカートフォーム(data-price)を持たないので除外される
+function _parseFukufuku(html){
+  const out=[];
+  const items=html.match(/<li class="product-list__item">[\s\S]*?<\/li>/g)||[];
+  for(const x of items){
+    if(/品切れ/.test(x))continue;
+    const price=+(((x.match(/data-price="(\d+)"/)||[])[1])||0);
+    if(!price)continue;
+    const raw=_stripTags((x.match(/product-list__item__title--name[^>]*>([\s\S]*?)<\/a>/)||[])[1]||'');
+    if(!raw)continue;
+    out.push({
+      num:_numKey((raw.match(/[(（]([^)）]+)[)）]/)||[])[1]||''),
+      cond:(raw.match(/【状態[^】]*】/)||raw.match(/\[状態[^\]]*\]/)||[''])[0],
+      name:raw.replace(/[(（][^)）]*[)）]/g,'').replace(/\[[^\]]*\]/g,'').replace(/【[^】]*】/g,'').trim(),
+      price,stock:1
+    });
+  }
+  return out;
+}
+// 該当カードの候補から最安を選ぶ（カード番号一致を最優先）
+function _pickLowest(list,card){
+  const key=_numKey(card.cardNumber);
+  let cand=key?list.filter(x=>x.num&&x.num===key):[];
+  if(!cand.length){
+    // 番号が無い/一致しない場合はカード名で緩く一致
+    const nm=(card.name||'').replace(/:.*$/,'').trim();
+    if(nm)cand=list.filter(x=>x.name&&x.name.includes(nm));
+  }
+  if(!cand.length)return null;
+  return cand.sort((a,b)=>a.price-b.price)[0];
+}
+async function fetchLowestPrices(card){
+  const q=[card.name,card.cardNumber].filter(Boolean).join(' ');
+  const shops=[
+    {label:'カードラッシュ',
+     url:'https://www.cardrush-pokemon.jp/product-list?keyword='+encodeURIComponent(q),
+     parse:_parseCardrush},
+    {label:'福福トレカ',
+     url:'https://pokemon.fukufukutoreka.com/products/list?name='+encodeURIComponent(q),
+     parse:_parseFukufuku}
+  ];
+  const results=[];
+  for(const s of shops){
+    let hit=null,err='';
+    try{
+      const html=await _fetchShopHtml(s.url);
+      if(!html){err='取得失敗';}
+      else{
+        const list=s.parse(html);
+        hit=_pickLowest(list,card);
+        if(!hit)err= list.length?'在庫なし':'該当なし';
+      }
+    }catch(e){err='エラー';}
+    results.push({shop:s.label,url:s.url,hit,err});
+  }
+  return results;
+}
 function buildShopLinks(c){
   const el=document.getElementById('edt-shop-links');
   if(!el)return;
@@ -2595,7 +2703,33 @@ function buildShopLinks(c){
     `<a class="shop-btn" href="${s.url}" target="_blank" rel="noopener noreferrer">`+
     `<span class="sb-ico">${s.ico}</span><span>${esc(s.label)}</span><span class="sb-arr">↗</span></a>`
   ).join('');
+  // 最安値パネルはカードを開くたびにリセット
+  const rb=document.getElementById('lowest-result');
+  if(rb){rb.style.display='none';rb.innerHTML='';}
+  const lb=document.getElementById('btn-lowest');
+  if(lb){lb.disabled=false;lb.textContent='🔍 在庫ありの最安値を取得';lb.dataset.id=c.id;}
 }
+document.getElementById('btn-lowest').addEventListener('click',async function(){
+  const c=getCard(this.dataset.id);if(!c)return;
+  const box=document.getElementById('lowest-result');
+  this.disabled=true;this.textContent='取得中...';
+  box.style.display='';box.innerHTML='<div style="color:var(--sub)">🔄 各ショップを検索中…（10〜30秒）</div>';
+  let rs=[];
+  try{ rs=await fetchLowestPrices(c); }catch(e){ rs=[]; }
+  if(!rs.length){
+    box.innerHTML='<div style="color:#ff6b6b">取得に失敗しました。時間をおいて再試行してください。</div>';
+  }else{
+    box.innerHTML=rs.map(r=>{
+      const v=r.hit
+        ? `<span class="lw-price">¥${r.hit.price.toLocaleString()}</span>`+
+          (r.hit.cond?` <span class="lw-cond">${esc(r.hit.cond)}</span>`:'')
+        : `<span class="lw-price ng">${esc(r.err||'—')}</span>`;
+      return `<div class="lw-row"><span class="lw-shop">${esc(r.shop)}</span><span>${v}</span></div>`;
+    }).join('')+
+    '<div class="lw-note">※在庫がある商品のみ・最安は状態B/Cなど傷ありの場合があります。取得できるのはこの2店のみです（他店は自動取得を拒否）。</div>';
+  }
+  this.disabled=false;this.textContent='🔍 もう一度取得';
+});
 
 // ── 相場チェック一覧（現在の絞り込み結果＝お気に入りフィルタ中ならお気に入りのみ）──
 function openPriceList(){
