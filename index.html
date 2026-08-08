@@ -154,6 +154,9 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .qbtn:not(.on):hover{border-color:rgba(255,230,0,.8);color:var(--gold)}
 .qbtn.done:not(.on){background:rgba(0,229,149,.18);border-color:rgba(0,229,149,.8);color:#00e595;font-weight:700}
 .qbtn.done:not(.on):hover{border-color:#00e595;color:#7dffcb}
+/* 全体から検索ボタン */
+#btn-search-all{background:rgba(0,245,255,.08);border:1px solid rgba(0,245,255,.35);border-radius:4px;color:var(--cyan);font-size:9px;padding:4px 8px;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:var(--t)}
+#btn-search-all:hover{background:rgba(0,245,255,.2);border-color:var(--cyan)}
 /* フィルタ履歴の戻る/進む */
 .fsnav{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:4px;color:rgba(255,255,255,.55);font-size:9px;padding:4px 7px;cursor:pointer;flex-shrink:0;transition:var(--t)}
 .fsnav:hover:not(:disabled){border-color:var(--bd2);color:var(--cyan);background:rgba(0,245,255,.1)}
@@ -380,7 +383,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .fleft .frow:first-child .farr{ display:none; }
   .fleft .frow:first-child .csel{ flex:1 1 0; min-width:0; max-width:100%; }
   .fsnav{ padding:4px 5px; font-size:9px; }/* 1行目に収めるため小さめに */
-  .srch{ font-size:16px; width:100%; box-sizing:border-box; }/* 16px未満だとiOSが自動ズームするため16pxに固定 */
+  /* 16px未満だとiOSが自動ズームするため16pxに固定。🌐ボタンと同じ行に並べる */
+  .srch{ font-size:16px; flex:1 1 200px; width:auto; min-width:0; box-sizing:border-box; }
   .tbtn, .tbtn2{ padding:5px 6px; font-size:11px; }
   #btn-clr-filter{ padding:5px 6px; font-size:11px; }
   #sel-sort{ padding:5px 16px 5px 6px; }
@@ -466,7 +470,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
       </div>
       <div class="frow">
-        <input class="srch" id="srch" enterkeyhint="search" placeholder="🔍 カード名・イラストレーター・タイトル">
+        <input class="srch" id="srch" enterkeyhint="search" placeholder="🔍 カード名・イラストレーター・タイトル" title="Enter: 現在の絞り込み内で検索 / Ctrl(⌘)+Enter: 絞り込みを解除して全体から検索">
+        <button id="btn-search-all" title="絞り込みを解除して全体から検索 [Ctrl(⌘)+Enter]">🌐 <span class="hm">全体</span></button>
         <div class="tgrp">
           <button class="tbtn on" data-ow="all">ALL</button>
           <button class="tbtn" data-ow="owned">OWNED</button>
@@ -1651,12 +1656,29 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
   srchEl.addEventListener('keydown',e=>{
     if(e.key==='Enter' && !e.isComposing && !_ime){
       e.preventDefault();
-      fs.search=e.target.value.trim();
-      renderCards();
+      // Ctrl(⌘)+Enter は絞り込みを解除して「全体から」検索
+      if(e.ctrlKey||e.metaKey) searchWholeLibrary();
+      else { fs.search=e.target.value.trim(); renderCards(); }
       srchEl.blur();
     }
   });
 }
+// 検索語はそのままに、他のフィルタを全部外して全体から検索し直す
+function searchWholeLibrary(){
+  const srchEl=document.getElementById('srch');
+  const q=srchEl.value.trim();
+  fs.cardType='';fs.series='';fs.title='';fs.ownership='all';
+  fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
+  fs.search=q;
+  document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow==='all'));
+  document.getElementById('btn-showhidden').classList.remove('on');
+  const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
+  renderAll(); // プルダウンも作り直す必要があるため
+}
+document.getElementById('btn-search-all').addEventListener('click',()=>{
+  searchWholeLibrary();
+  document.getElementById('srch').blur();
+});
 document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.addEventListener('click',()=>{
   // すでに選択中のボタン（ALL以外）を再度押したらALLに戻す
   const next=(b.classList.contains('on')&&b.dataset.ow!=='all')?'all':b.dataset.ow;
