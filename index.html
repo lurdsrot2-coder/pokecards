@@ -247,6 +247,9 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .lw-price.ng{color:rgba(255,255,255,.3);font-weight:400}
 .lw-cond{color:rgba(255,255,255,.45);font-size:8px}
 .lw-note{color:var(--sub);font-size:8px;margin-top:5px;line-height:1.4}
+.lw-prog{height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-top:7px}
+.lw-prog-fill{height:100%;width:0;background:linear-gradient(90deg,#00f5ff,#00e595);border-radius:3px;transition:width .3s ease}
+.lw-prog-txt{color:var(--sub);font-size:8px;margin-top:4px;text-align:center}
 .prc-row{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)}
 .prc-thumb{flex-shrink:0;width:48px;height:67px;background:#0d0d28;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px}
 .prc-thumb img{width:100%;height:100%;object-fit:contain}
@@ -2602,8 +2605,10 @@ function shopSearchUrls(c){
 }
 // ── 在庫ありの最安値取得（カードラッシュ／福福トレカ） ──────────────
 // 両店ともCORS非対応のためプロキシ経由。失敗しやすいので数回リトライする
-async function _fetchShopHtml(url,rounds){
-  for(let i=0;i<(rounds||3);i++){
+async function _fetchShopHtml(url,rounds,onAttempt){
+  const max=rounds||3;
+  for(let i=0;i<max;i++){
+    if(onAttempt)onAttempt(i+1,max);
     try{
       const h=await fetchViaProxy(url);
       if(h && h.length>20000) return h;
@@ -2668,7 +2673,7 @@ function _pickLowest(list,card){
   if(!cand.length)return null;
   return cand.sort((a,b)=>a.price-b.price)[0];
 }
-async function fetchLowestPrices(card){
+async function fetchLowestPrices(card,onProgress){
   const q=[card.name,card.cardNumber].filter(Boolean).join(' ');
   const shops=[
     {label:'カードラッシュ',
@@ -2679,10 +2684,13 @@ async function fetchLowestPrices(card){
      parse:_parseFukufuku}
   ];
   const results=[];
-  for(const s of shops){
+  const report=(done,label,attempt,max)=>{ if(onProgress)onProgress({done,total:shops.length,label,attempt,max,results:results.slice()}); };
+  for(let i=0;i<shops.length;i++){
+    const s=shops[i];
     let hit=null,err='';
+    report(i,s.label,1,3);
     try{
-      const html=await _fetchShopHtml(s.url);
+      const html=await _fetchShopHtml(s.url,3,(a,m)=>report(i,s.label,a,m));
       if(!html){err='取得失敗';}
       else{
         const list=s.parse(html);
@@ -2691,6 +2699,7 @@ async function fetchLowestPrices(card){
       }
     }catch(e){err='エラー';}
     results.push({shop:s.label,url:s.url,hit,err});
+    report(i+1,s.label,0,0); // 1店完了ごとに結果を反映
   }
   return results;
 }
@@ -2714,8 +2723,24 @@ document.getElementById('btn-lowest').addEventListener('click',async function(){
   const box=document.getElementById('lowest-result');
   this.disabled=true;this.textContent='取得中...';
   box.style.display='';box.innerHTML='<div style="color:var(--sub)">🔄 各ショップを検索中…（10〜30秒）</div>';
+  // 取得済みの行＋進捗バーを描画
+  const rowHTML=r=>{
+    const v=r.hit
+      ? `<span class="lw-price">¥${r.hit.price.toLocaleString()}</span>`+
+        (r.hit.cond?` <span class="lw-cond">${esc(r.hit.cond)}</span>`:'')
+      : `<span class="lw-price ng">${esc(r.err||'—')}</span>`;
+    return `<div class="lw-row"><span class="lw-shop">${esc(r.shop)}</span><span>${v}</span></div>`;
+  };
+  const draw=p=>{
+    const pct=Math.round(p.done/p.total*100);
+    const retry=(p.attempt>1)?` <span style="color:#ffb020">再試行 ${p.attempt}/${p.max}</span>`:'';
+    box.innerHTML=
+      p.results.map(rowHTML).join('')+
+      `<div class="lw-prog"><div class="lw-prog-fill" style="width:${pct}%"></div></div>`+
+      `<div class="lw-prog-txt">${p.done<p.total?`🔄 ${esc(p.label)} を検索中…${retry}`:'完了'} (${p.done}/${p.total})</div>`;
+  };
   let rs=[];
-  try{ rs=await fetchLowestPrices(c); }catch(e){ rs=[]; }
+  try{ rs=await fetchLowestPrices(c,draw); }catch(e){ rs=[]; }
   if(!rs.length){
     box.innerHTML='<div style="color:#ff6b6b">取得に失敗しました。時間をおいて再試行してください。</div>';
   }else{
