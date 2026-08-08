@@ -154,6 +154,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .qbtn:not(.on):hover{border-color:rgba(255,230,0,.8);color:var(--gold)}
 .qbtn.done:not(.on){background:rgba(0,229,149,.18);border-color:rgba(0,229,149,.8);color:#00e595;font-weight:700}
 .qbtn.done:not(.on):hover{border-color:#00e595;color:#7dffcb}
+/* フィルタ履歴の戻る/進む */
+.fsnav{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:4px;color:rgba(255,255,255,.55);font-size:9px;padding:4px 7px;cursor:pointer;flex-shrink:0;transition:var(--t)}
+.fsnav:hover:not(:disabled){border-color:var(--bd2);color:var(--cyan);background:rgba(0,245,255,.1)}
+.fsnav:disabled{opacity:.25;cursor:default}
 /* ── Clear Filter Button ── */
 #btn-clr-filter{display:none;background:rgba(255,80,0,.1);border:1px solid rgba(255,120,0,.5);border-radius:4px;font-size:9px;padding:4px 10px;cursor:pointer;color:rgba(255,160,50,.9);letter-spacing:1px;white-space:nowrap;transition:var(--t);flex-shrink:0}
 #btn-clr-filter.visible{display:inline-block}
@@ -375,6 +379,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .fleft .frow:first-child .flbl,
   .fleft .frow:first-child .farr{ display:none; }
   .fleft .frow:first-child .csel{ flex:1 1 0; min-width:0; max-width:100%; }
+  .fsnav{ padding:4px 5px; font-size:9px; }/* 1行目に収めるため小さめに */
   .srch{ font-size:16px; width:100%; box-sizing:border-box; }/* 16px未満だとiOSが自動ズームするため16pxに固定 */
   .tbtn, .tbtn2{ padding:5px 6px; font-size:11px; }
   #btn-clr-filter{ padding:5px 6px; font-size:11px; }
@@ -451,6 +456,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <div class="fmr">
     <div class="fleft">
       <div class="frow">
+        <button class="fsnav" id="btn-fs-back" title="前のフィルタに戻る" disabled>◀</button>
+        <button class="fsnav" id="btn-fs-fwd" title="次のフィルタへ進む" disabled>▶</button>
         <span class="flbl">CATEGORY</span>
         <select class="csel" id="sel-type"><option value="">全カード種別</option></select>
         <span class="farr">›</span>
@@ -1304,6 +1311,7 @@ function _attachGridObserver(cards){
 
 function renderCards(){
   _updateClrFilterBtn();
+  _recordFs();
   renderRarity();
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
   const g=document.getElementById('grid');
@@ -1337,6 +1345,65 @@ function renderQuickFilter(){
 function _updateClrFilterBtn(){
   document.getElementById('btn-clr-filter').classList.toggle('visible',isFilterActive());
 }
+
+// ── フィルタ履歴（戻る/進む） ─────────────────────────
+// renderCards の冒頭で状態を記録するので、どこでフィルタを変えても自動で履歴に入る
+let _fsHist=[], _fsIdx=-1, _fsTimer=null, _fsRestoring=false;
+function _fsSnap(){
+  return JSON.stringify({
+    cardType:fs.cardType,series:fs.series,title:fs.title,search:fs.search,
+    ownership:fs.ownership,rarities:[...fs.rarities].sort(),quickTag:fs.quickTag,
+    sort:fs.sort,showHidden:fs.showHidden,
+    importedIds:fs.importedIds?[...fs.importedIds]:null
+  });
+}
+function _fsApply(s){
+  const o=JSON.parse(s);
+  fs.cardType=o.cardType;fs.series=o.series;fs.title=o.title;fs.search=o.search;
+  fs.ownership=o.ownership;fs.rarities=new Set(o.rarities);fs.quickTag=o.quickTag;
+  fs.sort=o.sort;fs.showHidden=o.showHidden;
+  fs.importedIds=o.importedIds?new Set(o.importedIds):null;
+  // 画面上のコントロールも合わせる（プルダウンはrenderDropdownsが追従）
+  document.getElementById('srch').value=fs.search;
+  document.getElementById('sel-sort').value=fs.sort;
+  document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow===fs.ownership));
+  document.getElementById('btn-showhidden').classList.toggle('on',!!fs.showHidden);
+  const badge=document.getElementById('import-badge');
+  if(badge)badge.style.display=fs.importedIds?'':'none';
+}
+function _updateFsNav(){
+  const b=document.getElementById('btn-fs-back'), f=document.getElementById('btn-fs-fwd');
+  if(!b||!f)return;
+  b.disabled=_fsIdx<=0;
+  f.disabled=_fsIdx>=_fsHist.length-1;
+}
+function _recordFs(){
+  if(_fsRestoring)return;
+  clearTimeout(_fsTimer);
+  // 検索の入力中に1文字ずつ履歴が増えないよう、落ち着いてから記録する
+  _fsTimer=setTimeout(()=>{
+    const s=_fsSnap();
+    if(_fsHist[_fsIdx]===s)return;   // 変化なしなら積まない
+    _fsHist=_fsHist.slice(0,_fsIdx+1); // 戻ってから操作したら、先の履歴は破棄
+    _fsHist.push(s);
+    if(_fsHist.length>50)_fsHist.shift();
+    _fsIdx=_fsHist.length-1;
+    _updateFsNav();
+  },500);
+}
+function _fsGo(dir){
+  const ni=_fsIdx+dir;
+  if(ni<0||ni>=_fsHist.length)return;
+  clearTimeout(_fsTimer);          // 保留中の記録は捨てる
+  _fsIdx=ni;
+  _fsRestoring=true;
+  try{ _fsApply(_fsHist[ni]); renderAll(); }
+  finally{ _fsRestoring=false; }
+  _updateFsNav();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('btn-fs-back').addEventListener('click',()=>_fsGo(-1));
+document.getElementById('btn-fs-fwd').addEventListener('click',()=>_fsGo(1));
 function renderAll(){renderStats();renderDropdowns();renderQuickFilter();renderCards();}
 
 // ── CARD INTERACTIONS ─────────────────────────────────
