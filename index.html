@@ -3884,6 +3884,44 @@ async function _repoGet() {
 }
 
 // GitHubリポジトリにデータをコミット（public_repoスコープ必要）
+// ── 上書き事故の防止 ─────────────────────────────────
+// 「古い端末が、他端末の新しいデータを上書きする」のを防ぐ。
+// data.jsonの末尾200バイトだけ取ればlastUpdatedが読めるので13.7MB落とさずに確認できる
+// data.json を最後に更新したコミットSHAを見る（APIなので数百バイト・CORS可）
+// ※raw.githubusercontent への Range 要求はCORSプリフライトで弾かれるため使えない
+let _lastSeenRemote=null; // 最後に把握したクラウド側 data.json のコミットSHA
+async function _remoteDataSha(){
+  const { owner, repo } = _detectRepo();
+  if(!owner||!repo) return null;
+  const cfg=_loadConfig();
+  const h={Accept:'application/vnd.github+json'};
+  if(cfg.gistToken) h.Authorization=`token ${cfg.gistToken}`;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?path=data.json&per_page=1`,
+      {headers:h, cache:'no-store'});
+    if(!r.ok) return null;
+    const j=await r.json();
+    return (Array.isArray(j)&&j[0]&&j[0].sha)||null;
+  }catch(e){ return null; }
+}
+// 送信してよいか判定。把握しているSHAと違えば「別端末が後から更新した」
+async function _safeToPush(){
+  const sha=await _remoteDataSha();
+  if(!sha || !_lastSeenRemote) return true;   // 判定材料がなければ従来どおり通す
+  return sha===_lastSeenRemote;
+}
+function _warnRemoteNewer(){
+  if(document.getElementById('remote-warn'))return;
+  const d=document.createElement('div');
+  d.id='remote-warn';
+  d.style.cssText='position:fixed;left:0;right:0;top:0;z-index:5000;background:#7a4a00;color:#fff;'+
+    'padding:10px 16px;font-size:13px;line-height:1.6;box-shadow:0 2px 14px rgba(0,0,0,.6)';
+  d.innerHTML='⚠️ <b>クラウドに、他の端末で更新された新しいデータがあります。</b>'+
+    'この端末の内容で上書きしないよう、自動同期を止めました。<br>'+
+    '「↓ 取得」で最新を取り込んでから編集してください。'+
+    ' <button onclick="this.parentNode.remove()" style="margin-left:8px;background:#fff2;color:#fff;border:1px solid #fff6;border-radius:4px;padding:2px 8px;cursor:pointer">閉じる</button>';
+  document.body.appendChild(d);
+}
 let _lastSyncErr = '';
 async function _repoPut(data) {
   _lastSyncErr = '';
@@ -3986,9 +4024,16 @@ async function _autoGistUpload(){
   _gistSaving=true;
   _setSyncStatus('syncing', '自動同期中...');
   try{
+    // 他端末が先に更新していたら上書きせず中止する
+    if(!(await _safeToPush())){
+      _setSyncStatus('error','中止: クラウドが新しい→取得を');
+      _warnRemoteNewer();
+      return;
+    }
     db.lastUpdated=new Date().toISOString();
     const ok=await _repoPut(db);
     _idbPut(db);
+    if(ok)_lastSeenRemote=await _remoteDataSha(); // 送信後のSHAを基準に更新
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   }catch(e){
@@ -4018,7 +4063,7 @@ async function _autoGistPull(){
       const repoTime =repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
       // クラウドが新しい時だけ取り込み。取り込み直前に再度ガード
       if(repoTime>localTime && !_hasUnsentChanges() && !_isEditing()){
-        db=repoData; _idbPut(db); renderAll();
+        db=repoData; _lastSeenRemote=await _remoteDataSha(); _idbPut(db); renderAll();
         const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
         _setSyncStatus('synced', '取得 '+t);
         console.log('🔄 自動取得で更新:', repoData.cards.length, '件');
@@ -4044,6 +4089,7 @@ document.getElementById('btn-pull').addEventListener('click', async () => {
     const repoData = await _repoGet();
     if (repoData && Array.isArray(repoData.cards)) {
       db = repoData;
+      _lastSeenRemote = await _remoteDataSha();
       _idbPut(db);
       renderAll();
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
@@ -4065,9 +4111,18 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
   if (!owner || !repo) { alert('GitHubリポジトリを検出できません。GitHub Pagesで開いてください。'); return; }
   _setSyncStatus('syncing', '同期中...');
   try {
+    // 手動同期は、他端末が新しければ確認してから上書き
+    if(!(await _safeToPush())){
+      _warnRemoteNewer();
+      if(!confirm('クラウドには、他の端末で更新された新しいデータがあります。\n\nこの端末の内容で上書きすると、その変更は失われます。\n（「↓ 取得」で最新を取り込んでから編集するのが安全です）\n\nそれでも上書きしますか？')){
+        _setSyncStatus('error','同期を中止しました');
+        return;
+      }
+    }
     db.lastUpdated = new Date().toISOString();
     const ok = await _repoPut(db);
     _idbPut(db);
+    if(ok)_lastSeenRemote=await _remoteDataSha(); // 送信後のSHAを基準に更新
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   } catch(e) {
@@ -4489,6 +4544,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
         const repoTime = repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
         console.log('SYNC比較 local:', db.lastUpdated, '/ repo:', repoData.lastUpdated, '/ repoNewer:', repoTime > localTime);
+        _lastSeenRemote = await _remoteDataSha(); // 採用可否に関わらずクラウドの状態は把握しておく
         if (repoTime > localTime || (db.cards.length === 0 && repoData.cards.length > 0)) {
           db = repoData;
           _idbPut(db);
