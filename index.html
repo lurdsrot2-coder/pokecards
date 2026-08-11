@@ -224,6 +224,19 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .mbox.wide{width:min(820px,95vw)}
 .mtit{color:var(--cyan);font-size:14px;font-weight:900;letter-spacing:2px;margin-bottom:16px}
 .mcls{float:right;background:none;border:none;color:var(--sub);font-size:18px;cursor:pointer;line-height:1}
+/* 収集率パネル */
+.rt-all{background:rgba(0,245,255,.07);border:1px solid rgba(0,245,255,.3);border-radius:8px;padding:12px 14px;margin-bottom:16px;text-align:center}
+.rt-all-pct{color:var(--cyan);font-size:30px;font-weight:900;line-height:1.1}
+.rt-all-sub{color:var(--sub);font-size:10px;margin-top:4px}
+.rt-sec{color:#ffd54a;font-size:11px;font-weight:900;letter-spacing:1px;margin:14px 0 6px}
+.rt-row{display:grid;grid-template-columns:1fr 46px 66px;gap:8px;align-items:center;padding:3px 0;font-size:10px}
+.rt-nm{color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt-ct{color:var(--sub);font-size:9px;text-align:right;white-space:nowrap}
+.rt-bar{position:relative;height:12px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
+.rt-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#00f5ff,#00e595)}
+.rt-fill.done{background:#00e595}
+.rt-pct{position:absolute;inset:0;font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center;text-shadow:0 0 3px #000}
+.rt-note{color:var(--sub);font-size:9px;margin-top:14px;line-height:1.5}
 .mcls:hover{color:#fff}
 .ff{margin-bottom:12px}
 .flb{color:var(--sub);font-size:9px;letter-spacing:1px;display:block;margin-bottom:4px}
@@ -462,6 +475,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   <button class="hbtn" id="btn-pull" style="border-color:rgba(0,229,149,.35);color:#00e595">↓ 取得</button>
   <button class="hbtn" id="btn-reprice" style="border-color:rgba(255,180,0,.45);color:var(--gold)" title="所持カードの時価を晴れる屋カタログから一括更新">🔄 時価更新</button>
   <button class="hbtn" id="btn-pftrend" style="border-color:rgba(0,229,149,.45);color:#00e595" title="含み損益・保有時価の推移グラフ">📈 推移</button>
+  <button class="hbtn" id="btn-rates" style="border-color:rgba(0,245,255,.45);color:var(--cyan)" title="レアリティ・タグ・種別ごとの収集率">📊 収集率</button>
   <span id="cfg-status">―</span>
 </header>
 <div id="fp">
@@ -522,6 +536,14 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 </div><!-- #app -->
 
 <!-- Settings Modal -->
+<div class="ov" id="rates-ov">
+  <div class="mbox">
+    <button class="mcls" onclick="document.getElementById('rates-ov').classList.remove('open')">✕</button>
+    <div class="mtit">📊 コレクション収集率</div>
+    <div id="rates-body"></div>
+  </div>
+</div>
+
 <div class="ov" id="cfg-ov">
   <div class="mbox">
     <button class="mcls" id="cfg-cls">✕</button>
@@ -1061,7 +1083,7 @@ function exitSelMode(){
 document.addEventListener('keydown',e=>{
   // ESC: 開いているモーダルを閉じる / 選択モード解除
   if(e.key==='Escape'){
-    const ovIds=['edt-ov','add-ov','url-ov','imp-ov','cfg-ov','prc-ov'];
+    const ovIds=['edt-ov','add-ov','url-ov','imp-ov','cfg-ov','prc-ov','rates-ov'];
     for(const id of ovIds){
       const el=document.getElementById(id);
       if(el?.classList.contains('open')){el.classList.remove('open');return;}
@@ -1360,6 +1382,50 @@ function renderQuickFilter(){
 function _updateClrFilterBtn(){
   document.getElementById('btn-clr-filter').classList.toggle('visible',isFilterActive());
 }
+
+// ── コレクション収集率 ───────────────────────────────
+// 「種類ベース」= 所持している種類数 ÷ 登録されている種類数
+function openRates(){
+  const cards=db.cards.filter(c=>!c.hidden);           // 非表示カードは除外
+  const total=cards.length, ownedU=cards.filter(c=>(c.owned||0)>0).length;
+  const copies=cards.reduce((s,c)=>s+(c.owned||0),0);
+  const pct=n=>total?Math.round(n/total*100):0;
+  // keyFn は配列を返してよい（タグのように1枚が複数に属する場合に対応）
+  const group=(keyFn)=>{
+    const m={};
+    cards.forEach(c=>{
+      const ks=keyFn(c);
+      (Array.isArray(ks)?ks:[ks]).forEach(k=>{
+        if(k===''||k==null)return;
+        const g=m[k]||(m[k]={n:0,o:0});
+        g.n++; if((c.owned||0)>0)g.o++;
+      });
+    });
+    return Object.entries(m).map(([k,v])=>({k,n:v.n,o:v.o,p:v.n?v.o/v.n*100:0}))
+      .sort((a,b)=>b.p-a.p||b.n-a.n);
+  };
+  const rows=list=>list.length?list.map(r=>{
+    const p=Math.round(r.p);
+    return `<div class="rt-row">`+
+      `<div class="rt-nm" title="${esc(r.k)}">${esc(r.k)}</div>`+
+      `<div class="rt-ct">${r.o}/${r.n}</div>`+
+      `<div class="rt-bar"><div class="rt-fill${p>=100?' done':''}" style="width:${p}%"></div><div class="rt-pct">${p}%</div></div>`+
+    `</div>`;
+  }).join(''):'<div class="rt-ct" style="text-align:left">データなし</div>';
+
+  document.getElementById('rates-body').innerHTML=
+    `<div class="rt-all">
+       <div class="rt-all-pct">${pct(ownedU)}%</div>
+       <div class="rt-all-sub">全体 ${ownedU.toLocaleString()} / ${total.toLocaleString()} 種類（所持 ${copies.toLocaleString()} 枚）</div>
+     </div>`+
+    `<div class="rt-sec">■ レアリティ別</div>${rows(group(c=>c.rarityLabel||''))}`+
+    `<div class="rt-sec">■ カード種別別</div>${rows(group(c=>c.cardType||''))}`+
+    `<div class="rt-sec">■ タグ別</div>${rows(group(c=>c.quickTags||[]))}`+
+    `<div class="rt-note">※「種類ベース」の収集率です（1種類を1枚以上持っていれば所持とみなします）。<br>`+
+    `※非表示にしたカードは除いています。タグは1枚が複数に属するため、合計は全体と一致しません。</div>`;
+  document.getElementById('rates-ov').classList.add('open');
+}
+document.getElementById('btn-rates').addEventListener('click',openRates);
 
 // ── フィルタ履歴（戻る/進む） ─────────────────────────
 // renderCards の冒頭で状態を記録するので、どこでフィルタを変えても自動で履歴に入る
@@ -3148,7 +3214,7 @@ document.getElementById('be-abtn').addEventListener('click',()=>{
 });
 
 // Overlay click to close
-['imp-ov','edt-ov','add-ov','url-ov','prc-ov'].forEach(id=>{
+['imp-ov','edt-ov','add-ov','url-ov','prc-ov','rates-ov'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id) document.getElementById(id).classList.remove('open');
   });
