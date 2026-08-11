@@ -389,8 +389,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 @media(max-width:600px){
   #hdr{ padding:6px 10px; gap:5px; }
   #logo{ font-size:13px; }
-  .stats{ gap:6px; }
-  .chip-v{ font-size:14px; }
+  /* チップが5つになったので、はみ出さないよう折り返し＋圧縮 */
+  .stats{ gap:4px; flex-wrap:wrap; }
+  .chip{ min-width:0; padding:3px 7px; flex:1 1 auto; }
+  .chip-v{ font-size:13px; }
+  .chip-l{ font-size:7px; letter-spacing:.5px; }
   #btn-export, #btn-import-bk, #btn-madd, #btn-bulk, #btn-url-import { display:none; }
   /* スマホでは ＋ADD / SELECT / IMPORT SET を非表示 */
   #btn-add, #btn-sel, #btn-import { display:none; }
@@ -455,6 +458,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
     <div class="chip"><div class="chip-v p" id="s-owned">0</div><div class="chip-l">OWNED</div></div>
     <div class="chip"><div class="chip-v g" id="s-assets">¥0</div><div class="chip-l">ASSETS</div></div>
     <div class="chip"><div class="chip-v" id="s-filtered" style="color:#00e5cc">0</div><div class="chip-l">FILTERED</div></div>
+    <div class="chip" id="chip-rate" style="cursor:pointer" title="いまの絞り込み範囲の収集率（タップで内訳）"><div class="chip-v" id="s-rate" style="color:#00e595">0%</div><div class="chip-l">収集率</div></div>
     <div class="chip" id="chip-selected" style="display:none"><div class="chip-v" id="s-selected" style="color:#ffe600">0</div><div class="chip-l">SELECTED</div></div>
   </div>
   <button class="hbtn" id="btn-add">＋ ADD</button>
@@ -1349,6 +1353,7 @@ function _attachGridObserver(cards){
 function renderCards(){
   _updateClrFilterBtn();
   _recordFs();
+  _updateRateChip();
   renderRarity();
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
   const g=document.getElementById('grid');
@@ -1426,6 +1431,20 @@ function openRates(){
   document.getElementById('rates-ov').classList.add('open');
 }
 document.getElementById('btn-rates').addEventListener('click',openRates);
+document.getElementById('chip-rate').addEventListener('click',openRates);
+// ヘッダーの収集率チップ。いまの絞り込み範囲で計算する
+// （所持フィルタは率が歪むので _poolForProgress 同様に除外して数える）
+function _updateRateChip(){
+  const el=document.getElementById('s-rate');
+  if(!el)return;
+  const pool=_poolForProgress({});
+  const n=pool.length, o=pool.filter(c=>(c.owned||0)>0).length;
+  const p=n?Math.round(o/n*100):0;
+  el.textContent=n?p+'%':'—';
+  const chip=document.getElementById('chip-rate');
+  if(chip)chip.title=n?`いまの絞り込み範囲の収集率: ${o.toLocaleString()}/${n.toLocaleString()}種類（タップで内訳）`
+                     :'対象カードなし（タップで内訳）';
+}
 
 // ── フィルタ履歴（戻る/進む） ─────────────────────────
 // renderCards の冒頭で状態を記録するので、どこでフィルタを変えても自動で履歴に入る
