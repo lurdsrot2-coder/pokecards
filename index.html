@@ -191,6 +191,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .cimg img{width:100%;height:100%;object-fit:contain;display:block}
 .cinf{padding:4px 6px 2px}
 .cname{color:var(--txt);font-size:9px;font-weight:700;overflow-wrap:anywhere;word-break:break-all;line-height:1.35}
+.cname[data-act]{cursor:pointer;border-radius:3px;transition:var(--t)}
+.cname[data-act]:hover{color:var(--cyan);background:rgba(0,245,255,.12)}
+/* 同名カードを見分けるための収録セット表示（1行に省略） */
+.cset{color:rgba(255,255,255,.32);font-size:7.5px;line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .csub{display:flex;justify-content:space-between;padding-top:2px}
 .cnum{color:rgba(255,255,255,.2);font-size:7.5px}
 /* カード番号タップでそのセットを絞り込み（タップ領域を確保） */
@@ -1281,7 +1285,8 @@ function cardHTML(c){
     <button class="cfav" data-act="fav" data-id="${c.id}" title="お気に入り">${c.favorite?'★':'☆'}</button>
     <div class="ciwrap"><div class="cimg">${img}</div></div>
     <div class="cinf">
-      <div class="cname" title="${esc(c.name)}">${esc(c.name)}</div>
+      <div class="cname" data-act="namefilter" data-id="${c.id}" title="同名カードをすべて表示: ${esc(c.name)}">${esc(c.name)}</div>
+      ${c.setName?`<div class="cset" title="${esc(c.setName)}">${esc(c.setName)}</div>`:''}
       <div class="csub">
         <span class="cnum"${(c.setName||c.series)?` data-act="setfilter" data-id="${c.id}" title="このセットで絞り込む: ${esc([c.series,c.setName].filter(Boolean).join(' › '))}"`:''}>${esc(c.cardNumber)}</span>
         <span class="crar">${esc(c.rarityLabel)}</span>
@@ -1431,6 +1436,17 @@ document.getElementById('grid').addEventListener('click',e=>{
   if(btn){
     e.stopPropagation();
     const c=getCard(btn.dataset.id);if(!c)return;
+    if(btn.dataset.act==='namefilter'){
+      // カード名タップ: 同名カードを全部（セットを問わず）並べる。所持済みが一目で分かる
+      fs.cardType='';fs.series='';fs.title='';fs.ownership='all';
+      fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
+      fs.search=(c.name||'').replace(/[:：].*$/,'').trim()||c.name||'';
+      document.getElementById('srch').value=fs.search;
+      const bdg=document.getElementById('import-badge');if(bdg)bdg.style.display='none';
+      renderAll();
+      window.scrollTo({top:0,behavior:'smooth'});
+      return;
+    }
     if(btn.dataset.act==='setfilter'){
       // カード番号タップ: そのカードのシリーズ／タイトルで絞り込む
       // セット全体が出るよう、範囲を狭める他のフィルタは解除する
