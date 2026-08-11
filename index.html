@@ -4006,10 +4006,19 @@ async function _remoteDataSha(){
   }catch(e){ return null; }
 }
 // 送信してよいか判定。把握しているSHAと違えば「別端末が後から更新した」
+// 手動同期でのみ使用。SHA不一致だけでは誤検知しやすいので（自分の連続同期でもズレる）、
+// 「クラウドの方が実際に所持数が多い＝本当に失うものがある」場合だけ危険と判定する
 async function _safeToPush(){
   const sha=await _remoteDataSha();
-  if(!sha || !_lastSeenRemote) return true;   // 判定材料がなければ従来どおり通す
-  return sha===_lastSeenRemote;
+  if(!sha || !_lastSeenRemote) return true;      // 判定材料なし
+  if(sha===_lastSeenRemote) return true;         // 自分の把握どおり＝安全
+  if(_pushedSha && sha===_pushedSha) return true;// 直前に自分が作ったコミット＝安全
+  try{
+    const remote=await _repoGet();               // 差異があるときだけ中身を確認する
+    if(!remote||!Array.isArray(remote.cards)) return true;
+    const sum=a=>a.reduce((s,c)=>s+(c.owned||0),0);
+    return sum(remote.cards) <= sum(db.cards);   // クラウドの方が多ければ危険
+  }catch(e){ return true; }
 }
 function _warnRemoteNewer(){
   if(document.getElementById('remote-warn'))return;
@@ -4024,6 +4033,7 @@ function _warnRemoteNewer(){
   document.body.appendChild(d);
 }
 let _lastSyncErr = '';
+let _pushedSha = null; // 直近の送信で作られたコミットSHA（APIの反映遅延を避けるため応答から取る）
 async function _repoPut(data) {
   _lastSyncErr = '';
   const cfg = _loadConfig();
@@ -4049,7 +4059,7 @@ async function _repoPut(data) {
       const body = { message: 'pokecards sync', content };
       if (sha) body.sha = sha;
       const putR = await fetch(`${api}/contents/data.json`, { method:'PUT', headers:HJ, body:JSON.stringify(body) });
-      if (putR.ok) return true;
+      if (putR.ok) { try{ const pj=await putR.json(); _pushedSha=(pj.commit&&pj.commit.sha)||null; }catch(e){ _pushedSha=null; } return true; }
       _lastSyncErr = `contents ${putR.status}`;
       // 失敗した場合は下のGit Data APIへフォールバック
     }
@@ -4073,7 +4083,7 @@ async function _repoPut(data) {
       const commit = await (await step('commit', `${api}/git/commits`, { method:'POST', headers:HJ, body:JSON.stringify({ message:'pokecards sync', tree:tree.sha, parents:[baseCommitSha] }) })).json();
       if (!commit.sha) { _lastSyncErr='commit作成失敗'; return false; }
       const updR = await fetch(`${api}/git/refs/heads/${branch}`, { method:'PATCH', headers:HJ, body:JSON.stringify({ sha:commit.sha }) });
-      if (updR.ok) return true;
+      if (updR.ok) { _pushedSha=commit.sha; return true; }
       if (updR.status === 422 && attempt < 3) {
         // 他の同期と競合→最新状態を取り直してリトライ
         await new Promise(r => setTimeout(r, 400 + attempt * 400));
@@ -4125,16 +4135,12 @@ async function _autoGistUpload(){
   _gistSaving=true;
   _setSyncStatus('syncing', '自動同期中...');
   try{
-    // 他端末が先に更新していたら上書きせず中止する
-    if(!(await _safeToPush())){
-      _setSyncStatus('error','中止: クラウドが新しい→取得を');
-      _warnRemoteNewer();
-      return;
-    }
+    // 自動同期は「止めない」。編集が端末内に溜まって失われる方が危険なため、
+    // 差異を検知しても警告ログのみで送信は続行する（手動同期側で確認を出す）
     db.lastUpdated=new Date().toISOString();
     const ok=await _repoPut(db);
     _idbPut(db);
-    if(ok)_lastSeenRemote=await _remoteDataSha(); // 送信後のSHAを基準に更新
+    if(ok)_lastSeenRemote=_pushedSha||null; // 送信レスポンスのSHAを採用（問い合わせ遅延を避ける）
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   }catch(e){
@@ -4223,7 +4229,7 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
     db.lastUpdated = new Date().toISOString();
     const ok = await _repoPut(db);
     _idbPut(db);
-    if(ok)_lastSeenRemote=await _remoteDataSha(); // 送信後のSHAを基準に更新
+    if(ok)_lastSeenRemote=_pushedSha||null; // 送信レスポンスのSHAを採用
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   } catch(e) {
