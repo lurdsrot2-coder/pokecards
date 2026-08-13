@@ -1337,12 +1337,30 @@ function renderRarity(){
 }
 
 // ── RENDER: CARDS ─────────────────────────────────────
+// 表示サイズに合った縮小画像を要求する（Shopify CDNはwidthパラメータ対応）
+// 原寸は1枚254KBもあり、一覧で200枚読むと数十MBになるため必須の最適化
+function _thumb(src,w){
+  if(!src) return '';
+  if(!/cdn\.shopify\.com|\/cdn\/shop\//.test(src)) return src; // 非対応CDNはそのまま
+  let u=src.replace(/([?&])width=\d+&?/,'$1').replace(/[?&]$/,'');
+  return u+(u.includes('?')?'&':'?')+'width='+w;
+}
+// 一覧のタイル幅に応じたサムネ幅（端末の解像度も考慮）
+function _gridThumbW(){
+  const mobile=window.innerWidth<=600;
+  const cols=mobile?4:Math.max(1,Math.floor(window.innerWidth/130)); // スマホは4列
+  const tile=Math.max(70,Math.floor(window.innerWidth/cols));
+  const dpr=Math.min(window.devicePixelRatio||1,2); // 小さなサムネに3倍は過剰
+  return Math.min(mobile?220:400, Math.max(140,Math.round(tile*dpr/20)*20));
+}
+let _thumbW=_gridThumbW();
+window.addEventListener('resize',()=>{const n=_gridThumbW();if(n!==_thumbW){_thumbW=n;}});
 function esc(v){return(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
 
 function cardHTML(c){
   const src=c.customImage||c.image||'';
   const img=src
-    ?`<img src="${src}" alt="${esc(c.name)}" loading="lazy" onerror="this.outerHTML='<span>🃏</span>'">`
+    ?`<img src="${_thumb(src,_thumbW)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.outerHTML='<span>🃏</span>'">`
     :`<span>🃏</span>`;
   const isSel=selIds.has(c.id);
   return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
@@ -2623,7 +2641,7 @@ function showUrlPreview(all){
     display.map(c=>{
       const isDup=!!getCard(c.id);
       return `<div class="uic${isDup?' uic-dup':''}" title="${isDup?'取得済み':'新規'}">
-        ${c.image?`<img src="${esc(c.image)}" loading="lazy" onerror="this.style.display='none'">`:
+        ${c.image?`<img src="${esc(_thumb(c.image,240))}" loading="lazy" decoding="async" onerror="this.style.display='none'">`:
           `<div class="uic-ph">🃏</div>`}
         <div class="uic-name" title="${esc(c.name)}">${esc(c.name)}</div>
         <div class="uic-meta">${esc(c.cardNumber)}${isDup?' <span class="uic-sold">DUP</span>':''}</div>
@@ -2699,7 +2717,7 @@ function openCardLightbox(){
   const imgEl=document.getElementById('edt-img');
   if(!imgEl||imgEl.style.display==='none')return;
   const lb=document.getElementById('card-lb');
-  document.getElementById('card-lb-img').src=imgEl.src;
+  document.getElementById('card-lb-img').src=imgEl.dataset.full||imgEl.src; // 拡大は原寸
   lb.style.display='flex';
 }
 function closeCardLightbox(e){
@@ -2826,7 +2844,8 @@ function openEdit(id){
     // 画像が404等で失敗したら🃏プレースホルダーを表示
     imgEl.onerror=()=>{imgEl.style.display='none';ph.style.display='block';};
     imgEl.onload=()=>{imgEl.style.display='block';ph.style.display='none';};
-    imgEl.src=src;
+    imgEl.dataset.full=src;          // 拡大表示用に原寸を保持
+    imgEl.src=_thumb(src,400);       // プレビューは縮小版で軽く
     imgEl.style.display='block';
     ph.style.display='none';
   } else {
@@ -3028,7 +3047,7 @@ function openPriceList(){
   } else {
     list.innerHTML=cards.map(c=>{
       const src=c.customImage||c.image||'';
-      const thumb=src?`<img src="${src}" loading="lazy" onerror="this.style.display='none'">`:'🃏';
+      const thumb=src?`<img src="${_thumb(src,120)}" loading="lazy" decoding="async" onerror="this.style.display='none'">`:'🃏';
       const shops=shopSearchUrls(c).map(s=>
         `<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.ico} ${esc(s.label)}</a>`).join('');
       return `<div class="prc-row">
@@ -3050,7 +3069,7 @@ document.getElementById('e-img').addEventListener('input',e=>{
   const src=e.target.value.trim();
   const imgEl=document.getElementById('edt-img');
   const ph=document.getElementById('edt-img-placeholder');
-  if(src){imgEl.src=src;imgEl.style.display='block';ph.style.display='none';}
+  if(src){imgEl.dataset.full=src;imgEl.src=_thumb(src,400);imgEl.style.display='block';ph.style.display='none';}
   else{imgEl.style.display='none';ph.style.display='block';}
 });
 
