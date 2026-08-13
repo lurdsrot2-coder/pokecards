@@ -4054,7 +4054,7 @@ async function _repoPut(data) {
     // 小さい場合はContents APIで高速に。base64で約700KB(=元データ~500KB)未満なら安全
     if (content.length < 700000) {
       let sha = null;
-      const getR = await fetch(`${api}/contents/data.json`, { headers: H });
+      const getR = await fetch(`${api}/contents/data.json`, { headers: H, cache:'no-store' });
       if (getR.ok) sha = (await getR.json()).sha;
       const body = { message: 'pokecards sync', content };
       if (sha) body.sha = sha;
@@ -4064,7 +4064,7 @@ async function _repoPut(data) {
       // 失敗した場合は下のGit Data APIへフォールバック
     }
     // 大きいファイル用: Git Data API（Blob/Tree/Commit/Ref）= 最大100MBまで対応
-    const repoInfo = await (await step('repo', api, { headers: H })).json();
+    const repoInfo = await (await step('repo', api, { headers: H, cache:'no-store' })).json();
     const branch = repoInfo.default_branch || 'main';
     // blobは内容に依存するだけなので1回作れば使い回せる
     const blob = await (await step('blob', `${api}/git/blobs`, { method:'POST', headers:HJ, body:JSON.stringify({ content, encoding:'base64' }) })).json();
@@ -4072,10 +4072,11 @@ async function _repoPut(data) {
     // ref-updateが早送り以外で拒否(422)される＝他の同期がブランチを進めた競合。
     // 最新のrefを取り直してtree/commitを作り直し、数回までリトライする
     for (let attempt = 0; attempt < 4; attempt++) {
-      const ref = await (await step('ref', `${api}/git/ref/heads/${branch}`, { headers: H })).json();
+      // GETがキャッシュされると古い親SHAでコミットしてしまい422が永続するため必ず最新を取る
+      const ref = await (await step('ref', `${api}/git/ref/heads/${branch}?_=${Date.now()}`, { headers: H, cache:'no-store' })).json();
       const baseCommitSha = ref.object && ref.object.sha;
       if (!baseCommitSha) { _lastSyncErr='ref sha無し'; return false; }
-      const baseCommit = await (await step('commit-get', `${api}/git/commits/${baseCommitSha}`, { headers: H })).json();
+      const baseCommit = await (await step('commit-get', `${api}/git/commits/${baseCommitSha}`, { headers: H, cache:'no-store' })).json();
       const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
       if (!baseTreeSha) { _lastSyncErr='tree sha無し'; return false; }
       const tree = await (await step('tree', `${api}/git/trees`, { method:'POST', headers:HJ, body:JSON.stringify({ base_tree:baseTreeSha, tree:[{ path:'data.json', mode:'100644', type:'blob', sha:blob.sha }] }) })).json();
