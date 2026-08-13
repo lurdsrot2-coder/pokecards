@@ -147,6 +147,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .rc.on{background:rgba(255,0,255,.6);border-color:#ff00ff;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(255,0,255,.35)}
 .rc.all{border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.5);background:rgba(255,255,255,.04)}
 .rc.all.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.7);color:#fff}
+/* 種別チップ（レアリティのマゼンタと区別してシアン系） */
+.rc.typ{background:rgba(0,245,255,.05);border-color:rgba(0,245,255,.2);color:rgba(0,245,255,.6)}
+.rc.typ:not(.on):not(.all){background:rgba(0,245,255,calc(.04 + var(--p,0)*.32));border-color:rgba(0,245,255,calc(.15 + var(--p,0)*.62));color:rgba(0,245,255,calc(.5 + var(--p,0)*.5))}
+.rc.typ:not(.on):not(.all):hover{border-color:rgba(0,245,255,.85);color:#fff}
+.rc.typ.on{background:rgba(0,245,255,.6);border-color:var(--cyan);color:#fff;box-shadow:0 0 0 2px rgba(0,245,255,.35)}
 /* ── 収集進捗の可視化（--p: 0〜1。進むほど濃く、100%=完成色） ── */
 .rc:not(.on):not(.all){background:rgba(255,0,255,calc(.04 + var(--p,0)*.32));border-color:rgba(255,0,255,calc(.15 + var(--p,0)*.62));color:rgba(255,0,255,calc(.45 + var(--p,0)*.5))}
 .rc:not(.on):not(.all):hover{border-color:rgba(255,0,255,.8);color:#fff}
@@ -520,6 +525,13 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
     <div class="qf">
       <div class="qlbl">QUICK FILTER</div>
       <div class="qgrid" id="qgrid"></div>
+    </div>
+  </div>
+  <div class="rrow">
+    <span class="flbl">TYPE</span>
+    <button class="fsnav" id="btn-typ-multi" title="複数選択モード：ONの間はタップで追加/解除できます（PCはCtrl(⌘)+クリックでも可）">＋複数</button>
+    <div class="rscroll" id="tscroll">
+      <button class="rc all on" data-t="">全て</button>
     </div>
   </div>
   <div class="rrow">
@@ -998,12 +1010,12 @@ function deleteCards(ids){const s=new Set(ids);db.cards=db.cards.filter(c=>!s.ha
 let db=loadDb();
 
 // ── FILTER STATE ──────────────────────────────────────
-let fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+let fs={cardTypes:new Set(),series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
 function isFilterActive(){
-  return !!(fs.cardType||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
+  return !!(fs.cardTypes.size||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
 }
 function clearFilters(){
-  fs.cardType='';fs.series='';fs.title='';fs.search='';fs.ownership='all';
+  fs.cardTypes=new Set();fs.series='';fs.title='';fs.search='';fs.ownership='all';
   fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
   // sync UI controls
   document.getElementById('srch').value='';
@@ -1039,7 +1051,7 @@ function filtered(){
   return _sortCards(db.cards.filter(c=>{
     if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
     if(c.hidden && !fs.showHidden) return false;
-    if(fs.cardType && c.cardType!==fs.cardType) return false;
+    if(fs.cardTypes.size && !fs.cardTypes.has(c.cardType)) return false;
     if(fs.series===NONE_VAL){ if(c.series) return false; }
     else if(fs.series && c.series!==fs.series) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
@@ -1169,7 +1181,7 @@ function _filteredExcluding(exclude){
   return db.cards.filter(c=>{
     if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
     if(c.hidden && !fs.showHidden) return false;
-    if(exclude!=='cardType' && fs.cardType && c.cardType!==fs.cardType) return false;
+    if(exclude!=='cardType' && fs.cardTypes.size && !fs.cardTypes.has(c.cardType)) return false;
     if(exclude!=='series'){
       if(fs.series===NONE_VAL){ if(c.series) return false; }
       else if(fs.series && c.series!==fs.series) return false;
@@ -1210,7 +1222,9 @@ function renderDropdowns(){
   };
   const hasNoSeries=poolSeries.some(c=>!c.series);
   const hasNoTitle =poolTitle.some(c=>!c.setName);
-  rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardType, false);
+  rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardTypes.size===1?[...fs.cardTypes][0]:'', false);
+  if(fs.cardTypes.size>1){ const st=document.getElementById('sel-type');
+    st.insertAdjacentHTML('afterbegin',`<option value="" selected>（${fs.cardTypes.size}種別を選択中）</option>`); }
   rebuild(document.getElementById('sel-series'), sers,  '全シリーズ',  fs.series,  hasNoSeries);
   rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle);
 }
@@ -1221,7 +1235,7 @@ function _filteredWithoutRarity(){
   return db.cards.filter(c=>{
     if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
     if(c.hidden && !fs.showHidden) return false;
-    if(fs.cardType && c.cardType!==fs.cardType) return false;
+    if(fs.cardTypes.size && !fs.cardTypes.has(c.cardType)) return false;
     if(fs.series===NONE_VAL){ if(c.series) return false; }
     else if(fs.series && c.series!==fs.series) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
@@ -1244,7 +1258,6 @@ function _poolForProgress(skip){
   return db.cards.filter(c=>{
     if(fs.importedIds && !fs.importedIds.has(c.id)) return false;
     if(c.hidden && !fs.showHidden) return false;
-    if(fs.cardType && c.cardType!==fs.cardType) return false;
     if(fs.series===NONE_VAL){ if(c.series) return false; }
     else if(fs.series && c.series!==fs.series) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
@@ -1253,6 +1266,7 @@ function _poolForProgress(skip){
       const q=fs.search.toLowerCase();
       if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
     }
+    if(!skip.cardType && fs.cardTypes.size && !fs.cardTypes.has(c.cardType)) return false;
     if(!skip.rarity && fs.rarities.size>0 && !fs.rarities.has(c.rarityLabel)) return false;
     if(!skip.quickTag && fs.quickTag && !(c.quickTags||[]).includes(fs.quickTag)) return false;
     return true;
@@ -1275,6 +1289,15 @@ function _applyProgressStyles(){
     });
     rEls.forEach(b=>paint(b,own[b.dataset.r]||0,tot[b.dataset.r]||0));
   }
+  const tEls=document.querySelectorAll('#tscroll .rc:not(.all)');
+  if(tEls.length){
+    const tot={},own={};
+    _poolForProgress({cardType:true}).forEach(c=>{
+      const t=c.cardType;if(!t)return;
+      tot[t]=(tot[t]||0)+1; if(c.owned>0)own[t]=(own[t]||0)+1;
+    });
+    tEls.forEach(b=>paint(b,own[b.dataset.t]||0,tot[b.dataset.t]||0));
+  }
   const qEls=document.querySelectorAll('#qgrid .qbtn[data-tag]');
   if(qEls.length){
     const tot={},own={};
@@ -1284,8 +1307,23 @@ function _applyProgressStyles(){
     qEls.forEach(b=>paint(b,own[b.dataset.tag]||0,tot[b.dataset.tag]||0));
   }
 }
+// 種別チップ（レアリティと同じ操作感：通常=単独、Ctrl/＋複数=追加）
+function renderTypes(){
+  const anyOther=fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
+  const pool=anyOther?_poolForProgress({cardType:true}):db.cards.filter(c=>!c.hidden||fs.showHidden);
+  const ts=[...new Set(pool.map(c=>c.cardType).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'ja'));
+  const el=document.getElementById('tscroll');
+  el.innerHTML=`<button class="rc all ${fs.cardTypes.size===0?'on':''}" data-t="">全て</button>`;
+  ts.forEach(t=>{
+    const b=document.createElement('button');
+    b.className='rc typ'+(fs.cardTypes.has(t)?' on':'');
+    b.dataset.t=t;b.textContent=t;el.appendChild(b);
+  });
+  _applyProgressStyles();
+}
 function renderRarity(){
-  const anyOtherFilter=fs.cardType||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
+  const anyOtherFilter=fs.cardTypes.size||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
   const pool=anyOtherFilter?_filteredWithoutRarity():db.cards;
   const rs=[...new Set(pool.map(c=>c.rarityLabel).filter(Boolean))].sort();
   const el=document.getElementById('rscroll');
@@ -1354,6 +1392,7 @@ function renderCards(){
   _updateClrFilterBtn();
   _recordFs();
   _updateRateChip();
+  renderTypes();
   renderRarity();
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
   const g=document.getElementById('grid');
@@ -1451,7 +1490,7 @@ function _updateRateChip(){
 let _fsHist=[], _fsIdx=-1, _fsTimer=null, _fsRestoring=false;
 function _fsSnap(){
   return JSON.stringify({
-    cardType:fs.cardType,series:fs.series,title:fs.title,search:fs.search,
+    cardTypes:[...fs.cardTypes].sort(),series:fs.series,title:fs.title,search:fs.search,
     ownership:fs.ownership,rarities:[...fs.rarities].sort(),quickTag:fs.quickTag,
     sort:fs.sort,showHidden:fs.showHidden,
     importedIds:fs.importedIds?[...fs.importedIds]:null
@@ -1459,7 +1498,7 @@ function _fsSnap(){
 }
 function _fsApply(s){
   const o=JSON.parse(s);
-  fs.cardType=o.cardType;fs.series=o.series;fs.title=o.title;fs.search=o.search;
+  fs.cardTypes=new Set(o.cardTypes||[]);fs.series=o.series;fs.title=o.title;fs.search=o.search;
   fs.ownership=o.ownership;fs.rarities=new Set(o.rarities);fs.quickTag=o.quickTag;
   fs.sort=o.sort;fs.showHidden=o.showHidden;
   fs.importedIds=o.importedIds?new Set(o.importedIds):null;
@@ -1523,7 +1562,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     const c=getCard(btn.dataset.id);if(!c)return;
     if(btn.dataset.act==='namefilter'){
       // カード名タップ: 同名カードを全部（セットを問わず）並べる。所持済みが一目で分かる
-      fs.cardType='';fs.series='';fs.title='';fs.ownership='all';
+      fs.cardTypes=new Set();fs.series='';fs.title='';fs.ownership='all';
       fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
       fs.search=(c.name||'').replace(/[:：].*$/,'').trim()||c.name||'';
       document.getElementById('srch').value=fs.search;
@@ -1535,7 +1574,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     if(btn.dataset.act==='setfilter'){
       // カード番号タップ: そのカードのシリーズ／タイトルで絞り込む
       // セット全体が出るよう、範囲を狭める他のフィルタは解除する
-      fs.cardType='';fs.search='';fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
+      fs.cardTypes=new Set();fs.search='';fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
       fs.series=c.series||'';
       fs.title=c.setName||'';
       document.getElementById('srch').value='';
@@ -1739,7 +1778,7 @@ document.getElementById('import-bk-file').addEventListener('change',e=>{
 
 // ── FILTER EVENTS ─────────────────────────────────────
 document.getElementById('sel-type').addEventListener('change',e=>{
-  fs.cardType=e.target.value;fs.series='';fs.title='';renderAll();
+  fs.cardTypes=e.target.value?new Set([e.target.value]):new Set();fs.series='';fs.title='';renderAll();
 });
 document.getElementById('sel-series').addEventListener('change',e=>{
   fs.series=e.target.value;fs.title='';renderAll();
@@ -1773,7 +1812,7 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
 function searchWholeLibrary(){
   const srchEl=document.getElementById('srch');
   const q=srchEl.value.trim();
-  fs.cardType='';fs.series='';fs.title='';fs.ownership='all';
+  fs.cardTypes=new Set();fs.series='';fs.title='';fs.ownership='all';
   fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
   fs.search=q;
   document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow==='all'));
@@ -1797,6 +1836,25 @@ document.getElementById('btn-rar-multi').addEventListener('click',function(){
   _rarMulti=!_rarMulti;
   this.classList.toggle('on',_rarMulti);
   this.textContent=_rarMulti?'＋複数 ON':'＋複数';
+});
+let _typMulti=false;
+document.getElementById('btn-typ-multi').addEventListener('click',function(){
+  _typMulti=!_typMulti;
+  this.classList.toggle('on',_typMulti);
+  this.textContent=_typMulti?'＋複数 ON':'＋複数';
+});
+document.getElementById('tscroll').addEventListener('click',e=>{
+  const c=e.target.closest('.rc');if(!c)return;
+  const t=c.dataset.t;
+  if(t===''){ fs.cardTypes.clear(); }
+  else if(e.ctrlKey||e.metaKey||_typMulti){
+    if(fs.cardTypes.has(t)) fs.cardTypes.delete(t); else fs.cardTypes.add(t);
+  } else {
+    if(fs.cardTypes.size===1&&fs.cardTypes.has(t)) fs.cardTypes.clear();
+    else{ fs.cardTypes.clear(); fs.cardTypes.add(t); }
+  }
+  fs.series='';fs.title='';   // 種別を変えたら下位の階層は解除
+  renderAll();
 });
 document.getElementById('rscroll').addEventListener('click',e=>{
   const c=e.target.closest('.rc');if(!c)return;
@@ -2138,7 +2196,7 @@ function doImportCards(){
     urlImportCards.forEach(c=>{if(!getCard(c.id)){db.cards.push(c);newIds.add(c.id);}});
     const added=newIds.size;
     saveDb();
-    fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+    fs={cardTypes:new Set(),series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
     document.getElementById('url-ov').classList.remove('open');
     applyImportFilter(newIds);
     if(added>0) document.getElementById('url-prog').style.display='none';
@@ -4674,7 +4732,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   }
   const migrated=_migratePMCG(db);
   if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
-  fs={cardType:'',series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+  fs={cardTypes:new Set(),series:'',title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
   renderAll();
   // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
