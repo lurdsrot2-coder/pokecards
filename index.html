@@ -919,6 +919,62 @@ function _warnNoPersist(reason){
     ' <button onclick="this.parentNode.remove()" style="margin-left:8px;background:#fff2;color:#fff;border:1px solid #fff6;border-radius:4px;padding:2px 8px;cursor:pointer">閉じる</button>';
   document.body.appendChild(d);
 }
+// ── 2端末の編集を両立させるための3方向マージ ─────────────
+// 「前回同期した時点(base)」を保存しておき、自分が変えたカードだけを
+// 相手の最新データに適用する。触っていないカードは相手の内容が残る。
+const IDB_BASE_KEY='base_v1';
+let _baseDb=null;
+function _idbPutBase(data){
+  if(!_idb)return;
+  try{_idb.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(data,IDB_BASE_KEY);}catch(e){}
+}
+function _idbGetBase(){
+  return new Promise(res=>{
+    if(!_idb){res(null);return;}
+    try{
+      const r=_idb.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(IDB_BASE_KEY);
+      r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
+    }catch(e){res(null);}
+  });
+}
+// 同期が成立した時点のスナップショットを基準として記録
+function _setBase(data){
+  try{ _baseDb=JSON.parse(JSON.stringify(data)); _idbPutBase(_baseDb); }catch(e){}
+}
+// base=前回同期時点 / mine=この端末 / theirs=クラウド最新
+function _merge3(base,mine,theirs){
+  if(!base||!theirs||!Array.isArray(theirs.cards)) return mine;
+  const baseMap=new Map(base.cards.map(c=>[c.id,JSON.stringify(c)]));
+  const mineMap=new Map(mine.cards.map(c=>[c.id,c]));
+  const out=new Map(theirs.cards.map(c=>[c.id,c]));   // 相手を土台にする
+  let mineWins=0, theirsKept=0, removed=0;
+  // 自分が変更/追加したカードを上書き
+  for(const c of mine.cards){
+    const b=baseMap.get(c.id);
+    if(b===undefined || b!==JSON.stringify(c)){ out.set(c.id,c); mineWins++; }
+    else theirsKept++;
+  }
+  // 自分が削除したカードは結果からも消す
+  for(const id of baseMap.keys()){
+    if(!mineMap.has(id) && out.has(id)){ out.delete(id); removed++; }
+  }
+  console.log(`マージ: 自分の変更${mineWins}件 / 相手を維持${theirsKept}件 / 削除${removed}件`);
+  return { ...theirs, cards:[...out.values()], lastUpdated:new Date().toISOString() };
+}
+// 送信前に、クラウドが変わっていればマージした内容を返す
+async function _mergeBeforePush(){
+  try{
+    const sha=await _remoteDataSha();
+    if(sha && _lastSeenRemote && sha===_lastSeenRemote) return db; // 誰も変えていない＝そのまま
+    if(!_baseDb) return db;                                        // 基準が無ければ従来どおり
+    const remote=await _repoGet();
+    if(!remote||!Array.isArray(remote.cards)) return db;
+    const merged=_merge3(_baseDb,db,remote);
+    db=merged; _idbPut(db);                                        // 画面側にも反映
+    renderAll();
+    return db;
+  }catch(e){ console.warn('merge失敗',e); return db; }
+}
 function _idbPut(data){
   if(!_idb){_warnNoPersist(location.protocol==='file:'?'file:// では保存領域が使えません':'IndexedDBが利用できません');return;}
   try{_idb.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(data,IDB_KEY);}
@@ -4215,10 +4271,11 @@ async function _autoGistUpload(){
   try{
     // 自動同期は「止めない」。編集が端末内に溜まって失われる方が危険なため、
     // 差異を検知しても警告ログのみで送信は続行する（手動同期側で確認を出す）
+    await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated=new Date().toISOString();
     const ok=await _repoPut(db);
     _idbPut(db);
-    if(ok)_lastSeenRemote=_pushedSha||null; // 送信レスポンスのSHAを採用（問い合わせ遅延を避ける）
+    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); } // 送信できた時点を基準にする
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   }catch(e){
@@ -4248,7 +4305,7 @@ async function _autoGistPull(){
       const repoTime =repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
       // クラウドが新しい時だけ取り込み。取り込み直前に再度ガード
       if(repoTime>localTime && !_hasUnsentChanges() && !_isEditing()){
-        db=repoData; _lastSeenRemote=await _remoteDataSha(); _idbPut(db); renderAll();
+        db=repoData; _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAll();
         const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
         _setSyncStatus('synced', '取得 '+t);
         console.log('🔄 自動取得で更新:', repoData.cards.length, '件');
@@ -4275,6 +4332,7 @@ document.getElementById('btn-pull').addEventListener('click', async () => {
     if (repoData && Array.isArray(repoData.cards)) {
       db = repoData;
       _lastSeenRemote = await _remoteDataSha();
+      _setBase(db);
       _idbPut(db);
       renderAll();
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
@@ -4304,10 +4362,11 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
         return;
       }
     }
+    await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated = new Date().toISOString();
     const ok = await _repoPut(db);
     _idbPut(db);
-    if(ok)_lastSeenRemote=_pushedSha||null; // 送信レスポンスのSHAを採用
+    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); }
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   } catch(e) {
@@ -4718,6 +4777,7 @@ function openPortfolioTrend(){
 
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
+  _baseDb=await _idbGetBase();   // 前回同期時点の基準を復元（マージ用）
   // GitHubリポジトリからデータを取得して適用
   const cfg = _loadConfig();
   const { owner, repo } = _detectRepo();
@@ -4732,6 +4792,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
         _lastSeenRemote = await _remoteDataSha(); // 採用可否に関わらずクラウドの状態は把握しておく
         if (repoTime > localTime || (db.cards.length === 0 && repoData.cards.length > 0)) {
           db = repoData;
+          _setBase(db);
           _idbPut(db);
           renderAll();
           console.log('✅ GitHubデータ採用:', repoData.cards.length, '件');
