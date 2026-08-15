@@ -1035,9 +1035,41 @@ function _doSave(){
   // IndexedDB に非同期保存（メインスレッドをブロックしない）
   _idbPut(db);
 }
+// ── 編集の即時保存（ジャーナル） ─────────────────────────
+// 全体保存は13.5MBあり重いので400msのデバウンスをかけているが、その間に
+// タブを閉じると入力が消えてしまう。そこで「変更したカードだけ」を
+// 即座にIndexedDBへ書いておき、次回起動時に復元する。
+const IDB_PEND_KEY='pending_v1';
+let _pendingEdits={};
+function _idbPutPending(){
+  if(!_idb)return;
+  try{_idb.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put(_pendingEdits,IDB_PEND_KEY);}catch(e){}
+}
+function _idbGetPending(){
+  return new Promise(res=>{
+    if(!_idb){res(null);return;}
+    try{
+      const r=_idb.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(IDB_PEND_KEY);
+      r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
+    }catch(e){res(null);}
+  });
+}
+// 編集直後に呼ぶ。数百バイトなので即書き込みでも一切もたつかない
+function _markEdited(card){
+  if(!card||!card.id)return;
+  _pendingEdits[card.id]=card;
+  _idbPutPending();
+}
+// 全体保存が完了したらジャーナルは不要になるので消す
+function _clearPending(){
+  if(!Object.keys(_pendingEdits).length)return;
+  _pendingEdits={};
+  _idbPutPending();
+}
 function saveDb(){
   db.lastUpdated=new Date().toISOString();
   _doSave();
+  _clearPending();
   _scheduleGistSave();
 }
 // デバウンス保存: 最後の操作から400ms後に保存
@@ -1045,7 +1077,7 @@ let _saveTimer=null;
 function saveDbDebounced(){
   db.lastUpdated=new Date().toISOString();
   clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(()=>{_saveTimer=null;_doSave();_scheduleGistSave();},400);
+  _saveTimer=setTimeout(()=>{_saveTimer=null;_doSave();_clearPending();_scheduleGistSave();},400);
 }
 // タブを閉じる前: IndexedDB + localStorage 両方に保存
 window.addEventListener('beforeunload',()=>{
@@ -1661,6 +1693,7 @@ document.getElementById('grid').addEventListener('click',e=>{
       c.favorite=!c.favorite;
       const i=db.cards.findIndex(x=>x.id===c.id);
       if(i>=0)db.cards[i]=c;
+      _markEdited(c);          // 閉じても消えないよう即保存
       saveDbDebounced();
       const ci=document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`);
       if(ci){ci.classList.toggle('fav',c.favorite);ci.querySelector('.cfav').textContent=c.favorite?'★':'☆';}
@@ -1673,6 +1706,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     // DB はメモリ更新 + デバウンス保存（全再描画しない）
     const i=db.cards.findIndex(x=>x.id===c.id);
     if(i>=0)db.cards[i]=c;
+    _markEdited(c);            // 閉じても消えないよう即保存
     saveDbDebounced();
     patchOwnedEl(c);
     renderStats();
@@ -4897,6 +4931,18 @@ function openPortfolioTrend(){
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
   _baseDb=await _idbGetBase();   // 前回同期時点の基準を復元（マージ用）
+  // 保存が間に合わずタブを閉じた分を復元する
+  const pend=await _idbGetPending();
+  if(pend && Object.keys(pend).length && db && Array.isArray(db.cards)){
+    const map=new Map(db.cards.map(c=>[c.id,c]));
+    let n=0;
+    for(const [id,card] of Object.entries(pend)){
+      const cur=map.get(id);
+      if(!cur || JSON.stringify(cur)!==JSON.stringify(card)){ map.set(id,card); n++; }
+    }
+    if(n){ db.cards=[...map.values()]; _pendingEdits=pend; _doSave();
+           console.log(`未保存だった編集 ${n}件 を復元しました`); }
+  }
   // GitHubリポジトリからデータを取得して適用
   const cfg = _loadConfig();
   const { owner, repo } = _detectRepo();
