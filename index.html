@@ -4314,6 +4314,21 @@ async function _autoGistPull(){
   }catch(e){ /* 失敗時は静かに無視（次の機会に再試行） */ }
   finally{ _autoPullBusy=false; }
 }
+// タブを離れる/閉じる時は、2.5秒待たずに即座に送信を開始する
+function _flushPendingSync(){
+  if(_gistSaveTimer){ clearTimeout(_gistSaveTimer); _gistSaveTimer=null; _autoGistUpload(); }
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') _flushPendingSync(); });
+window.addEventListener('pagehide',_flushPendingSync);
+// 未送信のまま閉じようとしたら警告（送信には時間がかかるため）
+window.addEventListener('beforeunload',e=>{
+  if(_hasUnsentChanges()){
+    _flushPendingSync();
+    e.preventDefault();
+    e.returnValue='同期がまだ完了していません。いま閉じると、この端末の変更が他の端末に反映されません。';
+    return e.returnValue;
+  }
+});
 // タブに戻ってきた / ウィンドウにフォーカスした瞬間に取得
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') _autoGistPull(); });
 window.addEventListener('focus', ()=>_autoGistPull());
@@ -4789,15 +4804,26 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
         const localTime = db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
         const repoTime = repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
         console.log('SYNC比較 local:', db.lastUpdated, '/ repo:', repoData.lastUpdated, '/ repoNewer:', repoTime > localTime);
-        _lastSeenRemote = await _remoteDataSha(); // 採用可否に関わらずクラウドの状態は把握しておく
-        if (repoTime > localTime || (db.cards.length === 0 && repoData.cards.length > 0)) {
-          db = repoData;
-          _setBase(db);
-          _idbPut(db);
-          renderAll();
+        _lastSeenRemote = await _remoteDataSha();
+        if (db.cards.length === 0 && repoData.cards.length > 0) {
+          db = repoData; _setBase(db); _idbPut(db); renderAll();
+          console.log('✅ GitHubデータ採用（ローカル空）:', repoData.cards.length, '件');
+        } else if (_baseDb) {
+          // 時計のズレに左右されないよう、時刻比較ではなくマージで両方を残す
+          const before = db.cards.reduce((s,c)=>s+(c.owned||0),0);
+          db = _merge3(_baseDb, db, repoData);
+          const after = db.cards.reduce((s,c)=>s+(c.owned||0),0);
+          _setBase(db); _idbPut(db); renderAll();
+          console.log(`✅ 起動時マージ: 所持 ${before} → ${after} 件`);
+          // クラウドと内容が違う＝こちらの未送信分がある場合は送っておく
+          if (JSON.stringify(db.cards) !== JSON.stringify(repoData.cards)) _scheduleGistSave();
+        } else if (repoTime > localTime) {
+          // 基準が無い初回のみ、従来どおり新しい方を採用
+          db = repoData; _setBase(db); _idbPut(db); renderAll();
           console.log('✅ GitHubデータ採用:', repoData.cards.length, '件');
         } else {
-          console.log('⏭ ローカルの方が新しいためスキップ (local >= repo)');
+          _setBase(repoData); // 次回からマージできるよう基準を作る
+          console.log('⏭ ローカルを維持（基準を作成）');
         }
       } else {
         console.warn('repoData取得失敗またはcards配列なし:', repoData);
