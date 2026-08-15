@@ -4432,7 +4432,12 @@ async function _autoGistUpload(){
 
 // ── 自動取得（タブ復帰時＋一定間隔でクラウドが新しければ取り込み） ──
 let _autoPullBusy=false;
-function _hasUnsentChanges(){ return !!_gistSaveTimer || _gistSaving || _gistPending; }
+function _hasUnsentChanges(){
+  // _saveTimer(400msの保存待ち)とジャーナルも含めないと、+1直後の一瞬だけ
+  // 「未送信なし」と誤判定され、自動取得に上書きされてしまう
+  return !!_gistSaveTimer || _gistSaving || _gistPending || !!_saveTimer
+         || Object.keys(_pendingEdits||{}).length>0;
+}
 function _isEditing(){ return !!document.querySelector('.ov.open, #be.open, #edt-ov.open'); }
 async function _autoGistPull(){
   const cfg=_loadConfig();
@@ -4448,11 +4453,17 @@ async function _autoGistPull(){
       const localTime=db.lastUpdated ? new Date(db.lastUpdated).getTime() : 0;
       const repoTime =repoData.lastUpdated ? new Date(repoData.lastUpdated).getTime() : 0;
       // クラウドが新しい時だけ取り込み。取り込み直前に再度ガード
-      if(repoTime>localTime && !_hasUnsentChanges() && !_isEditing()){
-        db=repoData; _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAll();
+      // ローカルの変更を絶対に捨てないよう、上書きではなくマージする
+      // （時計のズレで repoTime>localTime になっても +1 が消えない）
+      const changed = JSON.stringify(repoData.cards)!==JSON.stringify(db.cards);
+      if(changed && !_hasUnsentChanges() && !_isEditing()){
+        const beforeN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
+        db = _baseDb ? _merge3(_baseDb, db, repoData) : repoData;
+        const afterN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
+        _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAll();
         const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
         _setSyncStatus('synced', '取得 '+t);
-        console.log('🔄 自動取得で更新:', repoData.cards.length, '件');
+        console.log(`🔄 自動取得マージ: 所持 ${beforeN} → ${afterN}`);
       }
     }
   }catch(e){ /* 失敗時は静かに無視（次の機会に再試行） */ }
