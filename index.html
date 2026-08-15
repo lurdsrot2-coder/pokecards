@@ -4296,11 +4296,13 @@ async function _compactDelta(){
   }catch(e){}
 }
 // 送信の入口。まず差分で試し、無理なら全体を送る
-async function _pushChanges(){
-  const ops=_diffOps(_baseDb,db);
+// snap = 送信する内容を固定したスナップショット。
+// 送信中(数秒)に行われた編集を「送信済み」と誤認しないよう、必ず固定した内容で送る
+async function _pushChanges(snap){
+  const ops=_diffOps(_baseDb,snap);
   if(ops && Object.keys(ops).length===0) return true;        // 変更なし
   if(ops && await _repoPutDelta(ops)) return true;           // 差分で送れた（数十KB）
-  const ok=await _repoPut(db);                               // 全体送信（20MB）
+  const ok=await _repoPut(snap);                             // 全体送信
   if(ok) await _compactDelta();                              // 全体を送ったのでdeltaは空に
   return ok;
 }
@@ -4411,9 +4413,13 @@ async function _autoGistUpload(){
     // 差異を検知しても警告ログのみで送信は続行する（手動同期側で確認を出す）
     await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated=new Date().toISOString();
-    const ok=await _pushChanges();           // 差分優先で送信
+    const snap=JSON.parse(JSON.stringify(db)); // 送る内容をここで固定する
+    const ok=await _pushChanges(snap);         // 差分優先で送信
     _idbPut(db);
-    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); } // 送信できた時点を基準にする
+    // 基準は「実際に送った内容」。送信中に増えた編集は未送信のまま残り、次回送られる
+    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(snap); }
+    // 送信中に編集があったなら、続けてもう一度送る
+    if(ok && JSON.stringify(db.cards)!==JSON.stringify(snap.cards)) _gistPending=true;
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   }catch(e){
@@ -4517,9 +4523,11 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
     }
     await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated = new Date().toISOString();
-    const ok = await _pushChanges();         // 差分優先で送信
+    const snap=JSON.parse(JSON.stringify(db)); // 送る内容を固定
+    const ok = await _pushChanges(snap);
     _idbPut(db);
-    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); }
+    if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(snap); }
+    if(ok && JSON.stringify(db.cards)!==JSON.stringify(snap.cards)) _scheduleGistSave();
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
     _setSyncStatus(ok ? 'synced' : 'error', ok ? t : ('エラー: '+(_lastSyncErr||'不明')));
   } catch(e) {
