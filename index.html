@@ -4079,6 +4079,47 @@ function _detectRepo() {
 }
 
 // GitHub からデータ取得（コミットSHA経由でCDNキャッシュを完全に回避）
+// ── 差分同期 ──────────────────────────────────────────
+// data.json（完全なスナップショット）はそのまま残し、変更分だけを小さな
+// delta.json に書く。1文字の修正で20MB送っていたのを数十KBに抑える。
+// 読むときは data.json に delta.json を適用して合成する。
+const DELTA_MAX_OPS=1500;   // これを超えたら data.json に畳み込む
+function _applyDelta(base,delta){
+  if(!base||!delta||!delta.ops) return base;
+  const map=new Map(base.cards.map(c=>[c.id,c]));
+  let upd=0,del=0;
+  for(const [id,card] of Object.entries(delta.ops)){
+    if(card===null){ if(map.delete(id))del++; }
+    else { map.set(id,card); upd++; }
+  }
+  console.log(`delta適用: 更新${upd}件 / 削除${del}件`);
+  return { ...base, cards:[...map.values()],
+           lastUpdated: delta.updatedAt||base.lastUpdated };
+}
+async function _fetchDelta(owner,repo,commitSha){
+  try{
+    const u=commitSha
+      ? `https://raw.githubusercontent.com/${owner}/${repo}/${commitSha}/delta.json`
+      : `https://raw.githubusercontent.com/${owner}/${repo}/main/delta.json?_=${Date.now()}`;
+    const r=await fetch(u,{cache:'no-store'});
+    if(!r.ok) return null;              // 未作成なら null（正常）
+    return await r.json();
+  }catch(e){ return null; }
+}
+// base(前回同期時点) と現在の db を比べて変更点だけ抽出する
+function _diffOps(base,cur){
+  const ops={};
+  if(!base) return null;               // 基準が無ければ差分不可
+  const b=new Map(base.cards.map(c=>[c.id,JSON.stringify(c)]));
+  const seen=new Set();
+  for(const c of cur.cards){
+    seen.add(c.id);
+    const prev=b.get(c.id);
+    if(prev===undefined||prev!==JSON.stringify(c)) ops[c.id]=c;
+  }
+  for(const id of b.keys()) if(!seen.has(id)) ops[id]=null;   // 削除
+  return ops;
+}
 async function _repoGet() {
   const { owner, repo } = _detectRepo();
   if (!owner || !repo) return null;
@@ -4103,7 +4144,9 @@ async function _repoGet() {
     );
     if (!rawR.ok) throw new Error('raw:' + rawR.status);
     console.log('_repoGet OK: commitSha=', commitSha.slice(0,7));
-    return await rawR.json();
+    const full = await rawR.json();
+    const delta = await _fetchDelta(owner, repo, commitSha);
+    return delta ? _applyDelta(full, delta) : full;
   } catch(e) {
     console.warn('_repoGet失敗:', e.message, '→ fallback');
     try {
@@ -4112,7 +4155,9 @@ async function _repoGet() {
         { cache: 'no-store' }
       );
       if (!r.ok) return null;
-      return await r.json();
+      const full = await r.json();
+      const delta = await _fetchDelta(owner, repo, null);
+      return delta ? _applyDelta(full, delta) : full;
     } catch(e2) { return null; }
   }
 }
@@ -4166,6 +4211,65 @@ function _warnRemoteNewer(){
   document.body.appendChild(d);
 }
 let _lastSyncErr = '';
+// delta.json だけを更新する軽量な送信（Contents APIは1MBまで）
+// 成功したら true。差分が使えない/大きすぎる場合は false を返し、呼び出し元が
+// 従来どおり data.json 全体を送る
+async function _repoPutDelta(newOps){
+  const cfg=_loadConfig(); const {owner,repo}=_detectRepo();
+  if(!cfg.gistToken||!owner||!repo) return false;
+  if(!newOps||!Object.keys(newOps).length) return true;   // 変更なし＝何もしなくてよい
+  const H={Authorization:`token ${cfg.gistToken}`,Accept:'application/vnd.github+json'};
+  const HJ={...H,'Content-Type':'application/json'};
+  const api=`https://api.github.com/repos/${owner}/${repo}`;
+  try{
+    // 既存 delta.json を取得（他端末の差分と合流させるため）
+    let sha=null, cur={ops:{}};
+    const g=await fetch(`${api}/contents/delta.json?_=${Date.now()}`,{headers:H,cache:'no-store'});
+    if(g.ok){
+      const j=await g.json(); sha=j.sha;
+      try{ cur=JSON.parse(decodeURIComponent(escape(atob(String(j.content||'').replace(/\s+/g,''))))); }catch(e){ cur={ops:{}}; }
+      if(!cur.ops) cur.ops={};
+    }
+    const merged={...cur.ops, ...newOps};                  // 自分の変更を上乗せ
+    if(Object.keys(merged).length>DELTA_MAX_OPS) return false;  // 溜まりすぎ→畳み込みへ
+    const body=JSON.stringify({ops:merged,updatedAt:new Date().toISOString()});
+    const content=btoa(unescape(encodeURIComponent(body)));
+    if(content.length>900000) return false;                // 1MB制限に近い→畳み込みへ
+    const payload={message:'pokecards delta',content};
+    if(sha) payload.sha=sha;
+    const r=await fetch(`${api}/contents/delta.json`,{method:'PUT',headers:HJ,body:JSON.stringify(payload)});
+    if(!r.ok){ _lastSyncErr=`delta ${r.status}`; return false; }
+    try{ const rj=await r.json(); _pushedSha=(rj.commit&&rj.commit.sha)||null; }catch(e){}
+    console.log(`差分送信: ${Object.keys(newOps).length}件 / ${Math.round(content.length/1024)}KB`);
+    return true;
+  }catch(e){ _lastSyncErr='delta例外'; return false; }
+}
+// delta を data.json に畳み込んで delta.json を空にする
+async function _compactDelta(){
+  const cfg=_loadConfig(); const {owner,repo}=_detectRepo();
+  if(!cfg.gistToken||!owner||!repo) return;
+  const H={Authorization:`token ${cfg.gistToken}`,Accept:'application/vnd.github+json'};
+  const HJ={...H,'Content-Type':'application/json'};
+  const api=`https://api.github.com/repos/${owner}/${repo}`;
+  try{
+    const g=await fetch(`${api}/contents/delta.json?_=${Date.now()}`,{headers:H,cache:'no-store'});
+    if(!g.ok) return;                     // 無ければ何もしない
+    const j=await g.json();
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify({ops:{},updatedAt:new Date().toISOString()}))));
+    await fetch(`${api}/contents/delta.json`,{method:'PUT',headers:HJ,
+      body:JSON.stringify({message:'pokecards compact',content,sha:j.sha})});
+    console.log('delta を data.json に畳み込みました');
+  }catch(e){}
+}
+// 送信の入口。まず差分で試し、無理なら全体を送る
+async function _pushChanges(){
+  const ops=_diffOps(_baseDb,db);
+  if(ops && Object.keys(ops).length===0) return true;        // 変更なし
+  if(ops && await _repoPutDelta(ops)) return true;           // 差分で送れた（数十KB）
+  const ok=await _repoPut(db);                               // 全体送信（20MB）
+  if(ok) await _compactDelta();                              // 全体を送ったのでdeltaは空に
+  return ok;
+}
 let _pushedSha = null; // 直近の送信で作られたコミットSHA（APIの反映遅延を避けるため応答から取る）
 async function _repoPut(data) {
   _lastSyncErr = '';
@@ -4273,7 +4377,7 @@ async function _autoGistUpload(){
     // 差異を検知しても警告ログのみで送信は続行する（手動同期側で確認を出す）
     await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated=new Date().toISOString();
-    const ok=await _repoPut(db);
+    const ok=await _pushChanges();           // 差分優先で送信
     _idbPut(db);
     if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); } // 送信できた時点を基準にする
     const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
@@ -4379,7 +4483,7 @@ document.getElementById('btn-sync').addEventListener('click', async () => {
     }
     await _mergeBeforePush();               // 他端末の変更を取り込んでから送る
     db.lastUpdated = new Date().toISOString();
-    const ok = await _repoPut(db);
+    const ok = await _pushChanges();         // 差分優先で送信
     _idbPut(db);
     if(ok){ _lastSeenRemote=_pushedSha||null; _setBase(db); }
     const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
