@@ -2720,16 +2720,23 @@ function parseHareruya2Products(products){
 }
 
 function showUrlPreview(all){
-  urlImportCards=all.filter(c=>!getCard(c.id));
+  // 重複判定はIDだけでなく「名前+番号+セット」でも行う。
+  // 晴れる屋2は再出品で商品IDが変わるため、IDだけだと同じカードが
+  // 二重登録されてしまう
+  const keyOf=c=>[(c.name||'').trim(),(c.cardNumber||'').trim(),(c.setName||'').trim()].join('|');
+  const haveKeys=new Set(db.cards.map(keyOf));
+  const isDup=c=>!!getCard(c.id)||haveKeys.has(keyOf(c));
+  urlImportCards=all.filter(c=>!isDup(c));
   const dupCnt=all.length-urlImportCards.length;
   const prog=document.getElementById('url-prog');
   prog.className='iprog ok';
   prog.textContent=`${all.length}枚取得 → 新規 ${urlImportCards.length}枚 / 重複スキップ ${dupCnt}枚`;
-  // 新規・重複含めて全件表示（重複はグレーアウト）
-  const display=all.slice(0,120);
+  // これから取り込まれる新規カードを優先表示する
+  // （先頭120枚だと既存カードばかり並び「既存を取り込もうとしている」ように見えるため）
+  const display=(urlImportCards.length?urlImportCards:all).slice(0,120);
   document.getElementById('url-cards').innerHTML=
     display.map(c=>{
-      const isDup=!!getCard(c.id);
+      const isDup=!!getCard(c.id)||haveKeys.has(keyOf(c));
       return `<div class="uic${isDup?' uic-dup':''}" title="${isDup?'取得済み':'新規'}">
         ${c.image?`<img src="${esc(_thumb(c.image,240))}" loading="lazy" decoding="async" onerror="this.style.display='none'">`:
           `<div class="uic-ph">🃏</div>`}
@@ -2739,7 +2746,8 @@ function showUrlPreview(all){
     }).join('')+
     (all.length>120?`<div class="url-more">…他 ${all.length-120}枚</div>`:'');
   const btn=document.getElementById('url-import-btn');
-  btn.textContent=`${urlImportCards.length}枚をインポート`;
+  const more=urlImportCards.length>120?`（先頭120枚を表示）`:'';
+  btn.textContent=`${urlImportCards.length}枚をインポート`+(more?'':'');
   btn.style.display=urlImportCards.length?'block':'none';
   document.getElementById('url-preview').style.display='block';
 }
