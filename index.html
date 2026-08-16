@@ -199,6 +199,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .cname[data-act]{cursor:pointer;border-radius:3px;transition:var(--t)}
 .cname[data-act]:hover{color:var(--cyan);background:rgba(0,245,255,.12)}
 /* 同名カードを見分けるための収録セット表示（1行に省略） */
+.ccode{display:inline-block;background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.3);border-radius:3px;color:var(--cyan);font-size:7px;font-weight:700;padding:0 3px;margin-right:3px;vertical-align:1px}
 .cset{color:rgba(255,255,255,.32);font-size:7.5px;line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .csub{display:flex;justify-content:space-between;padding-top:2px}
 .cnum{color:rgba(255,255,255,.2);font-size:7.5px}
@@ -1445,6 +1446,14 @@ let _thumbW=_gridThumbW();
 window.addEventListener('resize',()=>{const n=_gridThumbW();if(n!==_thumbW){_thumbW=n;}});
 function esc(v){return(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
 
+// 表示するセット記号。取り込み時の正式表記を優先し、無ければ対応表で復元
+function _setCode(c){
+  if(c.setCode) return c.setCode;
+  const raw=(c.setId||'').trim();
+  if(!raw) return '';
+  const h=_packLookup(raw);
+  return h?h.code:raw.toUpperCase();
+}
 function cardHTML(c){
   const src=c.customImage||c.image||'';
   const img=src
@@ -1456,7 +1465,7 @@ function cardHTML(c){
     <div class="ciwrap"><div class="cimg">${img}</div></div>
     <div class="cinf">
       <div class="cname" data-act="namefilter" data-id="${c.id}" title="同名カードをすべて表示: ${esc(c.name)}">${esc(c.name)}</div>
-      ${c.setName?`<div class="cset" title="${esc(c.setName)}">${esc(c.setName)}</div>`:''}
+      ${(c.setId||c.setName)?`<div class="cset" title="${esc([_setCode(c),c.setName].filter(Boolean).join(' / '))}">${_setCode(c)?`<span class="ccode">${esc(_setCode(c))}</span>`:''}${esc(c.setName||'')}</div>`:''}
       <div class="csub">
         <span class="cnum"${(c.setName||c.series)?` data-act="setfilter" data-id="${c.id}" title="このセットで絞り込む: ${esc([c.series,c.setName].filter(Boolean).join(' › '))}"`:''}>${esc(c.cardNumber)}</span>
         <span class="crar">${esc(c.rarityLabel)}</span>
@@ -2696,6 +2705,26 @@ function _parseHareruya2Title(title){
   return {name, rarity:rarM?rarM[1]:'', cardType:typeM?typeM[1]:'', cardNumber:numM?numM[1]:'', setId:setM?setM[1]:''};
 }
 // Shopify products.json の products配列からカード配列を生成
+// セット記号 → 正式なパック名（晴れる屋2のパック別コレクション実データから作成）
+const PACK_NAMES={
+  'M1L':'拡張パック「メガブレイブ」','M1S':'拡張パック「メガシンフォニア」',
+  'M2':'拡張パック「インフェルノX」','M2a':'ハイクラスパック「MEGAドリームex」',
+  'M2a-EM':'ハイクラスパック「MEGAドリームex」：エネルギーミラー',
+  'M2a-BM':'ハイクラスパック「MEGAドリームex」：ボール・R団ミラー',
+  'M2a-RM':'ハイクラスパック「MEGAドリームex」：ミラー',
+  'M4':'拡張パック「ニンジャスピナー」','M5':'拡張パック「アビスアイ」',
+  'M6':'拡張パック「ストームエメラルダ」',
+  'MEE':'スターターセットex イーブイex','MEM':'スターターセットex ニャオハ&マスカーニャex',
+  'MEZ':'スターターセットex ゾロア&ゾロアークex',
+  'MBG':'スターターセットMEGA メガゲンガーex','MBD':'スターターセットMEGA メガディアンシーex',
+  'M-P':'プロモーションカード「M-P」'
+};
+function _packLookup(code){
+  if(!code) return null;
+  const k=Object.keys(PACK_NAMES).find(x=>x.toLowerCase()===String(code).toLowerCase());
+  return k?{code:k,name:PACK_NAMES[k]}:null;
+}
+function _packName(code){ const h=_packLookup(code); return h?h.name:(code||''); }
 function parseHareruya2Products(products){
   const out=[];
   for(const p of (products||[])){
@@ -2711,7 +2740,7 @@ function parseHareruya2Products(products){
       priceHandle:p.handle||'',
       customImage:null, price:prc, owned:0,
       cardType:t.cardType||'Pokémon', pokemonTypes:[], subtypes:[],
-      series:'', setName:t.setId, setId:(t.setId||'').toLowerCase(),
+      series:'', setName:_packName(t.setId), setCode:t.setId, setId:(t.setId||'').toLowerCase(),
       rarity:t.rarity, rarityLabel:t.rarity, cardNumber:t.cardNumber,
       illustrator:'', quickTags:[]
     });
