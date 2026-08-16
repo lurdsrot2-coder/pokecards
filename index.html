@@ -148,10 +148,6 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .rc.all{border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.5);background:rgba(255,255,255,.04)}
 .rc.all.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.7);color:#fff}
 /* 種別チップ（レアリティのマゼンタと区別してシアン系） */
-.rc.typ{background:rgba(0,245,255,.05);border-color:rgba(0,245,255,.2);color:rgba(0,245,255,.6)}
-.rc.typ:not(.on):not(.all){background:rgba(0,245,255,calc(.04 + var(--p,0)*.32));border-color:rgba(0,245,255,calc(.15 + var(--p,0)*.62));color:rgba(0,245,255,calc(.5 + var(--p,0)*.5))}
-.rc.typ:not(.on):not(.all):hover{border-color:rgba(0,245,255,.85);color:#fff}
-.rc.typ.on{background:rgba(0,245,255,.6);border-color:var(--cyan);color:#fff;box-shadow:0 0 0 2px rgba(0,245,255,.35)}
 /* ── 収集進捗の可視化（--p: 0〜1。進むほど濃く、100%=完成色） ── */
 .rc:not(.on):not(.all){background:rgba(255,0,255,calc(.04 + var(--p,0)*.32));border-color:rgba(255,0,255,calc(.15 + var(--p,0)*.62));color:rgba(255,0,255,calc(.45 + var(--p,0)*.5))}
 .rc:not(.on):not(.all):hover{border-color:rgba(255,0,255,.8);color:#fff}
@@ -527,13 +523,6 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
     <div class="qf">
       <div class="qlbl">QUICK FILTER</div>
       <div class="qgrid" id="qgrid"></div>
-    </div>
-  </div>
-  <div class="rrow">
-    <span class="flbl">TYPE</span>
-    <button class="fsnav" id="btn-typ-multi" title="複数選択モード：ONの間はタップで追加/解除できます（PCはCtrl(⌘)+クリックでも可）">＋複数</button>
-    <div class="rscroll" id="tscroll">
-      <button class="rc all on" data-t="">全て</button>
     </div>
   </div>
   <div class="rrow">
@@ -1379,15 +1368,6 @@ function _applyProgressStyles(){
     });
     rEls.forEach(b=>paint(b,own[b.dataset.r]||0,tot[b.dataset.r]||0));
   }
-  const tEls=document.querySelectorAll('#tscroll .rc:not(.all)');
-  if(tEls.length){
-    const tot={},own={};
-    _poolForProgress({cardType:true}).forEach(c=>{
-      const t=c.cardType;if(!t)return;
-      tot[t]=(tot[t]||0)+1; if(c.owned>0)own[t]=(own[t]||0)+1;
-    });
-    tEls.forEach(b=>paint(b,own[b.dataset.t]||0,tot[b.dataset.t]||0));
-  }
   const qEls=document.querySelectorAll('#qgrid .qbtn[data-tag]');
   if(qEls.length){
     const tot={},own={};
@@ -1396,21 +1376,6 @@ function _applyProgressStyles(){
     });
     qEls.forEach(b=>paint(b,own[b.dataset.tag]||0,tot[b.dataset.tag]||0));
   }
-}
-// 種別チップ（レアリティと同じ操作感：通常=単独、Ctrl/＋複数=追加）
-function renderTypes(){
-  const anyOther=fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
-  const pool=anyOther?_poolForProgress({cardType:true}):db.cards.filter(c=>!c.hidden||fs.showHidden);
-  const ts=[...new Set(pool.map(c=>c.cardType).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b,'ja'));
-  const el=document.getElementById('tscroll');
-  el.innerHTML=`<button class="rc all ${fs.cardTypes.size===0?'on':''}" data-t="">全て</button>`;
-  ts.forEach(t=>{
-    const b=document.createElement('button');
-    b.className='rc typ'+(fs.cardTypes.has(t)?' on':'');
-    b.dataset.t=t;b.textContent=t;el.appendChild(b);
-  });
-  _applyProgressStyles();
 }
 function renderRarity(){
   const anyOtherFilter=fs.cardTypes.size||fs.series||fs.title||fs.search||fs.ownership!=='all'||fs.quickTag||fs.importedIds||fs.showHidden;
@@ -1509,7 +1474,6 @@ function renderCards(){
   _updateClrFilterBtn();
   _recordFs();
   _updateRateChip();
-  renderTypes();
   renderRarity();
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
   const g=document.getElementById('grid');
@@ -1955,25 +1919,6 @@ document.getElementById('btn-rar-multi').addEventListener('click',function(){
   _rarMulti=!_rarMulti;
   this.classList.toggle('on',_rarMulti);
   this.textContent=_rarMulti?'＋複数 ON':'＋複数';
-});
-let _typMulti=false;
-document.getElementById('btn-typ-multi').addEventListener('click',function(){
-  _typMulti=!_typMulti;
-  this.classList.toggle('on',_typMulti);
-  this.textContent=_typMulti?'＋複数 ON':'＋複数';
-});
-document.getElementById('tscroll').addEventListener('click',e=>{
-  const c=e.target.closest('.rc');if(!c)return;
-  const t=c.dataset.t;
-  if(t===''){ fs.cardTypes.clear(); }
-  else if(e.ctrlKey||e.metaKey||_typMulti){
-    if(fs.cardTypes.has(t)) fs.cardTypes.delete(t); else fs.cardTypes.add(t);
-  } else {
-    if(fs.cardTypes.size===1&&fs.cardTypes.has(t)) fs.cardTypes.clear();
-    else{ fs.cardTypes.clear(); fs.cardTypes.add(t); }
-  }
-  fs.series='';fs.title='';   // 種別を変えたら下位の階層は解除
-  renderAll();
 });
 document.getElementById('rscroll').addEventListener('click',e=>{
   const c=e.target.closest('.rc');if(!c)return;
