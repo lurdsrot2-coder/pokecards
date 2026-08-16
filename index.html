@@ -201,7 +201,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 /* 同名カードを見分けるための収録セット表示（1行に省略） */
 .ccode{display:inline-block;background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.3);border-radius:3px;color:var(--cyan);font-size:7px;font-weight:700;padding:0 3px;margin-right:3px;vertical-align:1px}
 .cset{color:rgba(255,255,255,.32);font-size:7.5px;line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.csub{display:flex;justify-content:space-between;padding-top:2px}
+.csub{display:flex;align-items:center;gap:3px;padding-top:2px}
+.csub .cnum{margin-right:auto}
 .cnum{color:rgba(255,255,255,.2);font-size:7.5px}
 /* カード番号タップでそのセットを絞り込み（タップ領域を確保） */
 .cnum[data-act]{cursor:pointer;padding:3px 6px;margin:-3px -6px;border-radius:4px;transition:var(--t)}
@@ -1465,8 +1466,9 @@ function cardHTML(c){
     <div class="ciwrap"><div class="cimg">${img}</div></div>
     <div class="cinf">
       <div class="cname" data-act="namefilter" data-id="${c.id}" title="同名カードをすべて表示: ${esc(c.name)}">${esc(c.name)}</div>
-      ${(c.setId||c.setName)?`<div class="cset" title="${esc([_setCode(c),c.setName].filter(Boolean).join(' / '))}">${_setCode(c)?`<span class="ccode">${esc(_setCode(c))}</span>`:''}${esc(c.setName||'')}</div>`:''}
+      ${c.setName?`<div class="cset" title="${esc([_setCode(c),c.setName].filter(Boolean).join(' / '))}">${esc(c.setName)}</div>`:''}
       <div class="csub">
+        ${_setCode(c)?`<span class="ccode" title="${esc(c.setName||'')}">${esc(_setCode(c))}</span>`:''}
         <span class="cnum"${(c.setName||c.series)?` data-act="setfilter" data-id="${c.id}" title="このセットで絞り込む: ${esc([c.series,c.setName].filter(Boolean).join(' › '))}"`:''}>${esc(c.cardNumber)}</span>
         <span class="crar">${esc(c.rarityLabel)}</span>
       </div>
