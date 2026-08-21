@@ -1465,6 +1465,7 @@ function cardHTML(c){
 }
 
 let _gridLimit=200;
+let _keepLimit=0;   // 裏での再描画時に「今出している枚数」を保つため
 let _gridObs=null;
 let _imgObs=null;
 // スマホは1回の描画枚数を減らす（同時に走る画像リクエストを絞る）
@@ -1482,7 +1483,19 @@ function _lazyImgs(){
       });
     },{rootMargin:'600px 0px'});  // 数行先まで先読み。標準のlazyより狭く、見えている枚数を優先
   }
-  g.querySelectorAll('img[data-src]').forEach(im=>_imgObs.observe(im));
+  // 位置の測定と書き換えを分ける（測る→まとめて書く、でレイアウトの往復を避ける）
+  const list=[...g.querySelectorAll('img[data-src]')];
+  if(!list.length)return;
+  const vh=window.innerHeight||800, m=600;
+  const near=[], far=[];
+  for(const im of list){
+    const r=im.getBoundingClientRect();
+    (r.bottom>-m && r.top<vh+m ? near : far).push(im);
+  }
+  // すでに見えている位置のものは即座に読み込む。
+  // ここを observer に任せると1フレーム遅れ、再描画のたびに黒いタイルが一瞬見える
+  for(const im of near){const u=im.dataset.src;im.removeAttribute('data-src');im.src=u;}
+  for(const im of far) _imgObs.observe(im);
 }
 
 function _attachGridObserver(cards){
@@ -1522,7 +1535,7 @@ function renderCards(){
     }</div></div>`;
     return;
   }
-  _gridLimit=_gridStep();
+  _gridLimit=Math.max(_gridStep(),Math.min(_keepLimit||0,cards.length));
   g.innerHTML=cards.slice(0,_gridLimit).map(cardHTML).join('')
     +(cards.length>_gridLimit?'<div id="grid-sentinel" style="grid-column:1/-1;height:1px"></div>':'');
   _lazyImgs();
@@ -1661,6 +1674,14 @@ function _fsGo(dir){
 document.getElementById('btn-fs-back').addEventListener('click',()=>_fsGo(-1));
 document.getElementById('btn-fs-fwd').addEventListener('click',()=>_fsGo(1));
 function renderAll(){renderStats();renderDropdowns();renderQuickFilter();renderCards();}
+// 同期の自動取得のように「こちらが操作していないのに起きる」再描画用。
+// 表示枚数とスクロール位置を保つ（リロードされたように見えるのを防ぐ）
+function renderAllKeepView(){
+  const keep=_gridLimit, y=window.scrollY;
+  _keepLimit=keep;
+  try{ renderAll(); } finally { _keepLimit=0; }
+  if(y) window.scrollTo(0,y);
+}
 
 // ── CARD INTERACTIONS ─────────────────────────────────
 // +/- 専用: 該当カード要素だけ更新（全再描画なし）
@@ -4511,7 +4532,7 @@ async function _autoGistPull(){
         const beforeN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
         db = _baseDb ? _merge3(_baseDb, db, repoData) : repoData;
         const afterN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
-        _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAll();
+        _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAllKeepView();
         const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
         _setSyncStatus('synced', '取得 '+t);
         console.log(`🔄 自動取得マージ: 所持 ${beforeN} → ${afterN}`);
@@ -4555,7 +4576,7 @@ document.getElementById('btn-pull').addEventListener('click', async () => {
       _lastSeenRemote = await _remoteDataSha();
       _setBase(db);
       _idbPut(db);
-      renderAll();
+      renderAllKeepView();   // 取得しても見ていた位置に留まる
       const t = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
       _setSyncStatus('synced', '取得済 ' + t);
       console.log('↓取得完了:', repoData.cards.length, '件 lastUpdated:', repoData.lastUpdated);
@@ -4978,7 +4999,7 @@ async function refreshAllOwned(){
     await _runPool(retryList, repairOne, 2);
   }
   _progStopBtn(false);
-  saveDb();renderAll();
+  saveDb();renderAllKeepView();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
   if(_repairAbort){
     _repairAbort=false;
