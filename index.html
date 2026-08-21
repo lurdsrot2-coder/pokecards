@@ -207,6 +207,9 @@ body.progging #grid{padding-bottom:64px}
 .csub{display:flex;align-items:center;gap:3px;padding-top:2px}
 .csub .cnum{margin-right:auto}
 .cnum{color:rgba(255,255,255,.2);font-size:7.5px}
+/* セット記号。カード番号と同じ大きさに揃え、少しだけ明るくして見分ける */
+.ccode{font-size:7.5px;font-weight:700;letter-spacing:.2px;color:rgba(255,255,255,.34);white-space:nowrap;flex:0 0 auto;line-height:1.2}
+.ci.owned .ccode{color:rgba(255,255,255,.46)}
 /* カード番号タップでそのセットを絞り込み（タップ領域を確保） */
 .cnum[data-act]{cursor:pointer;padding:3px 6px;margin:-3px -6px;border-radius:4px;transition:var(--t)}
 .cnum[data-act]:hover{color:var(--cyan);background:rgba(0,245,255,.12)}
