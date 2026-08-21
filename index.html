@@ -1674,6 +1674,30 @@ function _fsGo(dir){
 document.getElementById('btn-fs-back').addEventListener('click',()=>_fsGo(-1));
 document.getElementById('btn-fs-fwd').addEventListener('click',()=>_fsGo(1));
 function renderAll(){renderStats();renderDropdowns();renderQuickFilter();renderCards();}
+// 自動取得の反映。フィルタUIもグリッドも作り直さず、変わったカードだけ差し替える。
+// 全部作り直すと、カード3万件の走査＋プルダウン数百項目の再生成＋グリッド再構築が走り、
+// 画面が一瞬崩れて黒いタイルが出る（=「リロードされたよう」に見える）
+function _applyRemoteQuietly(snap){
+  const now=db.cards;
+  // 枚数が変わった＝カードが増減した時だけは作り直しが要る
+  if(now.length!==snap.size){ renderAllKeepView(); return; }
+  for(const c of now){
+    const p=snap.get(c.id);
+    if(!p){ renderAllKeepView(); return; }              // 知らないIDが来た＝構成が変わった
+    const img=c.customImage||c.image||'';
+    if(p.o===(c.owned|0) && p.f===!!c.favorite && p.i===img) continue;
+    const ci=document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`);
+    if(!ci) continue;                                    // 画面に無いものは次の描画で反映される
+    if(p.o!==(c.owned|0)) patchOwnedEl(c);
+    if(p.f!==!!c.favorite){
+      ci.classList.toggle('fav',!!c.favorite);
+      const b=ci.querySelector('.cfav'); if(b)b.textContent=c.favorite?'★':'☆';
+    }
+    if(p.i!==img) _patchCardImg(c);
+  }
+  renderStats();            // 合計・時価の数字だけ更新（レイアウトは動かない）
+  _applyProgressStyles();
+}
 // 同期の自動取得のように「こちらが操作していないのに起きる」再描画用。
 // 表示枚数とスクロール位置を保つ（リロードされたように見えるのを防ぐ）
 function renderAllKeepView(){
@@ -4518,6 +4542,8 @@ async function _autoGistPull(){
   if(_autoPullBusy) return;                            // 取得中
   if(_hasUnsentChanges()) return;                      // 未送信のローカル変更あり→上書き事故防止
   if(_isEditing()) return;                             // 編集モーダルを開いている間はスキップ
+  const pb=document.getElementById('prog-bar');
+  if(pb && pb.style.display!=='none') return;          // 一括処理中は触らない（毎分ちらつく原因）
   _autoPullBusy=true;
   try{
     const repoData=await _repoGet();
@@ -4530,9 +4556,12 @@ async function _autoGistPull(){
       const changed = JSON.stringify(repoData.cards)!==JSON.stringify(db.cards);
       if(changed && !_hasUnsentChanges() && !_isEditing()){
         const beforeN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
+        // マージ後に比較できるよう、先に「今の見た目」を控えておく
+        const snap=new Map(db.cards.map(c=>[c.id,{o:c.owned|0,f:!!c.favorite,i:c.customImage||c.image||''}]));
         db = _baseDb ? _merge3(_baseDb, db, repoData) : repoData;
         const afterN=db.cards.reduce((s,c)=>s+(c.owned||0),0);
-        _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db); renderAllKeepView();
+        _lastSeenRemote=await _remoteDataSha(); _setBase(db); _idbPut(db);
+        _applyRemoteQuietly(snap);
         const t=new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
         _setSyncStatus('synced', '取得 '+t);
         console.log(`🔄 自動取得マージ: 所持 ${beforeN} → ${afterN}`);
