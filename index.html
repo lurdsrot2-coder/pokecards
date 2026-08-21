@@ -109,6 +109,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .farr{color:rgba(255,255,255,.15);font-size:13px}
 .srch{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:4px 10px;color:var(--txt);font-size:10px;width:190px;transition:var(--t)}
 .srch:focus{outline:none;border-color:var(--bd2)}
+.srch-wrap{position:relative;display:inline-flex;align-items:center;width:190px}
+.srch-wrap .srch{width:100%;padding-right:24px;box-sizing:border-box}
+.srch-x{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:none;width:18px;height:18px;line-height:1;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:var(--txt);font-size:10px;cursor:pointer}
+.srch-wrap.has .srch-x{display:block}
+.srch-x:hover{background:rgba(255,255,255,.3)}
 .tgrp{display:flex;gap:3px}
 .tbtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:3px;color:var(--sub);font-size:9px;padding:3px 9px;cursor:pointer;transition:var(--t);white-space:nowrap;flex-shrink:0}
 .tbtn.on{background:rgba(0,245,255,.12);border-color:rgba(0,245,255,.5);color:var(--cyan)}
@@ -127,16 +132,18 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 /* ── Rarity Chips ── */
 .rrow{display:flex;gap:7px;align-items:center}
 /* 進捗バー（画像修復など長時間処理用） */
-#prog-bar{position:fixed;left:0;right:0;bottom:0;z-index:3000;background:rgba(5,5,20,.96);border-top:1px solid var(--bd2);padding:9px 16px;box-shadow:0 -4px 20px rgba(0,0,0,.55)}
+#prog-bar{position:fixed;left:0;right:0;bottom:0;z-index:3000;pointer-events:none;background:rgba(5,5,20,.96);border-top:1px solid var(--bd2);padding:9px 16px;box-shadow:0 -4px 20px rgba(0,0,0,.55)}
 .pb-inner{height:12px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
 .pb-fill{height:100%;width:0;background:linear-gradient(90deg,#00f5ff,#00e595);transition:width .25s ease;border-radius:7px}
 .pb-txt{margin-top:6px;font-size:12px;color:var(--txt);text-align:center;letter-spacing:.5px}
+/* ゲージ表示中は最下段のカードが隠れないよう下に余白を作る */
+body.progging #grid{padding-bottom:64px}
 /* PC: フィルタを左2行＋右クイックフィルター2行に集約しカード表示領域を拡大 */
 @media(min-width:601px){
   #fp .fleft .frow{ flex-wrap:nowrap; }            /* 各行を1行に固定 */
   #fp .fleft .frow .csel{ min-width:0; }           /* プルダウンを縮められるように */
   #fp #sel-title{ flex:1 1 auto; }                 /* タイトルは余白を埋める */
-  #fp .srch{ flex:1 1 140px; width:auto; min-width:110px; } /* 検索欄も伸縮 */
+  #fp .srch-wrap{ flex:1 1 140px; width:auto; min-width:110px; } /* 検索欄も伸縮 */
   .qf{ flex:0 0 42%; max-width:42%; box-sizing:border-box; }/* 右半分に収める */
   .qgrid{ max-height:50px; }                        /* 2行＋スクロール */
 }
@@ -408,7 +415,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
   .fleft .frow:first-child .csel{ flex:1 1 0; min-width:0; max-width:100%; }
   .fsnav{ padding:4px 5px; font-size:9px; }/* 1行目に収めるため小さめに */
   /* 16px未満だとiOSが自動ズームするため16pxに固定。🌐ボタンと同じ行に並べる */
-  .srch{ font-size:16px; flex:1 1 200px; width:auto; min-width:0; box-sizing:border-box; }
+  .srch{ font-size:16px; width:100%; min-width:0; box-sizing:border-box; }
+  .srch-wrap{ flex:1 1 200px; width:auto; min-width:0; }
+  .srch-wrap .srch{ padding-right:34px; }
+  .srch-x{ width:28px; height:28px; font-size:14px; right:3px; }/* 指で押せるサイズ */
   .tbtn, .tbtn2{ padding:5px 6px; font-size:11px; }
   #btn-clr-filter{ padding:5px 6px; font-size:11px; }
   #sel-sort{ padding:5px 16px 5px 6px; }
@@ -496,7 +506,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
       </div>
       <div class="frow">
-        <input class="srch" id="srch" enterkeyhint="search" placeholder="🔍 カード名・イラストレーター・タイトル" title="Enter: 現在の絞り込み内で検索 / Ctrl(⌘)+Enter: 絞り込みを解除して全体から検索">
+        <div class="srch-wrap">
+          <input class="srch" id="srch" enterkeyhint="search" placeholder="🔍 カード名・イラストレーター・タイトル" title="Enter: 現在の絞り込み内で検索 / Ctrl(⌘)+Enter: 絞り込みを解除して全体から検索">
+          <button type="button" class="srch-x" id="srch-x" title="検索語をすべて消す" aria-label="検索語をクリア">✕</button>
+        </div>
         <button id="btn-search-all" title="絞り込みを解除して全体から検索 [Ctrl(⌘)+Enter]">🌐 <span class="hm">全体</span></button>
         <div class="tgrp">
           <button class="tbtn on" data-ow="all">ALL</button>
@@ -1094,7 +1107,7 @@ function clearFilters(){
   fs.cardTypes=new Set();fs.series='';fs.title='';fs.search='';fs.ownership='all';
   fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
   // sync UI controls
-  document.getElementById('srch').value='';
+  document.getElementById('srch').value='';_syncSrchX();
   document.getElementById('sel-type').value='';
   document.getElementById('sel-series').value='';
   document.getElementById('sel-title').value='';
@@ -1420,7 +1433,7 @@ function _setCode(c){
 function cardHTML(c){
   const src=c.customImage||c.image||'';
   const img=src
-    ?`<img src="${_thumb(src,_thumbW)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.outerHTML='<span>🃏</span>'">`
+    ?`<img data-src="${esc(_thumb(src,_thumbW))}" alt="${esc(c.name)}" decoding="async" onerror="_imgFail(this)">`
     :`<span>🃏</span>`;
   const isSel=selIds.has(c.id);
   return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
@@ -1446,6 +1459,24 @@ function cardHTML(c){
 
 let _gridLimit=200;
 let _gridObs=null;
+let _imgObs=null;
+// スマホは1回の描画枚数を減らす（同時に走る画像リクエストを絞る）
+function _gridStep(){return window.innerWidth<=600?60:200;}
+// 画面に入りそうな画像だけ src を入れる。ブラウザ標準の loading=lazy より先読み範囲が狭く、
+// 検索直後に「今見えている数枚」が最優先で表示される
+function _lazyImgs(){
+  const g=document.getElementById('grid'); if(!g) return;
+  if(!_imgObs){
+    _imgObs=new IntersectionObserver(es=>{
+      es.forEach(en=>{
+        if(!en.isIntersecting) return;
+        const im=en.target; _imgObs.unobserve(im);
+        const u=im.dataset.src; if(u){im.removeAttribute('data-src'); im.src=u;}
+      });
+    },{rootMargin:'600px 0px'});  // 数行先まで先読み。標準のlazyより狭く、見えている枚数を優先
+  }
+  g.querySelectorAll('img[data-src]').forEach(im=>_imgObs.observe(im));
+}
 
 function _attachGridObserver(cards){
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
@@ -1455,11 +1486,12 @@ function _attachGridObserver(cards){
     if(!entries[0].isIntersecting)return;
     _gridObs.disconnect();_gridObs=null;
     const from=_gridLimit;
-    _gridLimit+=200;
+    _gridLimit+=_gridStep();
     const next=cards.slice(from,_gridLimit);
     const s=document.getElementById('grid-sentinel');
     if(!s)return;
     s.insertAdjacentHTML('beforebegin',next.map(cardHTML).join(''));
+    _lazyImgs();
     if(cards.length>_gridLimit) _attachGridObserver(cards);
     else s.remove();
   },{rootMargin:'400px'});
@@ -1483,9 +1515,10 @@ function renderCards(){
     }</div></div>`;
     return;
   }
-  _gridLimit=200;
+  _gridLimit=_gridStep();
   g.innerHTML=cards.slice(0,_gridLimit).map(cardHTML).join('')
     +(cards.length>_gridLimit?'<div id="grid-sentinel" style="grid-column:1/-1;height:1px"></div>':'');
+  _lazyImgs();
   _attachGridObserver(cards);
 }
 
@@ -1580,7 +1613,7 @@ function _fsApply(s){
   fs.sort=o.sort;fs.showHidden=o.showHidden;
   fs.importedIds=o.importedIds?new Set(o.importedIds):null;
   // 画面上のコントロールも合わせる（プルダウンはrenderDropdownsが追従）
-  document.getElementById('srch').value=fs.search;
+  document.getElementById('srch').value=fs.search;_syncSrchX();
   document.getElementById('sel-sort').value=fs.sort;
   document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow===fs.ownership));
   document.getElementById('btn-showhidden').classList.toggle('on',!!fs.showHidden);
@@ -1642,7 +1675,7 @@ document.getElementById('grid').addEventListener('click',e=>{
       fs.cardTypes=new Set();fs.series='';fs.title='';fs.ownership='all';
       fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
       fs.search=(c.name||'').replace(/[:：].*$/,'').trim()||c.name||'';
-      document.getElementById('srch').value=fs.search;
+      document.getElementById('srch').value=fs.search;_syncSrchX();
       const bdg=document.getElementById('import-badge');if(bdg)bdg.style.display='none';
       renderAll();
       window.scrollTo({top:0,behavior:'smooth'});
@@ -1654,7 +1687,7 @@ document.getElementById('grid').addEventListener('click',e=>{
       fs.cardTypes=new Set();fs.search='';fs.rarities.clear();fs.quickTag=null;fs.importedIds=null;
       fs.series=c.series||'';
       fs.title=c.setName||'';
-      document.getElementById('srch').value='';
+      document.getElementById('srch').value='';_syncSrchX();
       const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
       renderAll();
       window.scrollTo({top:0,behavior:'smooth'});
@@ -1869,17 +1902,31 @@ document.getElementById('sel-sort').addEventListener('change',e=>{
   fs.sort=e.target.value;renderCards();
 });
 // 日本語IME対応（compositionend で確定後に検索実行）
+function _syncSrchX(){
+  const w=document.querySelector('.srch-wrap'),i=document.getElementById('srch');
+  if(w&&i)w.classList.toggle('has',!!i.value);
+}
 {
   const srchEl=document.getElementById('srch');
   let _ime=false;
+  let _srchT=null;
+  // 1文字ごとに全描画すると重いので、打ち終わり（260ms）を待ってから絞り込む
+  const _runSrch=v=>{_srchT=null;fs.search=v.trim();renderCards();};
+  const _lazySrch=v=>{_syncSrchX();clearTimeout(_srchT);_srchT=setTimeout(()=>_runSrch(v),260);};
   srchEl.addEventListener('compositionstart',()=>{_ime=true;});
-  srchEl.addEventListener('compositionend',e=>{_ime=false;fs.search=e.target.value.trim();renderCards();});
-  srchEl.addEventListener('input',e=>{if(!_ime){fs.search=e.target.value.trim();renderCards();}});
+  srchEl.addEventListener('compositionend',e=>{_ime=false;_lazySrch(e.target.value);});
+  srchEl.addEventListener('input',e=>{if(!_ime)_lazySrch(e.target.value);});
+  // ✕: 1文字ずつ消さずに一発でクリア（そのまま次の語を打てるようフォーカスは残す）
+  document.getElementById('srch-x').addEventListener('click',()=>{
+    clearTimeout(_srchT);_srchT=null;
+    srchEl.value='';fs.search='';_syncSrchX();renderCards();srchEl.focus();
+  });
   // Enterで検索実行＋キーボードを閉じる。IME変換確定のEnterは無視
   // （ズームは検索欄を16pxにして発生させない方針に変更）
   srchEl.addEventListener('keydown',e=>{
     if(e.key==='Enter' && !e.isComposing && !_ime){
       e.preventDefault();
+      clearTimeout(_srchT);_srchT=null;   // 待たずに即実行
       // Ctrl(⌘)+Enter は絞り込みを解除して「全体から」検索
       if(e.ctrlKey||e.metaKey) searchWholeLibrary();
       else { fs.search=e.target.value.trim(); renderCards(); }
@@ -4371,9 +4418,9 @@ function _setSyncStatus(state, msg) {
   else el.textContent = '―';
 }
 // 進捗バー（長時間処理用）
-function _progShow(label){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='0%';document.getElementById('pb-txt').textContent=label||'処理中...';b.style.display='block';}
+function _progShow(label){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='0%';document.getElementById('pb-txt').textContent=label||'処理中...';b.style.display='block';document.body.classList.add('progging');}
 function _progSet(done,total,label){const b=document.getElementById('prog-bar');if(!b)return;const pct=total>0?Math.min(100,Math.round(done/total*100)):0;document.getElementById('pb-fill').style.width=pct+'%';document.getElementById('pb-txt').textContent=`${label||''} ${done}/${total} (${pct}%)`;}
-function _progDone(msg){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='100%';document.getElementById('pb-txt').textContent=msg||'完了';setTimeout(()=>{b.style.display='none';},2500);}
+function _progDone(msg){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='100%';document.getElementById('pb-txt').textContent=msg||'完了';setTimeout(()=>{b.style.display='none';document.body.classList.remove('progging');},2500);}
 
 // デバウンス保存（自動同期なし・手動のみ）
 let _syncTimer = null;
@@ -4780,6 +4827,79 @@ function _looksLikeStructuredImg(url){
   const file=((url||'').split('/').pop()||'').split('?')[0].toLowerCase().replace(/\.(jpg|jpeg|png|webp)$/,'');
   return /^[a-z]{0,4}-?\d{5,7}[a-z0-9-]*$/.test(file);
 }
+/* ---- 画像リンク切れの自動修復 ----
+   一覧で画像の読み込みに失敗したカードだけを、その場で晴れる屋2から取り直す。
+   ・対象は hareruya2- のカードのみ／1セッション1回だけ試す（無限リトライ防止）
+   ・同時1件・間隔300ms。3回続けて弾かれたら1分休む（アクセス制限対策）
+   ・価格は触らない（時価は「時価更新」ボタンの担当のまま）                        */
+const _fixTried=new Set();
+const _fixQ=[];
+let _fixRunning=false;
+let _fixFails=0;        // 連続失敗数
+let _fixPauseUntil=0;   // 晴れる屋2にアクセス制限をかけられたら、しばらく自動修復を止める
+// 一覧のカード画像だけを差し替える（全再描画しないので、＋/－の操作を邪魔しない）
+function _patchCardImg(c){
+  const ci=document.querySelector(`.ci[data-id="${CSS.escape(c.id)}"]`);
+  if(!ci)return;
+  const box=ci.querySelector('.cimg'); if(!box)return;
+  const src=c.customImage||c.image||''; if(!src)return;
+  box.innerHTML=`<img src="${esc(_thumb(src,_thumbW))}" alt="${esc(c.name)}" decoding="async" onerror="this.outerHTML='<span>🃏</span>'">`;
+}
+// 画像の読み込みに失敗したとき（onerror）に呼ばれる
+function _imgFail(el){
+  const ci=el.closest?el.closest('.ci'):null;
+  const id=ci?ci.dataset.id:'';
+  el.outerHTML='<span>🃏</span>';
+  if(!id||!id.startsWith('hareruya2-'))return;
+  if(_fixTried.has(id))return;
+  if(Date.now()<_fixPauseUntil)return;        // 休止中
+  if(_fixQ.length>200)return;                 // 溜めすぎない
+  const c=getCard(id); if(!c)return;
+  _fixTried.add(id); _fixQ.push(id); _drainFixQ();
+}
+// 戻り値: {p:商品 or null, retry:true なら「今は取れなかっただけ」＝あとでもう一度試してよい}
+// 注: 廃番(404)もアクセス制限も、ブラウザにはCORSエラーとして返る（見分けがつかない）。
+//     なので「粘らずに1回だけ試し、失敗はあとで拾い直す」方針にしている。
+async function _hare2Product(numId){
+  try{
+    const r=await fetch(`https://www.hareruya2.com/products/${numId}.json`,{cache:'no-store'});
+    if(r.status===404)return{p:null,retry:false};                    // 廃番/在庫消滅
+    if(r.ok)return{p:((await r.json())||{}).product||null,retry:false};
+    return{p:null,retry:(r.status===503||r.status===429)};
+  }catch(e){return{p:null,retry:true};}
+}
+async function _drainFixQ(){
+  if(_fixRunning)return;
+  _fixRunning=true;
+  let fixed=0;
+  while(_fixQ.length){
+    const id=_fixQ.shift();
+    const c=getCard(id);
+    let cool=300;
+    if(c){
+      const {p,retry}=await _hare2Product(id.slice(10));
+      const im=p?_normImg((p.images&&p.images[0]&&p.images[0].src)||''):'';
+      if(im&&im!==c.image){
+        c.image=im;
+        const i=db.cards.findIndex(x=>x.id===c.id); if(i>=0)db.cards[i]=c;
+        _markEdited(c);
+        _patchCardImg(c);
+        fixed++;
+        _fixFails=0;
+      }else if(retry){
+        _fixTried.delete(id);   // 通信エラー/アクセス制限。次に表示されたときにまた試す
+        cool=1200;              // 続けて叩かず少し待つ
+        // 連続で弾かれるのはアクセス制限。これ以上叩かず1分休む（次の描画でまた拾い直す）
+        if(++_fixFails>=3){_fixPauseUntil=Date.now()+60000;_fixQ.length=0;break;}
+      }else{
+        _fixFails=0;            // 廃番(404)は「サーバは応答している」ので失敗に数えない
+      }
+    }
+    await new Promise(r=>setTimeout(r,cool));
+  }
+  _fixRunning=false;
+  if(fixed)saveDbDebounced();
+}
 async function refreshAllOwned(){
   const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||''));
   if(!hare.length){alert('対象カードがありません。');return;}
@@ -4808,7 +4928,7 @@ async function refreshAllOwned(){
     if(isGone){gone++;return;}
     if(!p){failed.push(c);return;}                         // 一時的失敗→後で再挑戦
     const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
-    if(im&&im!==c.image){c.image=im;imgFixed++;}
+    if(im&&im!==c.image){c.image=im;imgFixed++;_patchCardImg(c);}
     const v=p.variants&&p.variants[0];
     if(v){const n=parseFloat(v.price);if(!isNaN(n)){
       c.price=Math.round(n);c.priceUpdatedAt=today;
@@ -4821,7 +4941,7 @@ async function refreshAllOwned(){
     await repairOne(c);
     done++;
     if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
-    if(done%60===0){saveDb();renderCards();}
+    if(done%60===0){saveDb();}   // 全再描画すると操作中のタップが外れるので画像は個別に差し替え済み
   }, 6);
   // 一時的な通信失敗ぶんを最後にもう一度だけ再挑戦
   if(failed.length){
