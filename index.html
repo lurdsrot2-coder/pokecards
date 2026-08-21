@@ -1701,10 +1701,29 @@ function _applyRemoteQuietly(snap){
 // 同期の自動取得のように「こちらが操作していないのに起きる」再描画用。
 // 表示枚数とスクロール位置を保つ（リロードされたように見えるのを防ぐ）
 function renderAllKeepView(){
-  const keep=_gridLimit, y=window.scrollY;
+  const keep=_gridLimit;
+  const anchor=_viewAnchor();          // いま画面の一番上に見えているカードを覚える
   _keepLimit=keep;
   try{ renderAll(); } finally { _keepLimit=0; }
-  if(y) window.scrollTo(0,y);
+  _restoreAnchor(anchor);
+}
+// 画面の一番上に見えているカードと、その画面上の位置
+function _viewAnchor(){
+  if(!window.scrollY) return null;     // 一番上にいるなら覚える必要がない
+  for(const e of document.querySelectorAll('#grid .ci')){
+    const r=e.getBoundingClientRect();
+    if(r.bottom>0) return {id:e.dataset.id, top:r.top};
+  }
+  return null;
+}
+// 覚えたカードが同じ位置に見えるようスクロールを戻す。
+// 高さが変わっても「見ていたカード」を基準にするのでズレない
+function _restoreAnchor(a){
+  if(!a)return;
+  const e=document.querySelector(`.ci[data-id="${CSS.escape(a.id)}"]`);
+  if(!e)return;
+  const dy=e.getBoundingClientRect().top-a.top;
+  if(Math.abs(dy)>0.5) window.scrollBy(0,dy);
 }
 
 // ── CARD INTERACTIONS ─────────────────────────────────
@@ -4590,6 +4609,21 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState=
 window.addEventListener('focus', ()=>_autoGistPull());
 // 表示中は60秒ごとにクラウドをチェック
 setInterval(()=>{ if(document.visibilityState==='visible') _autoGistPull(); }, 60000);
+
+// ── 上部UIの高さ変化でカードがずれるのを打ち消す ──
+// 同期状態の文字（「✅ 23:48」↔「✅ 画像修復 1234件」など）やチップの増減で
+// ヘッダ／フィルタ行の折り返し数が変わると、その下のカードが丸ごと上下にずれて
+// 「カクッと飛んだ」ように見える。高さの差分だけスクロールを補正して見た目を止める。
+(()=>{
+  const top=document.getElementById('top-ui');
+  if(!top || typeof ResizeObserver!=='function') return;
+  let h=null;
+  new ResizeObserver(()=>{
+    const n=top.offsetHeight;
+    if(h!==null && n!==h && window.scrollY>0) window.scrollBy(0,n-h);
+    h=n;
+  }).observe(top);
+})();
 
 // ── PULL BUTTON（↓ 取得：GitHubから強制取得） ────────
 document.getElementById('btn-pull').addEventListener('click', async () => {
