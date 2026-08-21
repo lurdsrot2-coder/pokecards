@@ -136,6 +136,9 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .pb-inner{height:12px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
 .pb-fill{height:100%;width:0;background:linear-gradient(90deg,#00f5ff,#00e595);transition:width .25s ease;border-radius:7px}
 .pb-txt{margin-top:6px;font-size:12px;color:var(--txt);text-align:center;letter-spacing:.5px}
+/* ゲージはタップ透過だが、中断ボタンだけは押せるようにする */
+#pb-stop{pointer-events:auto;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,60,60,.22);border:1px solid rgba(255,90,90,.5);color:#ff9c9c;border-radius:5px;padding:6px 10px;font-size:11px;cursor:pointer}
+#pb-stop:hover{background:rgba(255,60,60,.4)}
 /* ゲージ表示中は最下段のカードが隠れないよう下に余白を作る */
 body.progging #grid{padding-bottom:64px}
 /* PC: フィルタを左2行＋右クイックフィルター2行に集約しカード表示領域を拡大 */
@@ -457,6 +460,7 @@ body.progging #grid{padding-bottom:64px}
 <div id="prog-bar" style="display:none">
   <div class="pb-inner"><div class="pb-fill" id="pb-fill"></div></div>
   <div class="pb-txt" id="pb-txt"></div>
+  <button type="button" id="pb-stop" style="display:none">■ 中断</button>
 </div>
 <div id="app">
 
@@ -1946,6 +1950,11 @@ function searchWholeLibrary(){
   const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
   renderAll(); // プルダウンも作り直す必要があるため
 }
+document.getElementById('pb-stop').addEventListener('click',function(){
+  _repairAbort=true;
+  this.textContent='中断中...';
+  _setSyncStatus('syncing','中断しています');
+});
 document.getElementById('btn-search-all').addEventListener('click',()=>{
   searchWholeLibrary();
   document.getElementById('srch').blur();
@@ -4418,6 +4427,12 @@ function _setSyncStatus(state, msg) {
   else el.textContent = '―';
 }
 // 進捗バー（長時間処理用）
+let _repairAbort=false;
+function _progStopBtn(on){
+  const b=document.getElementById('pb-stop');if(!b)return;
+  b.style.display=on?'block':'none';
+  b.textContent='■ 中断';
+}
 function _progShow(label){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='0%';document.getElementById('pb-txt').textContent=label||'処理中...';b.style.display='block';document.body.classList.add('progging');}
 function _progSet(done,total,label){const b=document.getElementById('prog-bar');if(!b)return;const pct=total>0?Math.min(100,Math.round(done/total*100)):0;document.getElementById('pb-fill').style.width=pct+'%';document.getElementById('pb-txt').textContent=`${label||''} ${done}/${total} (${pct}%)`;}
 function _progDone(msg){const b=document.getElementById('prog-bar');if(!b)return;document.getElementById('pb-fill').style.width='100%';document.getElementById('pb-txt').textContent=msg||'完了';setTimeout(()=>{b.style.display='none';document.body.classList.remove('progging');},2500);}
@@ -4908,25 +4923,33 @@ async function refreshAllOwned(){
   if(!dead.length){alert('修復が必要そうなリンク切れ画像は見つかりませんでした。');return;}
   if(!confirm(`リンク切れの可能性がある画像 ${dead.length}件 を晴れる屋2から修復します。\n数分かかることがあります。実行しますか？`))return;
   const today=_today();
+  // 今画面に出しているカードを先に直す（見ているところから埋まっていくように）
+  try{
+    const vis=new Set(filtered().map(c=>c.id));
+    if(vis.size)dead.sort((a,b)=>(vis.has(b.id)?1:0)-(vis.has(a.id)?1:0));
+  }catch(e){}
   // ── ② 修復（handle=数値ID なので /products/<ID>.json を直接取得・プロキシ不要） ──
   let imgFixed=0,priceUpd=0,gone=0,done=0;
+  let miss=0;          // 直近の連続失敗数（Cloudflareに弾かれ始めたサイン）
+  _repairAbort=false;
   const failed=[]; // 一時的な通信失敗で取得できなかったカード（廃番=404は含めない）
   _progShow('画像修復中...');
+  _progStopBtn(true);
   _setSyncStatus('syncing',`画像修復 0/${dead.length}`);
   const repairOne=async c=>{
+    if(_repairAbort)return;
     const id=c.id.slice(10);
     let p=null, isGone=false;
-    for(let a=0;a<3;a++){
-      try{
-        const r=await fetch(`https://www.hareruya2.com/products/${id}.json`,{cache:'no-store'});
-        if(r.status===404){isGone=true;break;}             // 廃番/在庫消滅
-        if(r.ok){p=((await r.json())||{}).product||null;break;}
-        if(r.status===503||r.status===429){await new Promise(s=>setTimeout(s,1200));continue;}
-        break;
-      }catch(e){await new Promise(s=>setTimeout(s,1000));}
-    }
-    if(isGone){gone++;return;}
-    if(!p){failed.push(c);return;}                         // 一時的失敗→後で再挑戦
+    // 失敗が続くのは晴れる屋2(Cloudflare)に弾かれているとき。その場で粘らず、全体を少し休ませる
+    if(miss>=8){miss=0;_progSet(done,dead.length,'混雑のため小休止');await new Promise(s=>setTimeout(s,20000));}
+    try{
+      const r=await fetch(`https://www.hareruya2.com/products/${id}.json`,{cache:'no-store'});
+      if(r.status===404)isGone=true;                       // 廃番/在庫消滅
+      else if(r.ok)p=((await r.json())||{}).product||null;
+    }catch(e){}
+    if(isGone){gone++;miss=0;return;}
+    if(!p){failed.push(c);miss++;return;}                  // 一時的失敗→後で再挑戦
+    miss=0;
     const im=_normImg((p.images&&p.images[0]&&p.images[0].src)||'');
     if(im&&im!==c.image){c.image=im;imgFixed++;_patchCardImg(c);}
     const v=p.variants&&p.variants[0];
@@ -4938,19 +4961,29 @@ async function refreshAllOwned(){
     }}
   };
   await _runPool(dead, async c=>{
+    if(_repairAbort)return;   // 中断後は残りを数えない（件数表示が実態とずれるため）
     await repairOne(c);
     done++;
     if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
     if(done%60===0){saveDb();}   // 全再描画すると操作中のタップが外れるので画像は個別に差し替え済み
-  }, 6);
+  }, 3);   // 同時3件。増やすとCloudflareに弾かれて、かえって遅くなる
   // 一時的な通信失敗ぶんを最後にもう一度だけ再挑戦
-  if(failed.length){
+  if(failed.length && !_repairAbort){
     _progSet(dead.length-failed.length,dead.length,'再挑戦中');
     const retryList=failed.slice();failed.length=0;
-    await _runPool(retryList, repairOne, 4);
+    miss=0;
+    await _runPool(retryList, repairOne, 2);
   }
+  _progStopBtn(false);
   saveDb();renderAll();
   _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
+  if(_repairAbort){
+    _repairAbort=false;
+    _progDone(`■ 中断：${imgFixed}件まで修復（保存済み）`);
+    alert(`中断しました。${done}/${dead.length}件まで処理し、${imgFixed}件の画像を修復しています（保存済みです）。
+もう一度実行すると、まだ直っていないぶんから続きます。`);
+    return;
+  }
   _progDone(`✅ 完了：${imgFixed}件修復${gone?` / ${gone}件は廃番`:''}`);
   alert(`リンク切れ ${dead.length}件のうち、${imgFixed}件の画像を修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}${failed.length?`\n${failed.length}件は通信エラーが続き取得できませんでした。もう一度「時価更新」を実行してみてください。`:''}`);
 }
