@@ -1988,9 +1988,13 @@ function _syncSrchX(){
   srchEl.addEventListener('compositionend',e=>{_ime=false;_lazySrch(e.target.value);});
   srchEl.addEventListener('input',e=>{if(!_ime)_lazySrch(e.target.value);});
   // ✕: 1文字ずつ消さずに一発でクリア（そのまま次の語を打てるようフォーカスは残す）
+  // ここで検索し直さないのが肝。押した直後はほぼ必ず次の語を打つので、
+  // 全件（3万件）を描き直しても捨てるだけ。その一瞬の固まりが邪魔になる。
+  // 一覧は前の検索結果のまま置いておき、次の入力で切り替わる。
+  // 絞り込み自体を解除したい時は「✕ フィルタ解除」がある。
   document.getElementById('srch-x').addEventListener('click',()=>{
     clearTimeout(_srchT);_srchT=null;
-    srchEl.value='';fs.search='';_syncSrchX();renderCards();srchEl.focus();
+    srchEl.value='';_syncSrchX();srchEl.focus();
   });
   // Enterで検索実行＋キーボードを閉じる。IME変換確定のEnterは無視
   // （ズームは検索欄を16pxにして発生させない方針に変更）
