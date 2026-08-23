@@ -4950,6 +4950,15 @@ function _looksLikeStructuredImg(url){
    ・対象は hareruya2- のカードのみ／1セッション1回だけ試す（無限リトライ防止）
    ・同時1件・間隔300ms。3回続けて弾かれたら1分休む（アクセス制限対策）
    ・価格は触らない（時価は「時価更新」ボタンの担当のまま）                        */
+// 自動修復専用の保存。晴れる屋2から取り直しただけの派生データなので、
+// 同期の送信キューには載せない。載せると「送信待ちがある間は自動取得しない」という
+// 安全装置に引っかかり続け、リンク切れ画像が多い端末（＝新しい端末）は
+// ずっと送信中扱いになって、他の端末の更新を受け取れなくなる。
+let _localSaveTimer=null;
+function _saveLocalOnly(){
+  clearTimeout(_localSaveTimer);
+  _localSaveTimer=setTimeout(()=>{_localSaveTimer=null;_doSave();},1500);
+}
 const _fixTried=new Set();
 const _fixQ=[];
 let _fixRunning=false;
@@ -5000,7 +5009,6 @@ async function _drainFixQ(){
       if(im&&im!==c.image){
         c.image=im;
         const i=db.cards.findIndex(x=>x.id===c.id); if(i>=0)db.cards[i]=c;
-        _markEdited(c);
         _patchCardImg(c);
         fixed++;
         _fixFails=0;
@@ -5016,7 +5024,7 @@ async function _drainFixQ(){
     await new Promise(r=>setTimeout(r,cool));
   }
   _fixRunning=false;
-  if(fixed)saveDbDebounced();
+  if(fixed)_saveLocalOnly();   // 端末内にだけ保存（同期は起こさない）
 }
 async function refreshAllOwned(){
   const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||''));
