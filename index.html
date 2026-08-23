@@ -979,7 +979,7 @@ async function _mergeBeforePush(){
     if(!remote||!Array.isArray(remote.cards)) return db;
     const merged=_merge3(_baseDb,db,remote);
     db=merged; _idbPut(db);                                        // 画面側にも反映
-    renderAll();
+    renderAllKeepView();   // 送信は裏で起きるので、見ている位置を動かさない
     return db;
   }catch(e){ console.warn('merge失敗',e); return db; }
 }
