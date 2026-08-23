@@ -2723,6 +2723,7 @@ function parseHareruya2Page(html){
   const seen=new Map();
   [...doc.querySelectorAll('img[alt]')].forEach(img=>{
     const alt=img.getAttribute('alt')||'';
+    if(_HR2_COND.test(alt))return;      // 状態違い・PSA鑑定品は取り込まない
     // 商品IDをキーに使う（フィルタより先に取得してゲートに使う）
     const a=img.closest('a[href*="/products/"]')||
       img.closest('[class]')?.querySelector('a[href*="/products/"]');
@@ -2813,9 +2814,14 @@ function _packLookup(code){
   return k?{code:k,name:PACK_NAMES[k]}:null;
 }
 function _packName(code){ const h=_packLookup(code); return h?h.name:(code||''); }
+// 状態違い（【状態A】〜【状態D】）やPSA鑑定品は、同じカードが何行にもなるだけなので取り込まない。
+// 収集の管理が目的で、売買用の個体管理ではないため。
+// 例: 「【状態B-】リザードン:初版#1173」「【状態D】リザードン#2377」
+const _HR2_COND=/[【\[〔]\s*状態[^】\]〕]*[】\]〕]|PSA\s*\d|鑑定済/;
 function parseHareruya2Products(products){
   const out=[];
   for(const p of (products||[])){
+    if(_HR2_COND.test(p.title||''))continue;
     const t=_parseHareruya2Title(p.title);
     if(!t.name)continue;
     let src=(p.images&&p.images[0]&&p.images[0].src)||'';
