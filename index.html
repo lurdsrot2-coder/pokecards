@@ -1466,6 +1466,7 @@ function cardHTML(c){
 
 let _gridLimit=200;
 let _keepLimit=0;   // 裏での再描画時に「今出している枚数」を保つため
+let _viewIds=null;  // いま画面に出しているカードの並び（裏の再描画では絞り込み直さない）
 let _gridObs=null;
 let _imgObs=null;
 // スマホは1回の描画枚数を減らす（同時に走る画像リクエストを絞る）
@@ -1518,14 +1519,23 @@ function _attachGridObserver(cards){
   _gridObs.observe(sentinel);
 }
 
-function renderCards(){
-  _updateClrFilterBtn();
-  _recordFs();
+// opt.keepSet=true: 絞り込みをやり直さず、いま並んでいるカードをそのまま描き直す。
+// WANTで絞って＋1していくとき、裏の同期で「もう所持した」カードが消えて並びがずれ、
+// 隣を押してしまう事故が起きるため、裏からの再描画では並びを固定する。
+function renderCards(opt){
+  const keepSet=!!(opt&&opt.keepSet&&_viewIds);
+  if(!keepSet){ _updateClrFilterBtn(); _recordFs(); renderRarity(); }
   _updateRateChip();
-  renderRarity();
   if(_gridObs){_gridObs.disconnect();_gridObs=null;}
   const g=document.getElementById('grid');
-  const cards=filtered();
+  let cards;
+  if(keepSet){
+    const m=new Map(db.cards.map(c=>[c.id,c]));
+    cards=_viewIds.map(id=>m.get(id)).filter(Boolean);   // 消えたカードだけ落とす
+  }else{
+    cards=filtered();
+    _viewIds=cards.map(c=>c.id);
+  }
   document.getElementById('s-filtered').textContent=cards.length;
   if(!cards.length){
     g.innerHTML=`<div class="empty"><div class="emsg">${
@@ -1704,7 +1714,9 @@ function renderAllKeepView(){
   const keep=_gridLimit;
   const anchor=_viewAnchor();          // いま画面の一番上に見えているカードを覚える
   _keepLimit=keep;
-  try{ renderAll(); } finally { _keepLimit=0; }
+  // プルダウンとクイックフィルターは作り直さない（作り直すと高さが変わって画面が動く）。
+  // 絞り込みもやり直さない＝並びが変わらない
+  try{ renderStats(); renderCards({keepSet:true}); } finally { _keepLimit=0; }
   _restoreAnchor(anchor);
 }
 // 画面の一番上に見えているカードと、その画面上の位置
@@ -4872,7 +4884,7 @@ async function dailyAutoRefresh(){
     let done=0,changed=0;
     _setSyncStatus('syncing',`時価更新中 0/${tracked.length}`);
     await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;if(done%4===0)_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);},5);
-    if(changed){saveDb();renderStats();renderCards();}
+    if(changed){saveDb();renderStats();renderCards({keepSet:true});}
     _setSyncStatus('synced',`時価更新 ${changed}件`);
   }catch(e){console.warn('autoReprice',e);}
 }
