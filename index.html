@@ -1450,8 +1450,10 @@ function _setCode(c){
 }
 function cardHTML(c){
   const src=c.customImage||c.image||'';
+  // 読み込み済みのカードは src を直接入れる（ブラウザのキャッシュから即描画される）
+  const attr=_imgLoaded.has(c.id)?'src':'data-src';
   const img=src
-    ?`<img data-src="${esc(_thumb(src,_thumbW))}" alt="${esc(c.name)}" decoding="async" onerror="_imgFail(this)">`
+    ?`<img ${attr}="${esc(_thumb(src,_thumbW))}" alt="${esc(c.name)}" decoding="async" onerror="_imgFail(this)">`
     :`<span>🃏</span>`;
   const isSel=selIds.has(c.id);
   return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
@@ -1480,6 +1482,12 @@ let _keepLimit=0;   // 裏での再描画時に「今出している枚数」を
 let _viewIds=null;  // いま画面に出しているカードの並び（裏の再描画では絞り込み直さない）
 let _gridObs=null;
 let _imgObs=null;
+// この画面で一度でも読み込んだカード。再描画時にすぐ出すための印
+const _imgLoaded=new Set();
+function _markImgLoaded(im){
+  const ci=im.closest&&im.closest('.ci');
+  if(ci&&ci.dataset.id)_imgLoaded.add(ci.dataset.id);
+}
 // スマホは1回の描画枚数を減らす（同時に走る画像リクエストを絞る）
 function _gridStep(){return window.innerWidth<=600?60:200;}
 // 画面に入りそうな画像だけ src を入れる。ブラウザ標準の loading=lazy より先読み範囲が狭く、
@@ -1491,7 +1499,7 @@ function _lazyImgs(){
       es.forEach(en=>{
         if(!en.isIntersecting) return;
         const im=en.target; _imgObs.unobserve(im);
-        const u=im.dataset.src; if(u){im.removeAttribute('data-src'); im.src=u;}
+        const u=im.dataset.src; if(u){im.removeAttribute('data-src'); im.src=u; _markImgLoaded(im);}
       });
     },{rootMargin:'600px 0px'});  // 数行先まで先読み。標準のlazyより狭く、見えている枚数を優先
   }
@@ -1506,7 +1514,7 @@ function _lazyImgs(){
   }
   // すでに見えている位置のものは即座に読み込む。
   // ここを observer に任せると1フレーム遅れ、再描画のたびに黒いタイルが一瞬見える
-  for(const im of near){const u=im.dataset.src;im.removeAttribute('data-src');im.src=u;}
+  for(const im of near){const u=im.dataset.src;im.removeAttribute('data-src');im.src=u;_markImgLoaded(im);}
   for(const im of far) _imgObs.observe(im);
 }
 
@@ -5001,11 +5009,13 @@ function _patchCardImg(c){
   const box=ci.querySelector('.cimg'); if(!box)return;
   const src=c.customImage||c.image||''; if(!src)return;
   box.innerHTML=`<img src="${esc(_thumb(src,_thumbW))}" alt="${esc(c.name)}" decoding="async" onerror="this.outerHTML='<span>🃏</span>'">`;
+  _imgLoaded.add(c.id);
 }
 // 画像の読み込みに失敗したとき（onerror）に呼ばれる
 function _imgFail(el){
   const ci=el.closest?el.closest('.ci'):null;
   const id=ci?ci.dataset.id:'';
+  if(id)_imgLoaded.delete(id);
   el.outerHTML='<span>🃏</span>';
   if(!id||!id.startsWith('hareruya2-'))return;
   if(_fixTried.has(id))return;
