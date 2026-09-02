@@ -508,7 +508,7 @@ body.progging #grid{padding-bottom:64px}
         <span class="flbl">CATEGORY</span>
         <select class="csel" id="sel-type"><option value="">全カード種別</option></select>
         <span class="farr">›</span>
-        <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select><button class="fsnav" id="btn-ser-multi" title="シリーズの複数選択：ONの間は選ぶたびに追加/解除できます（例: ADV と PCG）">＋</button>
+        <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select><button class="fsnav" id="btn-ser-multi" title="シリーズの複数選択。PCはCtrl(⌘)を押しながら選べばONにしなくても追加できます（例: ADV と PCG）。スマホ用にこのボタンでも切り替えられます">＋</button>
         <span class="farr">›</span>
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
       </div>
@@ -1991,10 +1991,31 @@ document.getElementById('import-bk-file').addEventListener('change',e=>{
 });
 
 // ── FILTER EVENTS ─────────────────────────────────────
+// カード種別を選んでも、シリーズやタイトルの選択は外さない（切り替えたいだけなので）
 document.getElementById('sel-type').addEventListener('change',e=>{
-  fs.cardTypes=e.target.value?new Set([e.target.value]):new Set();fs.series=new Set();fs.title='';renderAll();
+  fs.cardTypes=e.target.value?new Set([e.target.value]):new Set();
+  _dropStaleTitle();
+  renderAll();
 });
-let _serMulti=false;
+// いま選んでいるタイトルが、他の絞り込みの中に1枚も無くなったときだけ外す。
+// （そうしないと0件の画面になってしまうため）
+function _dropStaleTitle(){
+  if(!fs.title || fs.title===NONE_VAL) return;
+  const ok=db.cards.some(c=>{
+    if(c.hidden && !fs.showHidden) return false;
+    if(fs.cardTypes.size && !fs.cardTypes.has(c.cardType)) return false;
+    if(!_serMatch(c)) return false;
+    return c.setName===fs.title;
+  });
+  if(!ok) fs.title='';
+}
+// Ctrl(⌘)を押しながら選ぶと複数選択。ふつうに選んだら切り替え。
+// selectのchangeイベントは修飾キーを持たないので、押下状態を自前で覚えておく
+let _serMulti=false, _modDown=false;
+addEventListener('keydown',e=>{ if(e.key==='Control'||e.key==='Meta') _modDown=true; });
+addEventListener('keyup',  e=>{ if(e.key==='Control'||e.key==='Meta') _modDown=false; });
+addEventListener('blur',   ()=>{ _modDown=false; });
+document.getElementById('sel-series').addEventListener('mousedown',e=>{ _modDown=e.ctrlKey||e.metaKey; });
 document.getElementById('btn-ser-multi').addEventListener('click',function(){
   _serMulti=!_serMulti;
   this.classList.toggle('on',_serMulti);
@@ -2003,12 +2024,15 @@ document.getElementById('btn-ser-multi').addEventListener('click',function(){
 });
 document.getElementById('sel-series').addEventListener('change',e=>{
   const v=e.target.value;
+  const add=_modDown||_serMulti;      // Ctrl(⌘)押しながら、または＋ON（スマホ用）
   if(!v) fs.series=new Set();                                  // 「全シリーズ」で解除
-  else if(_serMulti){                                          // 複数モード: 選ぶたびに追加/解除
+  else if(add){                                                // 追加/解除
     if(fs.series.has(v)) fs.series.delete(v); else fs.series.add(v);
   }
-  else fs.series=new Set([v]);                                 // 通常は入れ替え
-  fs.title='';renderAll();
+  else fs.series=new Set([v]);                                 // ふつうのクリックは入れ替え
+  _modDown=false;   // 1回きり。プルダウンを開いている間はキーを離しても検知できないため
+  _dropStaleTitle();
+  renderAll();
 });
 document.getElementById('sel-title').addEventListener('change',e=>{
   fs.title=e.target.value;renderCards();
