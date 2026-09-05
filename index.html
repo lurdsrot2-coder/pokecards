@@ -1303,6 +1303,27 @@ function _filteredExcluding(exclude){
     return true;
   });
 }
+// 収録タイトル → セット記号。同じタイトルに複数の記号がある場合はいちばん多いものを使う
+// （例: 拡張パック「頂上大激突」は L3-B が78枚 / B-L が12枚）
+let _tcodeCache=null, _tcodeN=-1;
+function _titleCodes(){
+  if(_tcodeCache && _tcodeN===db.cards.length) return _tcodeCache;
+  const tally=new Map();
+  for(const c of db.cards){
+    const t=(c.setName||'').trim(); if(!t) continue;
+    const code=_setCode(c); if(!code) continue;
+    let e=tally.get(t); if(!e){e=new Map(); tally.set(t,e);}
+    e.set(code, (e.get(code)||0)+1);
+  }
+  const out=new Map();
+  for(const [t,cc] of tally){
+    let best='', n=0;
+    for(const [k,v] of cc){ if(v>n){best=k; n=v;} }
+    if(best) out.set(t,best);
+  }
+  _tcodeCache=out; _tcodeN=db.cards.length;
+  return out;
+}
 function renderDropdowns(){
   const poolType  =_filteredExcluding('cardType');
   const poolSeries=_filteredExcluding('series');
@@ -1312,15 +1333,18 @@ function renderDropdowns(){
   const sers  =[...new Set(poolSeries.map(c=>c.series).filter(Boolean))].sort();
   const titles=[...new Set(poolTitle.map(c=>c.setName).filter(Boolean))].sort();
 
-  const rebuild=(el,items,lbl,cur,hasNone)=>{
+  const rebuild=(el,items,lbl,cur,hasNone,fmt)=>{
     el.innerHTML=`<option value="">${lbl}</option>`;
     if(hasNone) el.innerHTML+=`<option value="${NONE_VAL}"${cur===NONE_VAL?' selected':''}>（未登録）</option>`;
     items.forEach(v=>{
       const o=document.createElement('option');
-      o.value=v;o.textContent=v;if(v===cur)o.selected=true;
+      o.value=v;o.textContent=fmt?fmt(v):v;if(v===cur)o.selected=true;
       el.appendChild(o);
     });
   };
+  // タイトルは「SVM  スターターセット…」のようにセット記号を頭に付ける（同名が多く見分けがつかないため）
+  const tc=_titleCodes();
+  const withCode=v=>{ const c=tc.get(v); return c? c+'  '+v : v; };
   const hasNoSeries=poolSeries.some(c=>!c.series);
   const hasNoTitle =poolTitle.some(c=>!c.setName);
   rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardTypes.size===1?[...fs.cardTypes][0]:'', false);
@@ -1335,7 +1359,7 @@ function renderDropdowns(){
   if(_serMulti||fs.series.size>1){
     [...serEl.options].forEach(o=>{ if(o.value&&fs.series.has(o.value)) o.textContent='✓ '+o.textContent; });
   }
-  rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle);
+  rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle, withCode);
 }
 
 // ── RENDER: RARITY CHIPS ──────────────────────────────
