@@ -533,6 +533,8 @@ body.progging #grid{padding-bottom:64px}
           <option value="type">種別順</option>
           <option value="rarity">レアリティ順</option>
           <option value="owned">所持数順</option>
+          <option value="priceDesc">価格が高い順</option>
+          <option value="priceAsc">価格が安い順</option>
           <option value="ownedAt">最近＋1した順</option>
         </select>
       </div>
@@ -1137,6 +1139,14 @@ function _sortCards(arr){
       case 'type':    return ja(a.cardType,b.cardType)||ja(a.name,b.name);
       case 'rarity':  return ja(a.rarityLabel,b.rarityLabel)||ja(a.name,b.name);
       case 'owned':   return (b.owned||0)-(a.owned||0)||ja(a.name,b.name);
+      // 価格順。価格が入っていないカード（37枚）は「安い」ではなく「不明」なので必ず末尾へ
+      case 'priceDesc':
+      case 'priceAsc': {
+        const pa=_num(a.price)||0, pb=_num(b.price)||0;
+        if(!pa!==!pb) return pa?-1:1;
+        if(pa!==pb) return fs.sort==='priceAsc'?pa-pb:pb-pa;
+        return ja(a.name,b.name);
+      }
       case 'ownedAt': return (b.ownedAt?Date.parse(b.ownedAt):0)-(a.ownedAt?Date.parse(a.ownedAt):0)||ja(a.name,b.name); // 最近＋1した順
       default:        return 0;
     }
