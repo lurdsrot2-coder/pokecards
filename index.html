@@ -1343,9 +1343,9 @@ function renderDropdowns(){
   const sers  =[...new Set(poolSeries.map(c=>c.series).filter(Boolean))].sort();
   const titles=[...new Set(poolTitle.map(c=>c.setName).filter(Boolean))].sort();
 
-  const rebuild=(el,items,lbl,cur,hasNone,fmt)=>{
+  const rebuild=(el,items,lbl,cur,hasNone,fmt,noneBar)=>{
     el.innerHTML=`<option value="">${lbl}</option>`;
-    if(hasNone) el.innerHTML+=`<option value="${NONE_VAL}"${cur===NONE_VAL?' selected':''}>（未登録）</option>`;
+    if(hasNone) el.innerHTML+=`<option value="${NONE_VAL}"${cur===NONE_VAL?' selected':''}>（未登録）${noneBar||''}</option>`;
     items.forEach(v=>{
       const o=document.createElement('option');
       o.value=v;o.textContent=fmt?fmt(v):v;if(v===cur)o.selected=true;
@@ -1354,14 +1354,44 @@ function renderDropdowns(){
   };
   // タイトルは「SVM  スターターセット…」のようにセット記号を頭に付ける（同名が多く見分けがつかないため）
   const tc=_titleCodes();
-  const withCode=v=>{ const c=tc.get(v); return c? c+'  '+v : v; };
+  // 各項目の収集率。<option>にはHTMLを入れられないので、ゲージは文字（█░）で作る。
+  // 数え方はヘッダの収集率と同じ「所持している種類数 ÷ 全種類数」
+  const tally=(pool,key)=>{
+    const tot={},own={};
+    for(const c of pool){
+      const k=key(c); if(k==null||k==='') continue;
+      tot[k]=(tot[k]||0)+1; if((c.owned||0)>0) own[k]=(own[k]||0)+1;
+    }
+    return {tot,own};
+  };
+  const bar=(o,t)=>{
+    if(!t) return '';
+    const p=o/t;
+    let n=Math.floor(p*10);
+    if(n>=10 && o<t) n=9;          // 全部そろっていないのに満タンに見せない
+    if(n===0 && o>0) n=1;          // 1種類でもあれば1マス点ける
+    const pct = o>=t ? 100 : Math.min(99, Math.round(p*100));
+    // %を先に出す。スマホでは幅が足りず末尾が切れるため、ゲージが途中で切れて
+    // 実際より高く見えるより、数字が残るほうがよい
+    return '  '+String(pct).padStart(3,' ')+'% '+'█'.repeat(n)+'░'.repeat(10-n);
+  };
+  const tyR=tally(poolType,  c=>c.cardType);
+  const seR=tally(poolSeries,c=>c.series);
+  const tiR=tally(poolTitle, c=>c.setName);
+  const withRate=(r)=>(v)=>v+bar(r.own[v]||0, r.tot[v]||0);
+  // 「（未登録）」も1つのまとまりなので同じようにゲージを出す
+  const noneBar=(pool,key)=>{
+    const g=pool.filter(c=>!key(c));
+    return bar(g.filter(c=>(c.owned||0)>0).length, g.length);
+  };
+  const withCode=v=>{ const c=tc.get(v); return (c? c+'  '+v : v)+bar(tiR.own[v]||0, tiR.tot[v]||0); };
   const hasNoSeries=poolSeries.some(c=>!c.series);
   const hasNoTitle =poolTitle.some(c=>!c.setName);
-  rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardTypes.size===1?[...fs.cardTypes][0]:'', false);
+  rebuild(document.getElementById('sel-type'),  types, '全カード種別',fs.cardTypes.size===1?[...fs.cardTypes][0]:'', false, withRate(tyR));
   if(fs.cardTypes.size>1){ const st=document.getElementById('sel-type');
     st.insertAdjacentHTML('afterbegin',`<option value="" selected>（${fs.cardTypes.size}種別を選択中）</option>`); }
   const serEl=document.getElementById('sel-series');
-  rebuild(serEl, sers, '全シリーズ', fs.series.size===1?[...fs.series][0]:'', hasNoSeries);
+  rebuild(serEl, sers, '全シリーズ', fs.series.size===1?[...fs.series][0]:'', hasNoSeries, withRate(seR), noneBar(poolSeries,c=>c.series));
   if(fs.series.size>1){
     serEl.insertAdjacentHTML('afterbegin',`<option value="" selected>（${fs.series.size}シリーズを選択中）</option>`);
   }
@@ -1369,7 +1399,7 @@ function renderDropdowns(){
   if(_serMulti||fs.series.size>1){
     [...serEl.options].forEach(o=>{ if(o.value&&fs.series.has(o.value)) o.textContent='✓ '+o.textContent; });
   }
-  rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle, withCode);
+  rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle, withCode, noneBar(poolTitle,c=>c.setName));
 }
 
 // ── RENDER: RARITY CHIPS ──────────────────────────────
