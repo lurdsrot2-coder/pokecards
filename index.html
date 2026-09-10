@@ -950,25 +950,63 @@ function _idbGetBase(){
 // 同期が成立した時点のスナップショットを基準として記録
 function _setBase(data){
   try{ _baseDb=JSON.parse(JSON.stringify(data)); _idbPutBase(_baseDb); }catch(e){}
+  _unsentIds.clear();          // ここに来た＝送信成功。未送信の警告を解除する
 }
 // base=前回同期時点 / mine=この端末 / theirs=クラウド最新
+// 所持枚数だけは特別扱いする。カードが消えるより多く数えるほうがまだ安全なので、
+// 「どちらも基準から変えていないのに値が違う＝どこかで巻き戻った」ときは多い方を残す。
+// 意図的に減らした側は editedAt で判別して尊重する。
+function _pickOwned(mineC, theirC, baseStr){
+  const mo=mineC.owned||0, to=theirC?(theirC.owned||0):0;
+  if(mo===to) return null;                       // 同じなら何もしない
+  let bo=null;
+  if(baseStr){ try{ bo=(JSON.parse(baseStr).owned)||0; }catch(e){ bo=null; } }
+  const ts=c=>Date.parse((c&&(c.editedAt||c.ownedAt))||0)||0;
+  const mineChanged = bo===null || mo!==bo;
+  const theirChanged= bo===null || to!==bo;
+  if(mineChanged && !theirChanged) return mo;    // こちらだけが変えた
+  if(mineChanged && theirChanged){               // 両方変えた → 新しい操作を優先
+    const a=ts(mineC), b=ts(theirC);
+    return a!==b ? (a>b?mo:to) : Math.max(mo,to);
+  }
+  if(theirChanged){                              // 相手だけが変えた
+    if(to>mo) return to;                         // 増える向きはそのまま受け入れる
+    // 減る向きは、相手が実際に操作した記録（時刻）が新しいときだけ受け入れる。
+    // 古いデータで上書きされて巻き戻った場合はこちらを守る（今回の事故の防止）
+    return ts(theirC)>ts(mineC) ? to : mo;
+  }
+  return Math.max(mo,to);                        // どちらも変えていないのに違う＝巻き戻り
+}
 function _merge3(base,mine,theirs){
   if(!base||!theirs||!Array.isArray(theirs.cards)) return mine;
   const baseMap=new Map(base.cards.map(c=>[c.id,JSON.stringify(c)]));
   const mineMap=new Map(mine.cards.map(c=>[c.id,c]));
   const out=new Map(theirs.cards.map(c=>[c.id,c]));   // 相手を土台にする
-  let mineWins=0, theirsKept=0, removed=0;
+  let mineWins=0, theirsKept=0, removed=0, guarded=0;
   // 自分が変更/追加したカードを上書き
   for(const c of mine.cards){
     const b=baseMap.get(c.id);
-    if(b===undefined || b!==JSON.stringify(c)){ out.set(c.id,c); mineWins++; }
-    else theirsKept++;
+    const t=out.get(c.id);
+    if(b===undefined || b!==JSON.stringify(c)){
+      // こちらの変更を採用しつつ、相手のほうが所持が多いなら多い方を残す
+      const own=_pickOwned(c,t,b);
+      out.set(c.id, own!=null&&own!==(c.owned||0) ? {...c, owned:own} : c);
+      mineWins++;
+    } else {
+      const own=_pickOwned(c,t,b);
+      if(t && own!=null && own!==(t.owned||0)){    // 相手側で枚数が巻き戻っている
+        out.set(c.id, {...t, owned:own, ownedAt:c.ownedAt||t.ownedAt});
+        guarded++;
+      }
+      theirsKept++;
+    }
   }
+  if(guarded) console.warn(`所持枚数の巻き戻りを ${guarded}件 防ぎました`);
   // 自分が削除したカードは結果からも消す
   for(const id of baseMap.keys()){
     if(!mineMap.has(id) && out.has(id)){ out.delete(id); removed++; }
   }
-  console.log(`マージ: 自分の変更${mineWins}件 / 相手を維持${theirsKept}件 / 削除${removed}件`);
+  console.log(`マージ: 自分の変更${mineWins}件 / 相手を維持${theirsKept}件 / 削除${removed}件 / 巻き戻り阻止${guarded}件`);
   return { ...theirs, cards:[...out.values()], lastUpdated:new Date().toISOString() };
 }
 // 送信前に、クラウドが変わっていればマージした内容を返す
@@ -1065,10 +1103,25 @@ function _idbGetPending(){
   });
 }
 // 編集直後に呼ぶ。数百バイトなので即書き込みでも一切もたつかない
+const _unsentIds=new Set();   // クラウドへまだ送れていないカード
 function _markEdited(card){
   if(!card||!card.id)return;
   _pendingEdits[card.id]=card;
+  _unsentIds.add(card.id);
   _idbPutPending();
+  _updateUnsentBadge();
+}
+// 未送信があるあいだは同期の表示を警告に変える。店で「送れていない」ことに
+// 気づけないのが一番こわいので、送信が終わるまで出しっぱなしにする
+function _updateUnsentBadge(){
+  const el=document.getElementById('cfg-status');
+  if(!el)return;
+  const n=_unsentIds.size;
+  if(n>0){
+    el.className='cfg-status error';
+    el.textContent=`⚠ 未送信 ${n}件`;
+    el.title='この端末での変更がまだクラウドに送られていません。電波の良いところで「↑ 同期」を押してください。';
+  }
 }
 // 全体保存が完了したらジャーナルは不要になるので消す
 function _clearPending(){
@@ -1873,6 +1926,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     }
     if(btn.dataset.act==='inc'){ c.owned=(c.owned||0)+1; c.ownedAt=new Date().toISOString(); } // ＋1した日時を記録
     else c.owned=Math.max(0,(c.owned||0)-1);
+    c.editedAt=new Date().toISOString();   // 増減どちらも記録。同期でどちらが新しいかの判断に使う
     // DB はメモリ更新 + デバウンス保存（全再描画しない）
     const i=db.cards.findIndex(x=>x.id===c.id);
     if(i>=0)db.cards[i]=c;
@@ -4461,7 +4515,9 @@ async function _remoteDataSha(){
   const h={Accept:'application/vnd.github+json'};
   if(cfg.gistToken) h.Authorization=`token ${cfg.gistToken}`;
   try{
-    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?path=data.json&per_page=1`,
+    // パスを限定しない。変更は delta.json に書かれることが多く、data.json だけを見ていると
+    // 他端末の更新を「無かったこと」にして上書きしてしまう（実際に事故が起きた箇所）
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`,
       {headers:h, cache:'no-store'});
     if(!r.ok) return null;
     const j=await r.json();
@@ -4530,7 +4586,7 @@ async function _repoPutDelta(newOps){
   }catch(e){ _lastSyncErr='delta例外'; return false; }
 }
 // delta を data.json に畳み込んで delta.json を空にする
-async function _compactDelta(){
+async function _compactDelta(pushed){
   const cfg=_loadConfig(); const {owner,repo}=_detectRepo();
   if(!cfg.gistToken||!owner||!repo) return;
   const H={Authorization:`token ${cfg.gistToken}`,Accept:'application/vnd.github+json'};
@@ -4540,10 +4596,23 @@ async function _compactDelta(){
     const g=await fetch(`${api}/contents/delta.json?_=${Date.now()}`,{headers:H,cache:'no-store'});
     if(!g.ok) return;                     // 無ければ何もしない
     const j=await g.json();
-    const content=btoa(unescape(encodeURIComponent(JSON.stringify({ops:{},updatedAt:new Date().toISOString()}))));
+    // 送った data.json に入っている内容だけを畳み込む。
+    // 空にしてしまうと、送信の直前に他端末が書いた変更まで消える（事故の原因のひとつ）
+    let keep={};
+    if(pushed && Array.isArray(pushed.cards)){
+      let cur={ops:{}};
+      try{ cur=JSON.parse(decodeURIComponent(escape(atob(String(j.content||'').replace(/\s+/g,''))))); }catch(e){ cur={ops:{}}; }
+      const pm=new Map(pushed.cards.map(c=>[c.id,JSON.stringify(c)]));
+      for(const [id,card] of Object.entries(cur.ops||{})){
+        if(card===null){ if(pm.has(id)) keep[id]=null; continue; }   // 未反映の削除は残す
+        if(pm.get(id)!==JSON.stringify(card)) keep[id]=card;         // 送った内容と違う＝新しい変更
+      }
+    }
+    const n=Object.keys(keep).length;
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify({ops:keep,updatedAt:new Date().toISOString()}))));
     await fetch(`${api}/contents/delta.json`,{method:'PUT',headers:HJ,
       body:JSON.stringify({message:'pokecards compact',content,sha:j.sha})});
-    console.log('delta を data.json に畳み込みました');
+    console.log(n?`delta を畳み込みました（他端末の新しい変更 ${n}件 は残した）`:'delta を data.json に畳み込みました');
   }catch(e){}
 }
 // 送信の入口。まず差分で試し、無理なら全体を送る
@@ -4554,7 +4623,7 @@ async function _pushChanges(snap){
   if(ops && Object.keys(ops).length===0) return true;        // 変更なし
   if(ops && await _repoPutDelta(ops)) return true;           // 差分で送れた（数十KB）
   const ok=await _repoPut(snap);                             // 全体送信
-  if(ok) await _compactDelta();                              // 全体を送ったのでdeltaは空に
+  if(ok) await _compactDelta(snap);                          // 送った内容の分だけ畳み込む
   return ok;
 }
 let _pushedSha = null; // 直近の送信で作られたコミットSHA（APIの反映遅延を避けるため応答から取る）
@@ -4634,6 +4703,7 @@ function _setSyncStatus(state, msg) {
   else if (state === 'synced') el.textContent = '✅ ' + (msg || '同期済');
   else if (state === 'error') el.textContent = '❌ ' + (msg || 'エラー');
   else el.textContent = '―';
+  if(state!=='syncing') _updateUnsentBadge();   // 未送信が残っていれば警告を優先する
 }
 // 進捗バー（長時間処理用）
 let _repairAbort=false;
