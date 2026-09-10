@@ -143,12 +143,38 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 body.progging #grid{padding-bottom:64px}
 /* PC: フィルタを左2行＋右クイックフィルター2行に集約しカード表示領域を拡大 */
 @media(min-width:601px){
-  #fp .fleft .frow{ flex-wrap:nowrap; }            /* 各行を1行に固定 */
   #fp .fleft .frow .csel{ min-width:0; }           /* プルダウンを縮められるように */
   #fp #sel-title{ flex:1 1 auto; }                 /* タイトルは余白を埋める */
   #fp .srch-wrap{ flex:1 1 140px; width:auto; min-width:110px; } /* 検索欄も伸縮 */
+}
+/* 十分に広いときだけ2段組み（右にクイックフィルター）。
+   1200px を下回ると左の行が入りきらず、はみ出してクイックフィルターに重なるため */
+@media(min-width:1200px){
+  #fp .fleft .frow{ flex-wrap:nowrap; }            /* 各行を1行に固定 */
   .qf{ flex:0 0 42%; max-width:42%; box-sizing:border-box; }/* 右半分に収める */
   .qgrid{ max-height:50px; }                        /* 2行＋スクロール */
+}
+/* 画面を半分にしたときなど中くらいの幅。2段組みは保ったままクイックフィルターを細くし、
+   左の行は折り返しを許す（はみ出して重なるのを防ぐ。高さは必要なときだけ増える） */
+@media(min-width:601px) and (max-width:1199px){
+  #fp .fleft .frow{ flex-wrap:wrap; }              /* 入りきらないときは折り返す（重ならない） */
+  /* プルダウンは中身（収集率ゲージを含む）ぶんの幅を要求してくるので、
+     基準幅を小さくして縮められるようにする。これがないと毎回折り返して背が高くなる */
+  #fp .fleft .frow .csel{ flex:1 1 84px; min-width:0; }
+  #fp #sel-title{ flex:2 1 110px; }
+  #fp #sel-sort{ flex:0 1 92px; }
+  #fp .srch-wrap{ flex:1 1 110px; min-width:88px; }
+  /* ボタンの長いラベルはスマホと同様に隠す（★お気に入り→★、✕フィルタ解除→✕解除）。
+     これで2行目が1行に収まり、カードの見える面積が増える */
+  #fp .fleft .hm{ display:none; }
+  /* ヘッダのボタンも詰める。画面を半分にすると19個が3行に折り返して
+     カードの見える面積を圧迫するため */
+  #hdr{ padding:7px 12px; gap:5px; }
+  #hdr .hbtn{ padding:4px 7px; letter-spacing:.5px; }
+  #logo{ font-size:13px; letter-spacing:2px; }
+  .qf{ flex:0 0 30%; max-width:30%; box-sizing:border-box; }
+  .qgrid{ max-height:50px; }
+  .qlbl{ margin-bottom:3px; }
 }
 .rscroll{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;flex:1;scrollbar-width:thin;scrollbar-color:rgba(255,0,255,.2) transparent}
 .rc{background:rgba(255,0,255,.05);border:1px solid rgba(255,0,255,.18);border-radius:10px;padding:2px 9px;font-size:8px;color:rgba(255,0,255,.55);white-space:nowrap;cursor:pointer;flex-shrink:0;transition:var(--t)}
