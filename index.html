@@ -34,7 +34,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 /* ── Header ── */
 #top-ui{position:sticky;top:0;z-index:1000}
 #hdr{background:linear-gradient(90deg,#0d0d2a,var(--bg-c));border-bottom:1px solid var(--bd2);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-#logo{color:var(--cyan);font-size:15px;font-weight:900;letter-spacing:3px;text-shadow:0 0 12px var(--cyan);margin-right:auto;white-space:nowrap}
+#logo{color:var(--cyan);font-size:15px;font-weight:900;letter-spacing:3px;text-shadow:0 0 12px var(--cyan);margin-right:auto;white-space:nowrap;cursor:pointer;user-select:none}
+#logo:hover{text-shadow:0 0 18px var(--cyan),0 0 32px var(--cyan)}
 .stats{display:flex;gap:8px}
 .chip{background:rgba(0,245,255,.05);border:1px solid var(--bd);border-radius:4px;padding:3px 12px;text-align:center;min-width:60px}
 .chip-v{font-size:14px;font-weight:900;line-height:1.3}
@@ -214,12 +215,12 @@ body.progging #grid{padding-bottom:64px}
 .emsg span{display:block;font-size:10px;margin-top:6px}
 
 /* ── Card Item ── */
-.ci{background:var(--bg-c2);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:transform var(--t),border-color var(--t),box-shadow var(--t);position:relative}
+.ci{background:var(--bg-c2);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;cursor:default;transition:transform var(--t),border-color var(--t),box-shadow var(--t);position:relative}
 .ci:hover{transform:translateY(-3px);border-color:rgba(0,245,255,.6);box-shadow:0 0 16px rgba(0,245,255,.15)}
 .ci.owned{border-color:rgba(0,245,255,.35)}
 .ci.selected{border-color:var(--cyan)!important;box-shadow:0 0 20px rgba(0,245,255,.4)!important}
 .ci.selected::after{content:'✓';position:absolute;top:6px;left:6px;background:var(--cyan);color:#000;font-size:11px;font-weight:900;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:5;line-height:20px;text-align:center}
-.ciwrap{transition:filter .2s}
+.ciwrap{transition:filter .2s;cursor:pointer}
 .ciwrap{filter:saturate(.12) brightness(.5)}
 .ci.owned .ciwrap{filter:none}
 .ci:hover:not(.owned) .ciwrap{filter:saturate(.35) brightness(.7)}
@@ -495,7 +496,7 @@ body.progging #grid{padding-bottom:64px}
 
 <div id="top-ui">
 <header id="hdr">
-  <div id="logo">◈ POKÉCARD//SYS</div>
+  <div id="logo" title="ホームへ（絞り込みをすべて解除して先頭に戻る）">◈ POKÉCARD//SYS</div>
   <div class="stats">
     <div class="chip"><div class="chip-v c" id="s-total">0</div><div class="chip-l">TOTAL</div></div>
     <div class="chip"><div class="chip-v p" id="s-owned">0</div><div class="chip-l">OWNED</div></div>
@@ -1997,7 +1998,9 @@ document.getElementById('grid').addEventListener('click',e=>{
     lastSelId=id;
     ci.classList.add('selected');
     updateDelBtn();
-  } else {
+  } else if(e.target.closest('.ciwrap')){
+    // 詳細を開くのは画像を押したときだけ。＋/−のまわりを押して
+    // 意図せず詳細が開くのを防ぐため
     openEdit(id);
   }
 });
@@ -2093,6 +2096,17 @@ document.getElementById('btn-showhidden').addEventListener('click',function(){
 });
 // フィルタ解除ボタン
 document.getElementById('btn-clr-filter').addEventListener('click',clearFilters);
+// ロゴを押したらホームへ。絞り込みを全部外して先頭に戻す
+document.getElementById('logo').addEventListener('click',()=>{
+  clearFilters();
+  fs.sort='default';
+  const ss=document.getElementById('sel-sort'); if(ss) ss.value='default';
+  renderCards();
+  // 描画とヘッダ高さの補正が落ち着いてから先頭へ。
+  // すぐ呼ぶと上部UIの高さ変化を打ち消す処理と競合して戻りきらない
+  window.scrollTo(0,0);
+  setTimeout(()=>window.scrollTo(0,0),60);
+});
 
 // ── インポート直後フィルター ───────────────────────────────
 function applyImportFilter(ids){
