@@ -18,12 +18,26 @@ import sys
 import io
 import glob
 import datetime
+import subprocess
 import urllib.request
 
 OWNER = 'lurdsrot2-coder'
 REPO = 'pokecards'
 DEST = os.path.join(os.environ.get('USERPROFILE', r'C:\Users\okudaira'), 'OneDrive', 'PokecardBackup')
 KEEP_DAYS = 30
+STALE_DAYS = 3          # 前回の成功からこれ以上空いたら知らせる
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def notify(title, message):
+    """Windowsの通知を出す。気づけないと意味がないので、異常時は必ず呼ぶ。"""
+    try:
+        subprocess.run(
+            ['powershell', '-ExecutionPolicy', 'Bypass', '-File', os.path.join(HERE, 'notify.ps1'),
+             '-Title', title, '-Message', message],
+            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 def fetch(url):
@@ -79,6 +93,19 @@ def main():
             pt = sum((c.get('owned') or 0) for c in p.get('cards', []))
             if total < pt:
                 warn = '  ※警告: 所持枚数が前回(%d)より %d 枚減っています' % (pt, pt - total)
+                notify('ポケカ 所持枚数が減りました',
+                       '前回 %d 枚 → 今回 %d 枚（%d 枚減）。誤操作や同期の事故かもしれません。'
+                       % (pt, total, pt - total))
+        except Exception:
+            pass
+        # 前回のバックアップから日が空いていたら知らせる（タスクが動いていない可能性）
+        try:
+            last = datetime.date.fromisoformat(os.path.basename(prev[-1])[10:20])
+            gap = (datetime.date.today() - last).days
+            if gap >= STALE_DAYS:
+                notify('ポケカ バックアップが止まっていました',
+                       '前回の保存は %d 日前（%s）です。今回は保存できました。'
+                       % (gap, last.isoformat()))
         except Exception:
             pass
 
@@ -115,4 +142,6 @@ if __name__ == '__main__':
         sys.exit(main())
     except Exception as e:
         log('失敗: %s' % e)
+        notify('ポケカ バックアップ失敗',
+               '%s\n保存先: %s' % (e, DEST))
         sys.exit(1)
