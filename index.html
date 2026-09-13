@@ -33,7 +33,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 
 /* ── Header ── */
 #top-ui{position:sticky;top:0;z-index:1000}
-#hdr{background:linear-gradient(90deg,#0d0d2a,var(--bg-c));border-bottom:1px solid var(--bd2);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#hdr{background:linear-gradient(90deg,#0d0d2a,var(--bg-c));border-bottom:1px solid var(--bd2);padding:10px 16px;display:flex;align-items:center;column-gap:8px;row-gap:14px;flex-wrap:wrap}
 #logo{color:var(--cyan);font-size:15px;font-weight:900;letter-spacing:3px;text-shadow:0 0 12px var(--cyan);margin-right:auto;white-space:nowrap;cursor:pointer;user-select:none}
 #logo:hover{text-shadow:0 0 18px var(--cyan),0 0 32px var(--cyan)}
 .stats{display:flex;gap:8px}
@@ -41,7 +41,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 .chip-v{font-size:14px;font-weight:900;line-height:1.3}
 .chip-v.c{color:var(--cyan)}.chip-v.p{color:var(--pink)}.chip-v.g{color:var(--gold)}
 .chip-l{color:var(--sub);font-size:8px;letter-spacing:1px}
-.hbtn{background:transparent;border:1px solid;border-radius:4px;font-size:10px;padding:5px 10px;cursor:pointer;letter-spacing:1px;white-space:nowrap;transition:var(--t)}
+.hbtn{background:transparent;border:1px solid;border-radius:4px;font-size:10px;padding:5px 10px;cursor:pointer;letter-spacing:1px;white-space:nowrap;transition:var(--t);line-height:15px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
 #btn-import{border-color:rgba(255,0,255,.5);color:var(--pink)}
 #btn-import:hover{background:rgba(255,0,255,.1)}
 #btn-bulk{border-color:rgba(255,230,0,.35);color:var(--gold)}
@@ -170,7 +170,7 @@ body.progging #grid{padding-bottom:64px}
   #fp .fleft .hm{ display:none; }
   /* ヘッダのボタンも詰める。画面を半分にすると19個が3行に折り返して
      カードの見える面積を圧迫するため */
-  #hdr{ padding:7px 12px; gap:5px; }
+  #hdr{ padding:7px 12px; column-gap:5px; row-gap:13px; }
   #hdr .hbtn{ padding:4px 7px; letter-spacing:.5px; }
   #logo{ font-size:13px; letter-spacing:2px; }
   .qf{ flex:0 0 30%; max-width:30%; box-sizing:border-box; }
@@ -481,8 +481,9 @@ body.progging #grid{padding-bottom:64px}
 #cfg-status.synced{color:#00e595;border-color:rgba(0,229,149,.4)}
 #cfg-status.error{color:var(--red);border-color:rgba(255,68,68,.4)}
 /* バックアップボタンの下に出す最終実施日 */
-.bkwrap{display:inline-flex;flex-direction:column;align-items:center;gap:2px}
-.bkdate{font-size:9.5px;font-weight:700;letter-spacing:.3px;color:var(--sub);white-space:nowrap;line-height:1}
+.bkwrap{position:relative;display:inline-flex;align-items:center}
+.bkdate{position:absolute;top:100%;left:0;right:0;margin-top:2px;text-align:center;
+  font-size:8.5px;font-weight:700;letter-spacing:0;color:var(--sub);white-space:nowrap;line-height:1;pointer-events:none}
 .bkdate.ok{color:#00e595}
 .bkdate.warn{color:var(--red);text-shadow:0 0 6px rgba(255,68,68,.6)}
 .cfg-row{display:flex;gap:8px;align-items:center;margin-top:6px}
@@ -4881,7 +4882,9 @@ async function _showBackupDate(){
     const s=await r.json();
     const d=new Date(s.date+'T00:00:00');
     const days=Math.floor((Date.now()-d.getTime())/86400000);
-    el.textContent=`最終 ${d.getMonth()+1}/${d.getDate()}`;
+    let hm='';
+    if(s.createdAt){ const t=new Date(s.createdAt); if(!isNaN(t)) hm=' '+t.getHours()+':'+String(t.getMinutes()).padStart(2,'0'); }
+    el.textContent=`${d.getMonth()+1}/${d.getDate()}${hm}`;
     el.className='bkdate '+(days>=3?'warn':'ok');
     el.title='自動バックアップ: '+s.date+'（'+(days===0?'今日':days+'日前')+'） / '
             +s.file+' / カード'+(s.cards||0).toLocaleString()+'種類 / 所持'
