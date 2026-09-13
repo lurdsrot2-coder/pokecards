@@ -480,6 +480,11 @@ body.progging #grid{padding-bottom:64px}
 #cfg-status.syncing{color:var(--cyan);border-color:rgba(0,245,255,.4)}
 #cfg-status.synced{color:#00e595;border-color:rgba(0,229,149,.4)}
 #cfg-status.error{color:var(--red);border-color:rgba(255,68,68,.4)}
+/* バックアップボタンの下に出す最終実施日 */
+.bkwrap{display:inline-flex;flex-direction:column;align-items:center;gap:2px}
+.bkdate{font-size:8px;letter-spacing:.5px;color:var(--sub);white-space:nowrap;line-height:1}
+.bkdate.ok{color:rgba(0,229,149,.75)}
+.bkdate.warn{color:var(--red);font-weight:700}
 .cfg-row{display:flex;gap:8px;align-items:center;margin-top:6px}
 .cfg-test-msg{font-size:10px;margin-top:6px;padding:6px 10px;border-radius:4px}
 .cfg-test-msg.ok{background:rgba(0,229,149,.1);border:1px solid rgba(0,229,149,.4);color:#00e595}
@@ -516,7 +521,7 @@ body.progging #grid{padding-bottom:64px}
   <button class="hbtn" id="btn-madd" onclick="openMAdd()">✎ 手動追加</button>
   <button class="hbtn" id="btn-import">⬇ IMPORT SET</button>
   <button class="hbtn" id="btn-url-import" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">🔗 URL取り込み</button>
-  <button class="hbtn" id="btn-export" style="border-color:rgba(255,230,0,.35);color:var(--gold)">💾 バックアップ</button>
+  <span class="bkwrap"><button class="hbtn" id="btn-export" style="border-color:rgba(255,230,0,.35);color:var(--gold)">💾 バックアップ</button><span class="bkdate" id="bk-date" title="自動バックアップの状況を確認中">確認中…</span></span>
   <label class="hbtn" id="btn-import-bk" style="border-color:rgba(255,230,0,.35);color:var(--gold);cursor:pointer">📂 復元<input type="file" id="import-bk-file" accept=".json" style="display:none"></label>
   <button class="hbtn" id="btn-cfg" style="border-color:rgba(255,255,255,.25);color:var(--sub)">⚙ 設定</button>
   <button class="hbtn" id="btn-sync" style="border-color:rgba(0,245,255,.35);color:var(--cyan)">↑ 同期</button>
@@ -4861,6 +4866,35 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState=
 window.addEventListener('focus', ()=>_autoGistPull());
 // 表示中は60秒ごとにクラウドをチェック
 setInterval(()=>{ if(document.visibilityState==='visible') _autoGistPull(); }, 60000);
+
+// ── 自動バックアップの最終実施日を出す ──
+// PC側の日次バックアップが backup_status.json を置いてくれるので、それを読むだけ。
+// 「ちゃんと動いているか」を毎回履歴で確かめなくて済むようにするためのもの
+async function _showBackupDate(){
+  const el=document.getElementById('bk-date');
+  if(!el)return;
+  const {owner,repo}=_detectRepo();
+  if(!owner||!repo){ el.textContent=''; return; }
+  try{
+    const r=await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/backup_status.json?_=${Date.now()}`,{cache:'no-store'});
+    if(!r.ok) throw new Error('なし');
+    const s=await r.json();
+    const d=new Date(s.date+'T00:00:00');
+    const days=Math.floor((Date.now()-d.getTime())/86400000);
+    el.textContent=`最終 ${d.getMonth()+1}/${d.getDate()}`;
+    el.className='bkdate '+(days>=3?'warn':'ok');
+    el.title='自動バックアップ: '+s.date+'（'+(days===0?'今日':days+'日前')+'） / '
+            +s.file+' / カード'+(s.cards||0).toLocaleString()+'種類 / 所持'
+            +(s.ownedTotal||0).toLocaleString()+'枚 / '+s.sizeMB+'MB'
+            +(days>=3?' ※3日以上バックアップされていません。PCの電源とタスクを確認してください。':'');
+  }catch(e){
+    el.textContent='未確認';
+    el.className='bkdate warn';
+    el.title='自動バックアップの記録が見つかりません。PC側のバックアップが動いていない可能性があります。';
+  }
+}
+_showBackupDate();
+setInterval(_showBackupDate, 30*60*1000);
 
 // ── 上部UIの高さ変化でカードがずれるのを打ち消す ──
 // 同期状態の文字（「✅ 23:48」↔「✅ 画像修復 1234件」など）やチップの増減で

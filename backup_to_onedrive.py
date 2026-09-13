@@ -134,7 +134,79 @@ def main():
                 pass
     if removed:
         log('古いバックアップを %d件 削除（%d件を保持）' % (removed, len(keep)))
+
+    # アプリに「いつバックアップできたか」を見せるための小さな状態ファイル。
+    # アプリ側は端末のファイルを見られないので、リポジトリ経由で渡す
+    write_status({
+        'date': datetime.date.today().isoformat(),
+        'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
+        'file': name,
+        'cards': len(out['cards']),
+        'ownedKinds': kinds,
+        'ownedTotal': total,
+        'sizeMB': round(size / 1048576.0, 1),
+    })
     return 0
+
+
+def write_status(status):
+    """状態ファイルをリポジトリに置いて push する。
+
+    本体の作業ツリーは絶対に触らない（編集中の内容を壊さないため）。
+    このファイル専用の小さなクローンを別に用意して、そこから push する。
+    data.json は落とさないよう sparse-checkout で除いている。
+    """
+    work = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'PokecardStatus')
+    url = 'https://github.com/%s/%s.git' % (OWNER, REPO)
+
+    def git(args, cwd, timeout=180):
+        return subprocess.run(['git'] + args, cwd=cwd, timeout=timeout,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    try:
+        if not os.path.isdir(os.path.join(work, '.git')):
+            os.makedirs(work, exist_ok=True)
+            r = git(['clone', '--depth', '1', '--filter=blob:none', '--sparse', url, '.'], work, 600)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.decode('utf-8', 'replace')[:200])
+            git(['sparse-checkout', 'set', 'backup_status.json'], work)
+        # コミットする人の名前。本体リポジトリの設定を引き継ぐ
+        # （グローバル設定が無い環境だと、これが無いとcommitが黙って失敗する）
+        who = git(['config', 'user.name'], work).stdout.decode('utf-8', 'replace').strip()
+        if not who:
+            for key, val in (('user.name', 'lurdsrot2-coder'), ('user.email', 'lurds.rot2@gmail.com')):
+                src = git(['config', key], HERE).stdout.decode('utf-8', 'replace').strip()
+                git(['config', key, src or val], work)
+    except Exception as e:
+        log('※ バックアップ日の記録用リポジトリを用意できませんでした: %s' % e)
+        return
+
+    path = os.path.join(work, 'backup_status.json')
+    for attempt in range(5):
+        try:
+            git(['fetch', '-q', '--depth', '1', 'origin', 'main'], work)
+            git(['reset', '--hard', '-q', 'FETCH_HEAD'], work)
+            try:
+                old = json.load(io.open(path, encoding='utf-8'))
+                if old.get('date') == status['date'] and old.get('ownedTotal') == status['ownedTotal']:
+                    return              # 同じ内容なら余計なコミットを作らない
+            except Exception:
+                pass
+            io.open(path, 'w', encoding='utf-8', newline='').write(
+                json.dumps(status, ensure_ascii=False))
+            git(['add', 'backup_status.json'], work)
+            c = git(['commit', '-q', '-m', 'chore: backup recorded (%s)' % status['date']], work)
+            if c.returncode != 0:
+                # コミットできていないのに push は「送るものが無い」で成功してしまうので、
+                # ここで必ず止めて理由を残す
+                raise RuntimeError('commit失敗: ' + c.stderr.decode('utf-8', 'replace')[:160])
+            r = git(['push', '-q', 'origin', 'HEAD:main'], work)
+            if r.returncode == 0:
+                log('バックアップ日をアプリに反映しました (%s)' % status['date'])
+                return
+        except Exception as e:
+            sys.stderr.write('status push 失敗(%d回目): %s\n' % (attempt + 1, e))
+    log('※ バックアップ日の記録を送れませんでした（バックアップ自体は成功）')
 
 
 if __name__ == '__main__':
