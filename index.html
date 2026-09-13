@@ -203,6 +203,27 @@ body.progging #grid{padding-bottom:64px}
 .fsnav:disabled{opacity:.25;cursor:default}
 .fsnav.on{background:rgba(0,245,255,.28);border-color:var(--cyan);color:#fff;font-weight:700}
 #btn-rar-multi{flex-shrink:0}
+/* シリーズの複数選択パネル。
+   ふつうのプルダウンは1つ選ぶと閉じてしまい複数選べないので、
+   ＋ON のあいだは開いたままのこれを代わりに出す */
+#serpanel{position:fixed;z-index:3000;display:none;flex-direction:column;background:#0a0a20;
+  border:1px solid rgba(255,0,255,.5);border-radius:6px;box-shadow:0 12px 34px rgba(0,0,0,.65);
+  max-height:min(62vh,440px);overflow:hidden}
+#serpanel.open{display:flex}
+#serpanel .sp-hd{display:flex;align-items:center;gap:6px;padding:6px 8px;flex-shrink:0;
+  border-bottom:1px solid rgba(255,0,255,.28);font-size:10px;font-weight:700;color:#ff88ff;white-space:nowrap}
+#serpanel .sp-n{margin-right:auto;overflow:hidden;text-overflow:ellipsis}
+#serpanel .sp-hd button{background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:4px;
+  color:rgba(255,255,255,.7);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0;transition:var(--t)}
+#serpanel .sp-hd button:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,245,255,.1)}
+#serpanel .sp-list{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+#serpanel .sp-it{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:11px;color:var(--txt);
+  cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);user-select:none}
+#serpanel .sp-it:hover{background:rgba(255,0,255,.12)}
+#serpanel .sp-it.sel{background:rgba(255,0,255,.18);color:#ff88ff;font-weight:700}
+#serpanel .sp-ck{flex:0 0 12px;text-align:center;color:#ff88ff}
+#serpanel .sp-nm{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#serpanel .sp-bar{flex:0 0 auto;font-size:9.5px;color:var(--sub);white-space:pre;letter-spacing:0}
 /* ── Clear Filter Button ── */
 #btn-clr-filter{display:none;background:rgba(255,80,0,.1);border:1px solid rgba(255,120,0,.5);border-radius:4px;font-size:9px;padding:4px 10px;cursor:pointer;color:rgba(255,160,50,.9);letter-spacing:1px;white-space:nowrap;transition:var(--t);flex-shrink:0}
 #btn-clr-filter.visible{display:inline-block}
@@ -541,7 +562,7 @@ body.progging #grid{padding-bottom:64px}
         <span class="flbl">CATEGORY</span>
         <select class="csel" id="sel-type"><option value="">全カード種別</option></select>
         <span class="farr">›</span>
-        <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select><button class="fsnav" id="btn-ser-multi" title="シリーズの複数選択。PCはCtrl(⌘)を押しながら選べばONにしなくても追加できます（例: ADV と PCG）。スマホ用にこのボタンでも切り替えられます">＋</button>
+        <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select><button class="fsnav" id="btn-ser-multi" title="シリーズの複数選択。押すと閉じない一覧が開き、続けて何個でも選べます（例: ADV と PCG）。PCはCtrl(⌘)を押しながら選んでも追加できます">＋</button>
         <span class="farr">›</span>
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
       </div>
@@ -2179,25 +2200,110 @@ let _serMulti=false, _modDown=false;
 addEventListener('keydown',e=>{ if(e.key==='Control'||e.key==='Meta') _modDown=true; });
 addEventListener('keyup',  e=>{ if(e.key==='Control'||e.key==='Meta') _modDown=false; });
 addEventListener('blur',   ()=>{ _modDown=false; });
-document.getElementById('sel-series').addEventListener('mousedown',e=>{ _modDown=e.ctrlKey||e.metaKey; });
-document.getElementById('btn-ser-multi').addEventListener('click',function(){
-  _serMulti=!_serMulti;
-  this.classList.toggle('on',_serMulti);
-  this.textContent=_serMulti?'＋ON':'＋';
-  renderDropdowns();          // ✓の付け外しを反映
-});
-document.getElementById('sel-series').addEventListener('change',e=>{
-  const v=e.target.value;
-  const add=_modDown||_serMulti;      // Ctrl(⌘)押しながら、または＋ON（スマホ用）
+function _serPick(v,add){
   if(!v) fs.series=new Set();                                  // 「全シリーズ」で解除
   else if(add){                                                // 追加/解除
     if(fs.series.has(v)) fs.series.delete(v); else fs.series.add(v);
   }
   else fs.series=new Set([v]);                                 // ふつうのクリックは入れ替え
-  _modDown=false;   // 1回きり。プルダウンを開いている間はキーを離しても検知できないため
   _dropStaleTitle();
   renderAll();
-});
+}
+// ＋ON のあいだ、ネイティブのプルダウンの代わりに出す複数選択パネル。
+// selectは1つ選ぶと必ず閉じるため、続けて選べない（これが不満点だった）。
+// パネルは選んでも閉じず、その場で一覧に反映される。
+const _serPanel=(()=>{
+  const el=document.createElement('div');
+  el.id='serpanel';
+  el.innerHTML='<div class="sp-hd"><span class="sp-n"></span>'
+    +'<button type="button" data-a="clear">全解除</button>'
+    +'<button type="button" data-a="close">閉じる</button></div><div class="sp-list"></div>';
+  document.body.appendChild(el);
+  const list=el.querySelector('.sp-list'), num=el.querySelector('.sp-n');
+  const sel=()=>document.getElementById('sel-series');
+  let open=false;
+  function place(){
+    const r=sel().getBoundingClientRect();
+    const w=Math.min(Math.max(r.width,270), innerWidth-16);
+    let left=r.left;
+    if(left+w>innerWidth-8) left=innerWidth-8-w;
+    el.style.left=Math.max(8,left)+'px';
+    el.style.top=(r.bottom+4)+'px';
+    el.style.width=w+'px';
+    el.style.maxHeight='min(62vh,440px,'+Math.max(160,innerHeight-r.bottom-16)+'px)';
+  }
+  // 一覧は <select> の中身をそのまま流用する（収集率のゲージも作り直さずに済む）
+  function sync(){
+    if(!open) return;
+    const items=[...sel().options].filter(o=>o.value!=='');
+    list.innerHTML=items.map(o=>{
+      let t=o.textContent.replace(/^✓\s*/,''), bar='';
+      const m=t.match(/\s{2,}(\d+%\s[█░]+)$/);   // 末尾の「 42% ████░░░░░░」を切り出す
+      if(m){ bar=m[1]; t=t.slice(0,m.index); }
+      const on=fs.series.has(o.value);
+      return `<div class="sp-it${on?' sel':''}" data-v="${esc(o.value)}">`
+        +`<span class="sp-ck">${on?'✓':''}</span>`
+        +`<span class="sp-nm">${esc(t)}</span><span class="sp-bar">${esc(bar)}</span></div>`;
+    }).join('');
+    num.textContent=fs.series.size?fs.series.size+'シリーズ選択中':'シリーズを選ぶ（複数可）';
+    place();   // 選ぶとヘッダの高さが変わることがあるので位置も取り直す
+  }
+  function show(){
+    if(open) return;
+    open=true; el.classList.add('open'); place(); sync();
+    addEventListener('scroll',place,true); addEventListener('resize',place);
+  }
+  function hide(){
+    if(!open) return;
+    open=false; el.classList.remove('open');
+    removeEventListener('scroll',place,true); removeEventListener('resize',place);
+  }
+  el.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-a]');
+    if(b){ if(b.dataset.a==='clear'){ _serPick('',false); sync(); } else hide(); return; }
+    const it=e.target.closest('.sp-it');
+    if(!it) return;
+    _serPick(it.dataset.v,true);   // パネルは閉じない。続けて選べるのが目的
+    sync();
+  });
+  // パネルの外を触ったら閉じる（selectそのものは開閉のトグルなので除く）
+  addEventListener('pointerdown',e=>{
+    if(!open) return;
+    if(el.contains(e.target)||e.target===sel()) return;
+    hide();
+  },true);
+  addEventListener('keydown',e=>{ if(open&&e.key==='Escape') hide(); });
+  return {show,hide,sync,isOpen:()=>open,toggle(){ open?hide():show(); }};
+})();
+{
+  const serEl=document.getElementById('sel-series');
+  let _tapAt=0;
+  // ＋ON のときはネイティブのプルダウンを開かせない。
+  // 端末によって pointerdown / mousedown / click のどれで開くかが違うので
+  // 全部で止めて、二重に開閉しないよう時間で弾く
+  const tap=e=>{
+    if(!_serMulti) return;
+    e.preventDefault(); e.stopPropagation();
+    serEl.blur();
+    if(Date.now()-_tapAt<400) return;
+    _tapAt=Date.now();
+    _serPanel.toggle();
+  };
+  serEl.addEventListener('pointerdown',tap);
+  serEl.addEventListener('mousedown',e=>{ _modDown=e.ctrlKey||e.metaKey; tap(e); });
+  serEl.addEventListener('click',tap);
+  document.getElementById('btn-ser-multi').addEventListener('click',function(){
+    _serMulti=!_serMulti;
+    this.classList.toggle('on',_serMulti);
+    this.textContent=_serMulti?'＋ON':'＋';
+    renderDropdowns();          // ✓の付け外しを反映
+    if(_serMulti){ _serPanel.show(); } else { _serPanel.hide(); }
+  });
+  serEl.addEventListener('change',e=>{
+    _serPick(e.target.value, _modDown||_serMulti);
+    _modDown=false;   // 1回きり。プルダウンを開いている間はキーを離しても検知できないため
+  });
+}
 document.getElementById('sel-title').addEventListener('change',e=>{
   fs.title=e.target.value;renderCards();
 });
