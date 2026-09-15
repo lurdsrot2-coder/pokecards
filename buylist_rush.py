@@ -32,9 +32,39 @@ PAREN = re.compile(r'[(（]([^)）]*)[)）]')
 LV = re.compile(r'\s*LV\.?\s*\d+\s*$')     # 旧裏は「ワニノコ LV.13」と書かれる
 
 
+LOG = os.path.join(HERE, 'buylist_rush.log')
+
+
 def log(msg):
-    sys.stderr.write(msg + '\n')
+    line = '%s  %s' % (datetime.datetime.now().strftime('%m-%d %H:%M:%S'), msg)
+    sys.stderr.write(line + '\n')
     sys.stderr.flush()
+    # 自動実行（毎朝5時）の様子は画面に出ないので、ファイルにも残す
+    try:
+        with io.open(LOG, 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
+    except Exception:
+        pass
+
+
+def notify(title, message):
+    """自動実行（毎朝5時）で失敗したときに気づけるように通知を出す"""
+    try:
+        subprocess.run(
+            ['powershell', '-ExecutionPolicy', 'Bypass', '-File', os.path.join(HERE, 'notify.ps1'),
+             '-Title', title, '-Message', message],
+            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def _trim_log():
+    try:
+        if os.path.getsize(LOG) > 2 * 1024 * 1024:
+            tail = io.open(LOG, encoding='utf-8').read()[-500000:]
+            io.open(LOG, 'w', encoding='utf-8', newline='').write(tail)
+    except Exception:
+        pass
 
 
 # ── 1. 収集 ───────────────────────────────────────────
@@ -728,6 +758,7 @@ def push(path):
 
 
 def main():
+    _trim_log()
     prev = {}
     if os.path.exists(OUT):
         try:
