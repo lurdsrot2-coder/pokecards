@@ -29,6 +29,7 @@ PRICE = re.compile(r'class="figure">([\d,]+)円')
 STOCK = re.compile(r'class="stock([^"]*)">([^<]*)<')     # 売切れは class="stock soldout"
 ALT = re.compile(r'^〔([^〕]*)〕(.*?)【([^】]*)】\{([^}]*)\}\s*$')
 PAREN = re.compile(r'[(（]([^)）]*)[)）]')
+LV = re.compile(r'\s*LV\.?\s*\d+\s*$')     # 旧裏は「ワニノコ LV.13」と書かれる
 
 
 def log(msg):
@@ -74,7 +75,7 @@ def scrape():
     """1ページ100件・最大100ページ（=1万件）で頭打ちになるので、
     価格の安い順と高い順の両方から取って重複を消す"""
     items = {}
-    for kw in ('状態B', '状態C'):
+    for kw in ('状態B', '状態C', '状態D'):
         for order in ('asc', 'desc'):
             for page in range(1, 101):
                 h = fetch(page_url(kw, order, page))
@@ -107,6 +108,7 @@ def variant_of(text):
     elif 'ミラー' in text: v.add('mirror')
     if '1ED' in text or '初版' in text: v.add('1ed')
     if 'キラ' in text and 'ノンキラ' not in text: v.add('kira')
+    if 'マーク無' in text or 'マークな' in text: v.add('nomark')
     return v
 
 
@@ -117,6 +119,7 @@ def db_variant(suffix):
     elif 'ミラー' in suffix: v.add('mirror')
     if '1ED' in suffix or '初版' in suffix: v.add('1ed')
     if 'キラ' in suffix and 'ノンキラ' not in suffix: v.add('kira')
+    if 'マーク無' in suffix: v.add('nomark')
     return v
 
 
@@ -139,10 +142,13 @@ def load_db():
 def match(items, cards):
     """迷ったら捨てる。間違った紐付けを1件出すほうが、取りこぼすより害が大きい"""
     by_num = collections.defaultdict(list)
+    by_old = collections.defaultdict(list)     # 旧裏は番号が無いので名前で引く
     for c in cards.values():
         n = (c.get('cardNumber') or '').strip().upper()
-        if n:
+        if n and n != '-':
             by_num[n].append(c)
+        if '旧裏' in (c.get('quickTags') or []):
+            by_old[norm((c.get('name') or '').split(':')[0])].append(c)
 
     out, stat = [], collections.Counter()
     for it in items:
@@ -151,37 +157,49 @@ def match(items, cards):
             stat['状態表記なし'] += 1
             continue
         cond = m.group(1)
-        if cond not in ('状態B', '状態C'):
+        if cond not in ('状態B', '状態C', '状態D'):
             stat['B/C以外'] += 1
             continue
         raw, rarity, num = m.group(2), m.group(3), m.group(4).strip().upper()
         if not num or num == '/':
             stat['番号なし'] += 1
             continue
-        cand = by_num.get(num, [])
-        if not cand:
-            stat['DBに番号なし'] += 1
-            continue
-        # セット記号（S8b 等）で絞る。DBのsetIdは s8b / s8b-m のように派生を持つ
-        mo = (it.get('model') or '').strip().lower()
-        if mo and mo != 'その他':
-            nar = [c for c in cand if (c.get('setId') or '').lower() == mo
-                   or (c.get('setId') or '').lower().startswith(mo + '-')]
-            if nar:
-                cand = nar
-        base = norm(PAREN.sub('', raw))
-        cand = [c for c in cand if norm((c.get('name') or '').split(':')[0]) == base]
-        if not cand:
-            stat['名前が合わない'] += 1
-            continue
+        base = norm(LV.sub('', PAREN.sub('', raw)))
+        if num == '旧裏':
+            # 旧裏は番号もセット記号も無いので名前で引くしかない。
+            # 同じ名前が複数の弾にあるとき（リザードンLV.76は40万と65万）は
+            # 取り違えると害が大きいので、下の同点判定で捨てる
+            cand = by_old.get(base, [])
+            if not cand:
+                stat['旧裏でDBに無い'] += 1
+                continue
+        else:
+            cand = by_num.get(num, [])
+            if not cand:
+                stat['DBに番号なし'] += 1
+                continue
+            # セット記号（S8b 等）で絞る。DBのsetIdは s8b / s8b-m のように派生を持つ
+            mo = (it.get('model') or '').strip().lower()
+            if mo and mo != 'その他':
+                nar = [c for c in cand if (c.get('setId') or '').lower() == mo
+                       or (c.get('setId') or '').lower().startswith(mo + '-')]
+                if nar:
+                    cand = nar
+            cand = [c for c in cand if norm((c.get('name') or '').split(':')[0]) == base]
+            if not cand:
+                stat['名前が合わない'] += 1
+                continue
         want = variant_of(raw + rarity)
         # 「アンリミ」と書かれた商品を1ED版に当ててはいけない（値段が桁違いになる）
         unlim = 'アンリミ' in raw
+        marked = 'マークあり' in raw or 'マーク有' in raw
         scored = []
         for c in cand:
             nm = c.get('name') or ''
             have = db_variant(nm.split(':', 1)[1] if ':' in nm else '')
             if unlim and '1ed' in have:
+                continue
+            if marked and 'nomark' in have:
                 continue
             scored.append((3 * len(want & have) - 2 * len(want ^ have), c))
         scored.sort(key=lambda x: -x[0])
@@ -204,7 +222,7 @@ def match(items, cards):
 
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
-        'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr']
+        'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id']
 KEEP_SOLD_DAYS = 14        # 売れたものを何日ぶん残して見せるか
 
 
@@ -213,8 +231,12 @@ def build(rows, prev):
     # 「安い」の基準は状態ごとの実勢から決める。
     # 状態B/Cはそもそも相場より安いので、単純比較では全部が「安い」になってしまう
     th = {}
-    for cond in ('状態B', '状態C'):
+    for cond in ('状態B', '状態C', '状態D'):
         rr = sorted(r['crPrice'] / r['price'] for r in live if r['cond'] == cond)
+        # 状態Dは母数が小さいので、実勢が取れないうちは状態Cの基準を借りる
+        if len(rr) < 30 and cond == '状態D' and 'C' in th:
+            th['D'] = dict(th['C'], borrowed=1)
+            continue
         th[cond[-1]] = {'med': round(statistics.median(rr), 4) if rr else 0,
                         'q25': round(rr[int(len(rr) * .25)], 4) if rr else 0}
     # 同じカードに複数の出品があるので、いちばん安いものだけ残す
@@ -251,7 +273,7 @@ def build(rows, prev):
             r['image'], r['price'], r['crPrice'],
             int(re.sub(r'\D', '', r['stock']) or 0), r['owned'],
             1 if r['crPrice'] / r['price'] <= th[r['cond'][-1]]['q25'] else 0,
-            1 if r['pid'] in fresh else 0, 0, '', handle,
+            1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
         ])
 
     # 売れて消えたものは、前回の行をそのまま持ち越して「売れた」印を付ける。
