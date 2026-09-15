@@ -266,7 +266,9 @@ def push(path):
                  'https://github.com/%s/%s.git' % (OWNER, REPO), '.'], work, 600)
         if r.returncode != 0:
             raise RuntimeError(r.stderr.decode('utf-8', 'replace')[:200])
-    git(['sparse-checkout', 'set', 'backup_status.json', rel])
+    # cone方式なので指定するのはディレクトリ。ルート直下のファイルは常に入る。
+    # ファイル名を渡すと docs/ が展開されず、git add が黙って何もしない
+    git(['sparse-checkout', 'set', 'docs'])
     # グローバル設定が無い環境だと、これが無いと commit が黙って失敗する
     if not git(['config', 'user.name']).stdout.strip():
         for key, val in (('user.name', OWNER), ('user.email', 'lurds.rot2@gmail.com')):
@@ -281,7 +283,15 @@ def push(path):
         io.open(dst, 'w', encoding='utf-8', newline='').write(
             io.open(path, encoding='utf-8').read())
         git(['add', rel])
-        if not git(['diff', '--cached', '--quiet']).returncode:
+        # sparse-checkout の外だと git add が黙って素通りする。
+        # 「変更なし」と区別がつかず気づけないので、中身のハッシュで確かめる
+        out = lambda r: r.stdout.decode('utf-8', 'replace').strip()
+        want = out(git(['hash-object', dst]))
+        if want != out(git(['rev-parse', ':' + rel])):
+            raise RuntimeError('%s を index に入れられませんでした'
+                               '（sparse-checkout の設定を確認）' % rel)
+        head = git(['rev-parse', 'HEAD:' + rel])
+        if head.returncode == 0 and out(head) == want:
             log('変更なし（pushしません）')
             return True
         c = git(['commit', '-q', '-m', 'chore: 買い得リストのデータ更新'])
