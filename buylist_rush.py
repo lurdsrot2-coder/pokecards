@@ -46,7 +46,7 @@ def fetch(url, tries=4):
             return urllib.request.urlopen(r, timeout=90).read().decode('utf-8', 'replace')
         except Exception as e:
             log('  retry %d: %s' % (i + 1, e))
-            time.sleep(2 + i * 3)
+            _backoff(e, i)
     return ''
 
 
@@ -132,6 +132,21 @@ TC_RARITY = {'C', 'U', 'R', 'RR', 'RRR', 'SR', 'HR', 'UR', 'AR', 'SAR', 'CHR', '
              '●', '◆', '★', '☆', '-'}
 
 
+def _backoff(e, i):
+    """429（叩きすぎ）は数十秒あける。短い間隔で粘ると余計に閉じられる"""
+    code = getattr(e, 'code', 0)
+    if code in (429, 403, 503):
+        wait = 0
+        try:
+            wait = int((e.headers or {}).get('Retry-After') or 0)
+        except Exception:
+            wait = 0
+        time.sleep(max(wait, 20 * (i + 1)))
+        return True
+    time.sleep(2 + i * 3)
+    return False
+
+
 def tc_json(path, tries=4):
     for i in range(tries):
         try:
@@ -139,7 +154,7 @@ def tc_json(path, tries=4):
             return json.loads(urllib.request.urlopen(r, timeout=90).read())
         except Exception as e:
             log('  retry %d: %s' % (i + 1, e))
-            time.sleep(2 + i * 3)
+            _backoff(e, i)
     return {}
 
 
@@ -194,7 +209,7 @@ def tc_parse(p, settitle):
     if not price:
         return None
     return {
-        'shop': 'TC', 'pid': 'tc' + str(p.get('id')), 'cond': cond,
+        'shop': 'TC', 'pid': 'tc' + str(p.get('id')), 'cond': cond, 'vid': str(v.get('id') or ''),
         'url': TC + '/products/' + (p.get('handle') or ''),
         'name': name + (' (' + '/'.join(n for n in notes if not n.startswith('状態')) + ')' if
                         [n for n in notes if not n.startswith('状態')] else ''),
@@ -233,19 +248,127 @@ def tc_scrape():
                     items[p['id']] = it
             if len(ps) < 250:
                 break
-            time.sleep(.2)
+            time.sleep(.5)
         if (i + 1) % 100 == 0:
             log('  トレカキャンプ %d/%d コレクション 累計%d件' % (i + 1, len(cols), len(items)))
-        time.sleep(.15)
+        time.sleep(.4)
     log('  トレカキャンプ %d件' % len(items))
+    return list(items.values())
+
+
+# ── トレトク ─────────────────────────────────────────
+TT = 'https://www.toretoku.jp'
+TT_LIST = re.compile(r'<ul class="resultList[^"]*">(.*?)</ul>', re.S)
+TT_ITEM = re.compile(r'<li class="list">.*?(?=<li class="list">|\Z)', re.S)
+TT_MODEL = re.compile(r'^(\S+)\s+(\d[0-9A-Za-z\-]*/[0-9A-Za-z\-]+)$')
+
+
+def tt_get(url, tries=4):
+    for i in range(tries):
+        try:
+            r = urllib.request.Request(url, headers={
+                'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja'})
+            return urllib.request.urlopen(r, timeout=90).read().decode('utf-8', 'replace')
+        except Exception as e:
+            log('  retry %d: %s' % (i + 1, e))
+            _backoff(e, i)
+    return ''
+
+
+def tt_parse(seg, cattitle):
+    def g(pat):
+        m = re.search(pat, seg, re.S)
+        return m.group(1) if m else ''
+    def clean(x):
+        return re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', x)).strip()
+    pid = g(r'/item/details/(\d+)')
+    name = clean(g(r'<p class="name">(.*?)</p>'))
+    if not pid or not name:
+        return None
+    if '日本語' not in clean(g(r'<p class="language">(.*?)</p>')):
+        return None                      # 日本語版だけ
+    model = clean(g(r'<p class="modelNumber">(.*?)</p>'))
+    setcode, num = '', ''
+    m = TT_MODEL.match(model)
+    if m:
+        setcode, num = m.group(1), m.group(2).upper()
+    elif model:
+        setcode = model.split()[0]       # 「旧1 No.025」= 旧裏。番号は使えない
+    try:
+        price = int(clean(g(r'<div class="price.*?</span>\s*([\d,]+)\s*<small>')).replace(',', ''))
+    except Exception:
+        price = 0
+    if not price:
+        return None
+    stock = 0
+    ms = re.search(r'在庫数[：:]\s*(\d+)', clean(g(r'<div class="number[^"]*">(.*?)</div>')))
+    if ms:
+        stock = int(ms.group(1))
+    img = g(r'<img src="([^"]+)"')
+    if img.startswith('/'):
+        img = TT + img
+    rank = g(r'rankIcon rank([A-Z])') or 'A'
+    return {'shop': 'TT', 'pid': 'tt' + pid, 'cond': rank if rank in 'ABCD' else 'A',
+            'url': TT + '/item/details/' + pid, 'name': name, 'rarity': '',
+            'num': num, 'setcode': setcode, 'settitle': cattitle,
+            'price': price, 'stock': stock, 'soldout': stock <= 0, 'img': img}
+
+
+def tt_scrape():
+    """トレトク。ポケモンのカテゴリを1つずつ、1ページ250件でたどる"""
+    top = tt_get(TT + '/pokemon')
+    cats, seen = [], set()
+    for m in re.finditer(r'<a[^>]+href="(https://www\.toretoku\.jp/category/40/\d+/\d+)"[^>]*>(.*?)</a>',
+                         top, re.S):
+        url = m.group(1)
+        title = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', m.group(2))).strip()
+        if url in seen or not title:
+            continue
+        seen.add(url)
+        cats.append((url, title))
+    log('  トレトク カテゴリ %d件' % len(cats))
+    if not cats:
+        return []
+    items, miss = {}, 0
+    for i, (url, title) in enumerate(cats):
+        for page in range(1, 21):
+            h = tt_get('%s?number=250&page=%d' % (url, page))
+            if not h:
+                miss += 1
+                if miss >= 3:
+                    log('  トレトクに繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
+            body = TT_LIST.search(h)
+            if not body:
+                break
+            got = TT_ITEM.findall(body.group(1))
+            for seg in got:
+                it = tt_parse(seg, title)
+                if it and it['pid'] not in items:
+                    items[it['pid']] = it
+            if len(got) < 250:
+                break
+            time.sleep(.3)
+        if (i + 1) % 50 == 0:
+            log('  トレトク %d/%d カテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+        time.sleep(.25)
+    log('  トレトク %d件' % len(items))
     return list(items.values())
 
 
 def scrape():
     """店ごとに集めて、ちゃんと取れた店の集合も返す。
     取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
+    only = None
+    if '--only' in sys.argv:
+        only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
     items, ok = [], set()
-    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500)):
+    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500), ('TT', tt_scrape, 500)):
+        if only and shop not in only:
+            log('  %s は今回スキップ（前回のぶんを残します）' % shop)
+            continue
         try:
             got = fn()
         except Exception as e:
@@ -381,6 +504,7 @@ def match(items, cards):
         c = scored[0][1]
         stat['照合できた(' + it['shop'] + ')'] += 1
         out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'],
+                    'vid': it.get('vid', ''),
                     'cond': it['cond'], 'crPrice': it['price'],
                     'stock': it['stock'], 'soldout': it['soldout'], 'num': num,
                     'id': c['id'], 'name': c.get('name') or '',
@@ -393,12 +517,13 @@ def match(items, cards):
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
-        'shop', 'url']
+        'shop', 'url', 'vid']
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
 TC_PROD = TC + '/products/'
 CR_PROD = 'https://www.cardrush-pokemon.jp/product/'
+TT_PROD = TT + '/item/details/'
 
 
 def shrink(row):
@@ -409,6 +534,8 @@ def shrink(row):
     url = row[i('url')] or ''
     if url.startswith(TC_PROD):
         row[i('url')] = url[len(TC_PROD):]
+    elif url.startswith(TT_PROD):
+        row[i('url')] = url[len(TT_PROD):]
     elif url.startswith(CR_PROD):
         row[i('url')] = ''
     cid, hr = row[i('id')] or '', row[i('hr')] or ''
@@ -500,7 +627,7 @@ def build(rows, prev, ok_shops=None):
             r['image'], r['price'], r['crPrice'], r['stock'], r['owned'],
             1 if r['crPrice'] / r['price'] <= th[key]['q25'] else 0,
             1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
-            r['shop'], r['url'],
+            r['shop'], r['url'], r.get('vid', ''),
         ])
         shrink(rowsout[-1])
 
@@ -534,12 +661,13 @@ def build(rows, prev, ok_shops=None):
     return {
         'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
         'cols': COLS,
-        'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'id': 'hareruya2-'},
+        'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'tt': TT_PROD,
+                 'id': 'hareruya2-', 'cart': TC + '/cart/'},
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),
                   'soldKept': sum(1 for a in rowsout if a[COLS.index('sold')]),
-                  'CR': byshop.get('CR', 0), 'TC': byshop.get('TC', 0)},
+                  'byShop': dict(byshop)},
         'pids': sorted(live_pids),
         'items': rowsout,
     }

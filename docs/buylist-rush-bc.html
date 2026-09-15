@@ -34,6 +34,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
 .tg.on.CR{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
+.tg.on.TT{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .serbtn{cursor:pointer;white-space:nowrap}
 .serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
 .hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
@@ -59,6 +60,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .b.own{background:rgba(255,0,255,.88);color:#fff}
 .b.CR{background:rgba(0,229,149,.9);color:#032317}
 .b.TC{background:rgba(90,160,255,.92);color:#04122b}
+.b.TT{background:rgba(255,170,60,.92);color:#2b1600}
 .b.new{background:var(--gr);color:#06210f}
 .b.sold{background:rgba(255,68,68,.95);color:#fff}
 .bd{padding:6px 8px 8px;display:flex;flex-direction:column;gap:2px;flex:1}
@@ -81,6 +83,35 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .lk a.c:hover{background:rgba(0,229,149,.18)}
 .lk a.t{color:#8cc0ff;border-color:rgba(90,160,255,.5)}
 .lk a.t:hover{background:rgba(90,160,255,.2)}
+.lk a.k{color:#ffc37a;border-color:rgba(255,170,60,.5)}
+.lk a.k:hover{background:rgba(255,170,60,.2)}
+/* ほかの店にも同じカードが出ているときの案内。押すとそのカードだけに絞る */
+.alt{margin-top:4px;font-size:9.5px;color:#7fd8ff;background:rgba(0,245,255,.08);
+ border:1px solid rgba(0,245,255,.25);border-radius:3px;padding:2px 5px;cursor:pointer;
+ text-align:center;user-select:none}
+.alt:hover{background:rgba(0,245,255,.2);color:#fff}
+.alt b{color:var(--gr)}
+/* 買う・＋1 */
+.act{display:flex;gap:4px;margin-top:4px}
+.act button{flex:1;font-size:9.5px;font-weight:700;border-radius:3px;padding:4px 0;cursor:pointer;
+ border:1px solid;background:transparent;transition:var(--t)}
+.act .cart{color:var(--cy);border-color:rgba(0,245,255,.45)}
+.act .cart:hover{background:rgba(0,245,255,.18)}
+.act .p1{color:var(--pk);border-color:rgba(255,0,255,.45)}
+.act .p1:hover{background:rgba(255,0,255,.18)}
+.act .p1.done{background:rgba(255,0,255,.3);color:#fff}
+/* 1枚だけに絞っているときの帯 */
+#focus{display:none;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;border-radius:4px;
+ background:rgba(0,245,255,.1);border:1px solid rgba(0,245,255,.4);font-size:11px;color:var(--cy)}
+#focus.on{display:flex}
+#focus b{color:#fff}
+#focus button{margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,.3);
+ border-radius:4px;color:var(--tx);font-size:10px;padding:3px 9px;cursor:pointer}
+/* ＋1を送ったときの知らせ */
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;
+ background:#12122c;border:1px solid var(--pk);color:var(--tx);font-size:12px;
+ padding:8px 14px;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.6);display:none}
+#toast.on{display:block}
 .lk a.h{color:var(--gd);border-color:rgba(255,230,0,.4)}
 .lk a.h:hover{background:rgba(255,230,0,.15)}
 .stk{font-size:9px;color:var(--sub);margin-top:3px}
@@ -122,6 +153,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
  <button class="tg TC" data-s="TC">キャンプ</button>
+ <button class="tg TT" data-s="TT">トレトク</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -146,11 +178,13 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  </select>
  <input type="search" id="q" placeholder="カード名で絞る">
  <span class="hit" id="hit"></span>
+<div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
 <div id="serpanel"><div class="sp-hd"><span>シリーズ（複数選べます）</span>
  <button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
+<div id="toast"></div>
 <div id="grid"></div><div id="more"></div>
 <div id="note">
 カードラッシュ（状態B/C/Dのみ）とトレカキャンプ（状態表記のないものはA＝通常品）の在庫を並べています。<br>
@@ -163,8 +197,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 <script>
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
+const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク'};
+const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
+let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
-    st={cheap:1,flag:'',cond:'',shop:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:'',sort:'save'};
+    st={cheap:1,flag:'',cond:'',shop:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:'',sort:'save',card:''};
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
@@ -172,7 +209,9 @@ const grid=document.getElementById('grid');
 function toRows(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
   // 共通の頭（画像URL・商品URL・カードid）はファイルを小さくするため外に出してある
-  const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'';
+  const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'',
+        bk=B.tt||'', cartBase=B.cart||'';
+  CART=cartBase;
   return d.items.map(a=>{
     const price=a[i.price], cr=a[i.cr];
     const shop=i.shop==null?'CR':(a[i.shop]||'CR');
@@ -187,15 +226,19 @@ function toRows(d){
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
       id:rawId || (hr?bd+hr:''),
       shop:shop,
+      vid:i.vid==null?'':(a[i.vid]||''),
       url:/^https?:/.test(rawUrl) ? rawUrl
-          : rawUrl ? bt+rawUrl
-          : bc+a[i.pid],
+          : !rawUrl ? bc+a[i.pid]
+          : shop==='TT' ? bk+rawUrl
+          : bt+rawUrl,
       ratio:price?cr/price:0,save:price-cr};
   });
 }
 function tile(r){
   const pc=Math.round(r.ratio*100);
-  const shopName=r.shop==='TC'?'キャンプ':'ラッシュ';
+  const shopName=SHOP[r.shop]||'ラッシュ';
+  const lkCls=r.shop==='TC'?'t':r.shop==='TT'?'k':'c';
+  const others=(byCard.get(r.id)||[]).filter(x=>x!==r && !x.sold);
   const cru=r.url;
   return '<div class="card'+(r.sold?' gone':'')+'">'
     +'<div class="ph"><a href="'+cru+'" target="_blank" rel="noopener">'
@@ -215,7 +258,14 @@ function tile(r){
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
     +'<div class="stk'+(r.sold?' gone':'')+'">'
       +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
-    +'<div class="lk"><a class="'+(r.shop==='TC'?'t':'c')+'" href="'+esc(cru)+'" target="_blank" rel="noopener">'+shopName+'</a>'
+    +(others.length?'<div class="alt" data-card="'+esc(r.id)+'">他の出品 '+others.length+'件 '
+        +'<b>'+yen(Math.min.apply(null,others.map(x=>x.cr)))+'〜</b></div>':'')
+    +'<div class="act">'
+      +(r.sold?'':'<button class="cart" data-cart="'+esc(r.pid)+'">'
+        +(r.shop==='TC'&&r.vid?'🛒 カートへ':'🛒 買う')+'</button>')
+      +'<button class="p1" data-p1="'+esc(r.pid)+'">＋1</button>'
+    +'</div>'
+    +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'" target="_blank" rel="noopener">'+shopName+'</a>'
     +(r.hr?'<a class="h" href="https://www.hareruya2.com/products/'+esc(r.hr)+'" target="_blank" rel="noopener">晴れる屋2</a>':'')
     +'</div></div></div>';
 }
@@ -227,6 +277,14 @@ function draw(){           // 一度に全部作ると重いので、スクロ�
 }
 function apply(){
   const q=st.q;
+  if(st.card){
+    // 同じカードの他店の値段を見るためのモード。ほかの条件は全部外す
+    view=rows.filter(r=>r.id===st.card);
+    view.sort((a,b)=>a.cr-b.cr);
+    grid.innerHTML=''; shown=0; draw();
+    document.getElementById('hit').textContent=view.length+'件';
+    return;
+  }
   view=rows.filter(r=>
        (!st.cheap || r.cheap)
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
@@ -246,6 +304,27 @@ function apply(){
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
+function focusCard(id){
+  st.card=id;
+  const r=rows.find(x=>x.id===id);
+  const f=document.getElementById('focus');
+  f.classList.add('on');
+  document.getElementById('focus-t').innerHTML='<b>'+esc(r?r.name:'')+'</b> の出品を安い順に表示中';
+  apply();
+  scrollTo(0,0);
+}
+document.getElementById('focus-x').onclick=()=>{
+  st.card=''; document.getElementById('focus').classList.remove('on'); apply();
+};
+// 同じカードが他の店にも出ているかを引けるようにしておく
+function indexCards(){
+  byCard=new Map();
+  for(const r of rows){
+    if(!r.id) continue;
+    if(!byCard.has(r.id)) byCard.set(r.id,[]);
+    byCard.get(r.id).push(r);
+  }
+}
 function show(d, ownedN){
   const s=d.stats||{}, t=new Date(d.createdAt);
   const days=Math.floor((Date.now()-t.getTime())/86400000);
@@ -263,12 +342,13 @@ function show(d, ownedN){
   m.innerHTML=(isNaN(t)?'?':t.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))
     +' 時点'+(days>=3?'（'+days+'日前のデータです）':'')
     +' ／ 在庫のあるカード <b>'+(s.cards||rows.length).toLocaleString()+'</b>件'
-    +((s.CR||s.TC)?'（ラッシュ '+(s.CR||0).toLocaleString()+' / キャンプ '+(s.TC||0).toLocaleString()+'）':'')
+    +(s.byShop?'（'+Object.keys(SHOP).filter(k=>s.byShop[k]).map(k=>SHOP[k]+' '+s.byShop[k].toLocaleString()).join(' / ')+'）':'')
     +(s.added?' ／ <span class="new">新着 '+s.added+'件</span>':'')
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
     +(ownedN>0?' ／ <span class="new">所持を'+ownedN+'件更新</span>'
       :ownedN<0?' ／ <span class="gone">所持の更新に失敗（表示は'+(isNaN(t)?'取得時':'5時')+'の状態）</span>':'')
     +'<br>相場に対する実勢の中央値 → 割安とみなす線（'+line.join(' ／ ')+'）';
+  indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   serSync();
   document.getElementById('msg').hidden=true;
@@ -308,6 +388,37 @@ async function load(force){
   }
   b.disabled=false; b.textContent='⟳ 更新';
 }
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),2600);
+}
+grid.addEventListener('click',e=>{
+  const a=e.target.closest('.alt');
+  if(a){ focusCard(a.dataset.card); return; }
+  const cb=e.target.closest('[data-cart]');
+  if(cb){
+    const r=rows.find(x=>x.pid===cb.dataset.cart); if(!r) return;
+    // キャンプ(Shopify)だけはカートに直接入れられる。
+    // 他の2店はカート投入がPOSTなので、商品ページを開くところまで
+    const u=(r.shop==='TC' && r.vid && CART) ? CART+r.vid+':1' : r.url;
+    open(u,'_blank','noopener');
+    return;
+  }
+  const pb=e.target.closest('[data-p1]');
+  if(pb){
+    const r=rows.find(x=>x.pid===pb.dataset.p1); if(!r) return;
+    if(!r.id){ toast('このカードはアプリと紐づいていません'); return; }
+    let q=[];
+    try{ q=JSON.parse(localStorage.getItem(QKEY)||'[]'); }catch(_){ q=[]; }
+    q.push({id:r.id,name:r.name,shop:r.shop,price:r.cr,at:new Date().toISOString()});
+    try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
+    catch(_){ toast('保存できませんでした'); return; }
+    pb.classList.add('done'); pb.textContent='＋1 済';
+    toast(r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
+    return;
+  }
+});
 // 下まで来たら続きを描く
 new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'800px'})
   .observe(document.getElementById('more'));

@@ -501,6 +501,13 @@ body.progging #grid{padding-bottom:64px}
 #cfg-status.syncing{color:var(--cyan);border-color:rgba(0,245,255,.4)}
 #cfg-status.synced{color:#00e595;border-color:rgba(0,229,149,.4)}
 #cfg-status.error{color:var(--red);border-color:rgba(255,68,68,.4)}
+/* 買い得リストから届いた＋1のお知らせ */
+#buyq{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px;font-size:11px;
+ background:rgba(255,0,255,.12);border-top:1px solid rgba(255,0,255,.4);color:var(--txt)}
+#buyq b{color:var(--pink)}
+#buyq button{background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:4px;
+ color:var(--txt);font-size:11px;padding:3px 10px;cursor:pointer}
+#buyq button[data-a="ok"]{border-color:var(--pink);color:var(--pink);font-weight:700}
 /* バックアップボタンの下に出す最終実施日 */
 .bkwrap{position:relative;display:inline-flex;align-items:center}
 .bkdate{position:absolute;top:100%;left:0;right:0;margin-top:2px;text-align:center;
@@ -5004,6 +5011,67 @@ async function _showBackupDate(){
 }
 _showBackupDate();
 setInterval(_showBackupDate, 30*60*1000);
+
+// ── 買い得リストから届いた ＋1 ──
+// docs/buylist-rush-bc.html は同じオリジンなので localStorage 経由で受け取れる。
+// 勝手に足すと「カートに入れただけで買っていない」ぶんまで増えてしまうので、
+// 必ず本人に確認してから、通常の＋1と同じ手順で反映する
+const BUYQ_KEY='pokecards_buyqueue';
+function _readBuyQueue(){
+  try{ const q=JSON.parse(localStorage.getItem(BUYQ_KEY)||'[]'); return Array.isArray(q)?q:[]; }
+  catch(e){ return []; }
+}
+function _showBuyQueue(){
+  const q=_readBuyQueue();
+  const old=document.getElementById('buyq');
+  if(old) old.remove();
+  if(!q.length) return;
+  const known=q.filter(x=>db.cards.some(c=>c.id===x.id));
+  const el=document.createElement('div');
+  el.id='buyq';
+  el.innerHTML='<span>🛒 買い得リストから <b>'+known.length+'件</b> の＋1が届いています'
+    +(known.length<q.length?'（'+(q.length-known.length)+'件はこのDBに無いので飛ばします）':'')+'</span>'
+    +'<button type="button" data-a="ok">反映する</button>'
+    +'<button type="button" data-a="no">破棄</button>';
+  el.onclick=e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.dataset.a==='ok'){
+      let n=0;
+      const now=new Date().toISOString();
+      for(const x of known){
+        const i=db.cards.findIndex(c=>c.id===x.id);
+        if(i<0) continue;
+        const c=db.cards[i];
+        c.owned=(c.owned||0)+1;
+        c.ownedAt=now;
+        c.editedAt=now;
+        _markEdited(c);          // 通常の＋1と同じ扱い（差分に載せて同期する）
+        n++;
+      }
+      saveDbDebounced();
+      renderAllKeepView();
+      alert(n+'件に＋1しました。');
+    }
+    try{ localStorage.removeItem(BUYQ_KEY); }catch(_){}
+    el.remove();
+  };
+  (document.getElementById('top-ui')||document.body).appendChild(el);
+}
+function _buyQueueReady(){
+  try{ return db && db.cards && db.cards.length > 0; }catch(e){ return false; }
+}
+{
+  // データの読み込みが終わるまで待ってから出す（16MBあるので数秒かかる）
+  let tries = 0;
+  const t = setInterval(()=>{
+    if(++tries > 60){ clearInterval(t); return; }
+    if(!_buyQueueReady()) return;
+    clearInterval(t);
+    _showBuyQueue();
+  }, 1500);
+}
+// 買い得リストのタブから戻ってきたときにも拾う
+addEventListener('focus', ()=>{ if(_buyQueueReady()) _showBuyQueue(); });
 
 // ── 上部UIの高さ変化でカードがずれるのを打ち消す ──
 // 同期状態の文字（「✅ 23:48」↔「✅ 画像修復 1234件」など）やチップの増減で
