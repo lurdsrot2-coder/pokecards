@@ -91,6 +91,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  text-align:center;user-select:none}
 .alt:hover{background:rgba(0,245,255,.2);color:#fff}
 .alt b{color:var(--gr)}
+/* 店が収録弾を書いていない商品。同じ番号の別の弾かもしれないので念のため */
+.chk{margin-top:4px;font-size:9px;color:#ffc37a;background:rgba(255,170,60,.1);
+ border:1px solid rgba(255,170,60,.3);border-radius:3px;padding:2px 5px;text-align:center}
 /* 買う・＋1 */
 .act{display:flex;gap:4px;margin-top:4px}
 .act button{flex:1;font-size:9.5px;font-weight:700;border-radius:3px;padding:4px 0;cursor:pointer;
@@ -223,6 +226,7 @@ function toRows(d){
       img:(rawImg && !/^https?:/.test(rawImg)) ? bi+rawImg : rawImg,
       price:price,cr:cr,stock:a[i.stock],owned:a[i.owned],
       cheap:a[i.cheap],isnew:a[i.new],sold:i.sold==null?0:a[i.sold],
+      sure:i.sure==null?1:a[i.sure],
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
       id:rawId || (hr?bd+hr:''),
       shop:shop,
@@ -258,6 +262,8 @@ function tile(r){
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
     +'<div class="stk'+(r.sold?' gone':'')+'">'
       +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
+    +((!r.sure && r.ratio<0.35)?'<div class="chk" title="この店は収録弾を書いていないため、'
+       +'同じ番号・同じ名前の別の弾かもしれません。リンク先で現物を確かめてください">⚠ 収録弾 未確認</div>':'')
     +(others.length?'<div class="alt" data-card="'+esc(r.id)+'">他の出品 '+others.length+'件 '
         +'<b>'+yen(Math.min.apply(null,others.map(x=>x.cr)))+'〜</b></div>':'')
     +'<div class="act">'

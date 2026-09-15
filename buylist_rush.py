@@ -457,6 +457,37 @@ def load_db():
     return cards
 
 
+# 店が「旧裏」と言っているかどうか。カードラッシュは番号が {旧裏}、
+# キャンプは 1st2 / neo1 / 1stGYM1、トレトクは 旧1 のような記号を使う
+OLD_CODE = re.compile(r'^(1st|neo|旧|gym|opg|pmcg|vending)', re.I)
+
+
+def _code_ok(code, setid):
+    """店の収録記号とDBのsetIdが同じ弾を指していそうか。
+    ADV1↔ad1 のように書き方が違うだけのことが多いので、頭2文字まで見る"""
+    a = re.sub(r'[^a-z0-9]', '', (code or '').lower())
+    b = re.sub(r'[^a-z0-9]', '', (setid or '').lower())
+    if not a or not b:
+        return True
+    if b == a or b.startswith(a) or a.startswith(b):
+        return True
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n >= 2
+
+
+def _is_old_back(it):
+    if it.get('num') == '旧裏':
+        return True
+    if OLD_CODE.match((it.get('setcode') or '').strip()):
+        return True
+    t = it.get('settitle') or ''
+    return ('旧裏' in t) or bool(OLD_CODE.match(t.strip()))
+
+
 def match(items, cards):
     """迷ったら捨てる。間違った紐付けを1件出すほうが、取りこぼすより害が大きい"""
     by_num = collections.defaultdict(list)
@@ -497,8 +528,20 @@ def match(items, cards):
                 if nar:
                     cand = nar
             cand = [c for c in cand if norm((c.get('name') or '').split(':')[0]) == base]
-        if not cand:
+            # 店が弾を名乗っているのに、DB側がまるで別の弾しか持っていないときは捨てる。
+            # 番号と名前だけで当てると、同じ番号を使う別の弾のカードに化ける
+            # （エンテイ PRE2 002/009 が「ポケパーク」の5万円に化けるたぐい）
+            if cand and mo and mo != 'その他' and not _is_old_back(it):
+                keep = [c for c in cand if _code_ok(mo, c.get('setId'))]
+                if not keep:
+                    stat['収録弾が合わない'] += 1
+                    continue
+                cand = keep
+        if not cand and _is_old_back(it):
             # 旧裏はDB側に番号が無い（店は {旧裏} や「1st2 002/048」と書く）ので名前で引く。
+            # 旧裏だと分かっている商品にだけ使う。番号が合わなかっただけの現行カードに
+            # これを使うと、同名の旧裏カードに化ける（エンテイ PRE2 002/009 が
+            # 「めざめる伝説」の4万円に紐づいていた）
             # 同じ名前が複数の弾にあるとき（リザードンLV.76は40万と65万）は
             # 取り違えの害が大きいので、下の同点判定で捨てる
             cand = by_old.get(base, [])
@@ -509,12 +552,18 @@ def match(items, cards):
                 if nar:
                     cand = nar
             if not cand:
-                stat['DBに無い'] += 1
+                stat['旧裏でDBに無い'] += 1
                 continue
-        want = variant_of(raw + it.get('rarity', ''))
+        if not cand:
+            stat['DBに無い'] += 1
+            continue
+        # 版（ミラー・1ED・キラ等）の判定は、かっこ書きとレアリティだけを見る。
+        # カード名まで見ると「ドーミラー」の“ミラー”を拾って、ミラー版に化ける
+        want = variant_of(' '.join(PAREN.findall(raw)) + ' ' + it.get('rarity', ''))
         # 「アンリミ」と書かれた商品を1ED版に当ててはいけない（値段が桁違いになる）
-        unlim = 'アンリミ' in raw
-        marked = 'マークあり' in raw or 'マーク有' in raw
+        notes = ' '.join(PAREN.findall(raw))
+        unlim = 'アンリミ' in notes
+        marked = 'マークあり' in notes or 'マーク有' in notes
         scored = []
         for c in cand:
             nm = c.get('name') or ''
@@ -533,7 +582,11 @@ def match(items, cards):
             continue
         c = scored[0][1]
         stat['照合できた(' + it['shop'] + ')'] += 1
-        out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'],
+        # 店が収録弾を書いていない商品（カードラッシュの「その他」）は、
+        # 同じ番号・同じ名前の別の弾かもしれない。あとで印を出すために残す
+        code = (it.get('setcode') or '').strip()
+        sure = 1 if (code and code != 'その他' and _code_ok(code, c.get('setId'))) else 0
+        out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'], 'sure': sure,
                     'vid': it.get('vid', ''),
                     'cond': it['cond'], 'crPrice': it['price'],
                     'stock': it['stock'], 'soldout': it['soldout'], 'num': num,
@@ -547,7 +600,7 @@ def match(items, cards):
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
-        'shop', 'url', 'vid']
+        'shop', 'url', 'vid', 'sure']
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -657,7 +710,7 @@ def build(rows, prev, ok_shops=None):
             r['image'], r['price'], r['crPrice'], r['stock'], r['owned'],
             1 if r['crPrice'] / r['price'] <= th[key]['q25'] else 0,
             1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
-            r['shop'], r['url'], r.get('vid', ''),
+            r['shop'], r['url'], r.get('vid', ''), r.get('sure', 1),
         ])
         shrink(rowsout[-1])
 
@@ -665,7 +718,8 @@ def build(rows, prev, ok_shops=None):
     # 買おうとしていたものが無くなったのは見えたほうがいい
     limit = (datetime.date.today() - datetime.timedelta(days=KEEP_SOLD_DAYS)).isoformat()
     sold_now = 0
-    blank = lambda c: 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold') else ''
+    blank = lambda c: (1 if c == 'sure' else
+                       0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold') else '')
     for pid, a in prev_live.items():
         if pid in live_pids:
             continue
