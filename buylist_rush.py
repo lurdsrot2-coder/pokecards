@@ -369,4 +369,9 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        log('失敗: %s' % e)
+        notify('ポケカ 買い得リストの更新に失敗', str(e)[:200])
+        sys.exit(1)

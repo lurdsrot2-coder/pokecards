@@ -7,7 +7,7 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.5 'Segoe UI',system-ui,sans-serif}
 header{position:sticky;top:0;z-index:9;background:linear-gradient(90deg,#0d0d2a,var(--pa));
- border-bottom:1px solid var(--bd);padding:9px 14px}
+ border-bottom:1px solid var(--bd);padding:9px 12px}
 .hd1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 h1{margin:0;font-size:14px;letter-spacing:2px;color:var(--cy);text-shadow:0 0 12px var(--cy);white-space:nowrap}
 #reload{background:rgba(0,245,255,.12);border:1px solid var(--cy);border-radius:4px;color:var(--cy);
@@ -20,11 +20,11 @@ h1{margin:0;font-size:14px;letter-spacing:2px;color:var(--cy);text-shadow:0 0 12
 .meta .gone{color:var(--rd);font-weight:700}
 .meta.stale{color:var(--rd)}
 .ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
-select,input{background:#0a0a20;border:1px solid var(--bd);border-radius:4px;color:var(--tx);
+select,input,.serbtn{background:#0a0a20;border:1px solid var(--bd);border-radius:4px;color:var(--tx);
  font-size:12px;padding:5px 8px}
-input[type=number]{width:82px;text-align:right;-moz-appearance:textfield}
+input[type=number]{width:74px;text-align:right;-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.rng{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--bd);border-radius:4px;padding:2px 6px}
+.rng{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--bd);border-radius:4px;padding:2px 6px}
 .rng input{border:none;padding:3px 2px;background:transparent}
 .rng span{font-size:10px;color:var(--sub);white-space:nowrap}
 .tg{background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:var(--sub);
@@ -32,36 +32,54 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on{background:rgba(0,245,255,.22);border-color:var(--cy);color:#fff;font-weight:700}
 .tg.on.own{background:rgba(255,0,255,.22);border-color:var(--pk)}
 .tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
-.hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
-table{width:100%;border-collapse:collapse}
-th{position:sticky;top:0;background:#141433;font-size:11px;color:var(--sub);text-align:left;
- padding:7px 8px;border-bottom:1px solid var(--bd);cursor:pointer;white-space:nowrap;user-select:none}
-th.up::after{content:' ▲';color:var(--cy)}th.down::after{content:' ▼';color:var(--cy)}
-td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
-tr:hover{background:rgba(0,245,255,.06)}
-.im{width:44px;padding:3px}.im img{width:40px;border-radius:3px;display:block}
-.nm a{color:var(--tx);text-decoration:none;font-weight:600}
-.nm a:hover{color:var(--cy);text-decoration:underline}
-.sub{font-size:10px;color:var(--sub)}
-.sub .mo{display:none}
-.num{margin-left:6px;color:#6a6a90}
-.tagnew{display:inline-block;background:var(--gr);color:#06210f;font-size:9px;font-weight:900;
- border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:1px}
-.se{font-size:11px;color:#b9b9e0;white-space:nowrap}
-.shops{margin-left:8px;white-space:nowrap}
-.shops a{display:inline-block;font-size:9.5px;font-weight:700;border-radius:3px;padding:0 5px;
- margin-right:4px;text-decoration:none;border:1px solid}
-.shops a.cr{color:var(--gr);border-color:rgba(0,229,149,.45)}
-.shops a.cr:hover{background:rgba(0,229,149,.18)}
-.shops a.hr{color:var(--gd);border-color:rgba(255,230,0,.4)}
-.shops a.hr:hover{background:rgba(255,230,0,.15)}
-tr.gone{opacity:.5}
-tr.gone .cr,tr.gone .sv{color:var(--sub)}
-.soldat{color:var(--rd);font-weight:700}
-/* シリーズの複数選択。selectだと1つしか選べないので自前のパネルを出す */
-.serbtn{background:#0a0a20;border:1px solid var(--bd);border-radius:4px;color:var(--tx);
- font-size:12px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.serbtn{cursor:pointer;white-space:nowrap}
 .serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
+.hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
+
+/* ── カードのタイル。1行1枚だと目が滑るので、店の一覧と同じ並べ方にする ── */
+#grid{display:grid;gap:9px;padding:10px;
+ grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+.card{background:var(--pa);border:1px solid rgba(255,255,255,.07);border-radius:6px;overflow:hidden;
+ display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--cy);transform:translateY(-2px)}
+.card.gone{opacity:.45}
+.ph{position:relative;background:#06060f;padding:6px 6px 0}
+.ph a{display:block}
+.ph img{width:100%;aspect-ratio:63/88;object-fit:contain;display:block;border-radius:3px}
+.ph .ni{width:100%;aspect-ratio:63/88;display:flex;align-items:center;justify-content:center;
+ color:#2c2c44;font-size:10px}
+.bdg{position:absolute;top:8px;display:flex;gap:3px;align-items:center}
+.bdg.l{left:8px}.bdg.r{right:8px}
+.b{font-size:9px;font-weight:900;border-radius:3px;padding:1px 5px;line-height:15px}
+.b.B{background:rgba(255,230,0,.92);color:#2a2400}
+.b.C{background:rgba(255,68,68,.92);color:#2a0000}
+.b.own{background:rgba(255,0,255,.88);color:#fff}
+.b.new{background:var(--gr);color:#06210f}
+.b.sold{background:rgba(255,68,68,.95);color:#fff}
+.bd{padding:6px 8px 8px;display:flex;flex-direction:column;gap:2px;flex:1}
+.nm{font-size:12px;font-weight:700;line-height:1.3;color:var(--tx);
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.st{font-size:9.5px;color:var(--sub);line-height:1.3;
+ display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.pr{display:flex;align-items:baseline;gap:5px;margin-top:3px}
+.pr .cr{font-size:15px;font-weight:900;color:var(--gr);font-variant-numeric:tabular-nums}
+.pr .pc{font-size:10px;font-weight:700;color:var(--gd)}
+.ref{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--sub);font-variant-numeric:tabular-nums}
+.ref s{color:#5f5f80}
+.ref em{font-style:normal;color:var(--pk);font-weight:700}
+.bar{height:4px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin:3px 0 1px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gr),var(--gd))}
+.lk{display:flex;gap:4px;margin-top:5px}
+.lk a{flex:1;text-align:center;font-size:9.5px;font-weight:700;border-radius:3px;padding:3px 0;
+ text-decoration:none;border:1px solid}
+.lk a.c{color:var(--gr);border-color:rgba(0,229,149,.45)}
+.lk a.c:hover{background:rgba(0,229,149,.18)}
+.lk a.h{color:var(--gd);border-color:rgba(255,230,0,.4)}
+.lk a.h:hover{background:rgba(255,230,0,.15)}
+.stk{font-size:9px;color:var(--sub);margin-top:3px}
+.stk.gone{color:var(--rd);font-weight:700}
+
+/* シリーズの複数選択。selectだと1つしか選べないので自前のパネルを出す */
 #serpanel{position:fixed;z-index:20;display:none;flex-direction:column;background:#0a0a20;
  border:1px solid rgba(255,0,255,.5);border-radius:6px;box-shadow:0 12px 34px rgba(0,0,0,.65);
  max-height:min(62vh,440px);overflow:hidden;min-width:250px}
@@ -78,27 +96,14 @@ tr.gone .cr,tr.gone .sv{color:var(--sub)}
 #serpanel .sp-it.sel{background:rgba(255,0,255,.18);color:#ff88ff;font-weight:700}
 #serpanel .sp-ck{flex:0 0 12px;text-align:center;color:#ff88ff}
 #serpanel .sp-n{margin-left:auto;color:var(--sub);font-size:10px;font-weight:400}
-.cond{text-align:center;font-weight:900;width:28px}
-.cond.B{color:var(--gd)}.cond.C{color:var(--rd)}
-.ow{text-align:center;width:34px;font-weight:700;color:#3a3a55}
-.ow.has{color:var(--pk)}
-.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-.cr{color:var(--gr);font-weight:700}
-.sv{color:var(--pk);font-weight:700}
-.pc{color:var(--sub)}
-.bar{display:inline-block;width:38px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;
- margin-right:6px;overflow:hidden;vertical-align:middle}
-.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gr),var(--gd))}
-.st{font-size:11px;color:var(--sub);text-align:right;white-space:nowrap}
-#note{color:var(--sub);font-size:11px;padding:14px;line-height:1.7}
+
+#note{color:var(--sub);font-size:11px;padding:8px 14px 30px;line-height:1.7}
 #msg{padding:30px 14px;color:var(--sub);font-size:13px}
-@media(max-width:700px){
- /* 横スクロールさせないため、相場は名前の下に畳んで列から外す */
- .se,.st,.pc,.pr,th[data-k="ser"],th[data-k="stock"]{display:none}
- .sub .mo{display:inline;margin-left:6px;color:#b9b9e0}
- .im{width:34px}.im img{width:30px}
- td,th{padding:5px 5px}
- h1{font-size:12px;letter-spacing:1px}.ctl{gap:5px}}
+#more{height:1px}
+@media(max-width:620px){
+ #grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:7px;padding:7px}
+ h1{font-size:12px;letter-spacing:1px}.ctl{gap:5px}
+}
 </style></head><body>
 <header>
 <div class="hd1"><h1>カードラッシュ 状態B/C 買い得リスト</h1>
@@ -120,31 +125,35 @@ tr.gone .cr,tr.gone .sv{color:var(--sub)}
  <select id="f-min"><option value="0">相場すべて</option><option value="1000">相場¥1,000+</option>
   <option value="5000">相場¥5,000+</option><option value="20000">相場¥20,000+</option>
   <option value="100000">相場¥100,000+</option></select>
+ <select id="f-sort">
+  <option value="save">差額の大きい順</option>
+  <option value="ratio">割安な順（比率）</option>
+  <option value="cr">ラッシュ 安い順</option>
+  <option value="cr-">ラッシュ 高い順</option>
+  <option value="price-">相場の高い順</option>
+  <option value="name">カード名順</option>
+ </select>
  <input type="search" id="q" placeholder="カード名で絞る">
  <span class="hit" id="hit"></span>
 </div></header>
-<div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
+<div id="serpanel"><div class="sp-hd"><span>シリーズ（複数選べます）</span>
  <button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
-<table id="tbl" hidden><thead><tr>
-<th></th><th data-k="name">カード</th><th data-k="ser">シリーズ</th><th data-k="cond">状態</th>
-<th data-k="owned" class="n">所持</th>
-<th data-k="price" class="n pr">相場</th><th data-k="cr" class="n">ラッシュ</th>
-<th data-k="ratio" class="n pc">比率</th><th data-k="save" class="n">差額</th><th data-k="stock" class="n">在庫</th>
-</tr></thead><tbody id="tb"></tbody></table>
+<div id="grid"></div><div id="more"></div>
 <div id="note">
 状態B＝キズ・スレ・くすみ・小さな凹みあり。状態C＝全体のキズ、折れ、凹み、軽度の水濡れ等あり。
 どちらも店側は「コレクション用にはお勧めしない」としています。プレイ用・穴埋め用として見てください。<br>
-カード名を押すとカードラッシュの商品ページが開きます。売り切れの商品は除いてあります。<br>
-「⟳ 更新」で最新のデータを取り直します（売れたものは消え、新しく出たものには <span class="tagnew">NEW</span> が付きます）。
+大きい数字がカードラッシュの価格、その下の取り消し線が相場（アプリ内の時価＝晴れる屋2の販売価格）です。<br>
+データは毎朝5時に自動で取り直します。「⟳ 更新」でその最新を読み込みます。
 </div>
 <script>
-const SRC='buylist-rush-bc.json';
-let DATA=null, rows=[], st={cheap:1,flag:'',cond:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:''},
-    sortK='save', sortD=-1;
+const SRC='buylist-rush-bc.json', PAGE=200;
+let rows=[], view=[], shown=0,
+    st={cheap:1,flag:'',cond:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:'',sort:'save'};
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const grid=document.getElementById('grid');
 
 function toRows(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
@@ -157,35 +166,39 @@ function toRows(d){
       ratio:price?cr/price:0,save:price-cr};
   });
 }
-function render(list){
-  const h=[];
-  for(const r of list){
-    const pc=Math.round(r.ratio*100);
-    h.push('<tr'+(r.sold?' class="gone"':'')+'><td class="im">'+(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'')+'</td>'
-      +'<td class="nm"><a href="https://www.cardrush-pokemon.jp/product/'+esc(r.pid)+'" target="_blank" rel="noopener">'
-      +esc(r.name)+'</a>'+(r.isnew?'<span class="tagnew">NEW</span>':'')
-      +'<div class="sub">'+esc(r.set)+'<span class="num">'+esc(r.num)+'</span>'
-      +'<span class="mo">相場'+yen(r.price)+'</span>'
-      +'<span class="shops"><a class="cr" target="_blank" rel="noopener" '
-      +'href="https://www.cardrush-pokemon.jp/product/'+esc(r.pid)+'">ラッシュ</a>'
-      +(r.hr?'<a class="hr" target="_blank" rel="noopener" '
-        +'href="https://www.hareruya2.com/products/'+esc(r.hr)+'">晴れる屋2</a>':'')
-      +'</span></div></td>'
-      +'<td class="se">'+esc(r.ser)+'</td>'
-      +'<td class="cond '+r.cond+'">'+r.cond+'</td>'
-      +'<td class="ow'+(r.owned>0?' has':'')+'">'+(r.owned>0?r.owned:'–')+'</td>'
-      +'<td class="n pr">'+yen(r.price)+'</td><td class="n cr">'+yen(r.cr)+'</td>'
-      +'<td class="n pc"><span class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></span>'+pc+'%</td>'
-      +'<td class="n sv">'+yen(r.save)+'</td>'
-      +'<td class="st">'+(r.sold?'<span class="soldat">売切 '+esc((r.soldAt||'').slice(5))+'</span>'
-                                 :(r.stock?r.stock+'枚':'—'))+'</td></tr>');
-  }
-  document.getElementById('tb').innerHTML=h.join('');
-  document.getElementById('hit').textContent=list.length.toLocaleString()+'件';
+function tile(r){
+  const pc=Math.round(r.ratio*100);
+  const cru='https://www.cardrush-pokemon.jp/product/'+esc(r.pid);
+  return '<div class="card'+(r.sold?' gone':'')+'">'
+    +'<div class="ph"><a href="'+cru+'" target="_blank" rel="noopener">'
+    +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'<div class="ni">画像なし</div>')
+    +'</a>'
+    +'<div class="bdg l"><span class="b '+r.cond+'">'+r.cond+'</span>'
+      +(r.isnew?'<span class="b new">NEW</span>':'')
+      +(r.sold?'<span class="b sold">売切</span>':'')+'</div>'
+    +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
+    +'</div>'
+    +'<div class="bd">'
+    +'<div class="nm">'+esc(r.name)+'</div>'
+    +'<div class="st">'+esc(r.set)+' '+esc(r.num)+'</div>'
+    +'<div class="pr"><span class="cr">'+yen(r.cr)+'</span><span class="pc">'+pc+'%</span></div>'
+    +'<div class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'
+    +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
+    +'<div class="stk'+(r.sold?' gone':'')+'">'
+      +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
+    +'<div class="lk"><a class="c" href="'+cru+'" target="_blank" rel="noopener">ラッシュ</a>'
+    +(r.hr?'<a class="h" href="https://www.hareruya2.com/products/'+esc(r.hr)+'" target="_blank" rel="noopener">晴れる屋2</a>':'')
+    +'</div></div></div>';
+}
+function draw(){           // 一度に全部作ると重いので、スクロールに合わせて足していく
+  const next=view.slice(shown, shown+PAGE);
+  if(!next.length) return;
+  grid.insertAdjacentHTML('beforeend', next.map(tile).join(''));
+  shown+=next.length;
 }
 function apply(){
   const q=st.q;
-  let list=rows.filter(r=>
+  view=rows.filter(r=>
        (!st.cheap || r.cheap)
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
@@ -195,23 +208,16 @@ function apply(){
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
     && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q)));
-  const dir=sortD, k=sortK;
-  list.sort((a,b)=>{
-    const x=a[k], y=b[k];
-    return (typeof x==='number' ? x-y : String(x).localeCompare(String(y),'ja'))*dir;
-  });
-  render(list);
-}
-function sort(k){
-  // 比率とラッシュ価格は「安い順」から見たいので、初回は昇順
-  sortD = (k===sortK) ? -sortD : (['ratio','cr'].includes(k)?1:-1);
-  sortK = k;
-  document.querySelectorAll('th').forEach(t=>t.classList.remove('up','down'));
-  const th=document.querySelector('th[data-k="'+k+'"]'); if(th) th.classList.add(sortD>0?'up':'down');
-  apply();
+  // 差額・相場は大きい順、比率・ラッシュ価格・名前は小さい順が既定
+  const k=st.sort.replace(/-$/,'');
+  const dir=(k==='save'||st.sort==='price-'||st.sort==='cr-')?-1:1;
+  view.sort((a,b)=>{const x=a[k],y=b[k];
+    return (typeof x==='number'?x-y:String(x).localeCompare(String(y),'ja'))*dir;});
+  grid.innerHTML=''; shown=0; draw();
+  document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
 function show(d){
-  DATA=d; rows=toRows(d);
+  rows=toRows(d);
   const s=d.stats||{}, t=new Date(d.createdAt);
   const days=Math.floor((Date.now()-t.getTime())/86400000);
   const B=Math.round((d.th.B.med||0)*100), C=Math.round((d.th.C.med||0)*100);
@@ -223,13 +229,12 @@ function show(d){
     +' ／ 在庫のあるカード <b>'+(s.cards||rows.length).toLocaleString()+'</b>件'
     +(s.added?' ／ <span class="new">新着 '+s.added+'件</span>':'')
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
-    +'<br>相場＝アプリ内の時価（晴れる屋2の販売価格）。状態Bは相場の<b>'+B+'%</b>、状態Cは<b>'+C+'%</b>が実勢の中央値なので、'
+    +'<br>状態Bは相場の<b>'+B+'%</b>、状態Cは<b>'+C+'%</b>が実勢の中央値なので、'
     +'それより明確に安い（B:'+bq+'%以下 / C:'+cq+'%以下）ものを「割安」としています。';
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   serSync();
   document.getElementById('msg').hidden=true;
-  document.getElementById('tbl').hidden=false;
-  sortK=''; sortD=-1; sort('save');   // 差額の大きい順から見せる
+  apply();
 }
 async function load(force){
   const b=document.getElementById('reload');
@@ -239,11 +244,16 @@ async function load(force){
     if(!r.ok) throw new Error(r.status);
     show(await r.json());
   }catch(e){
-    document.getElementById('msg').hidden=false;
-    document.getElementById('msg').textContent='データを読み込めませんでした（'+e.message+'）。時間をおいて「⟳ 更新」を押してください。';
+    const m=document.getElementById('msg');
+    m.hidden=false;
+    m.textContent='データを読み込めませんでした（'+e.message+'）。時間をおいて「⟳ 更新」を押してください。';
   }
   b.disabled=false; b.textContent='⟳ 更新';
 }
+// 下まで来たら続きを描く
+new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'800px'})
+  .observe(document.getElementById('more'));
+
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
 // 新着 / 売れた は排他。どちらもOFFのときは在庫のあるものだけ出す
@@ -261,6 +271,13 @@ document.querySelectorAll('.tg[data-o]').forEach(b=>b.onclick=function(){
   const on=st.own===this.dataset.o; st.own=on?'':this.dataset.o;
   document.querySelectorAll('.tg[data-o]').forEach(x=>x.classList.remove('on'));
   if(!on)this.classList.add('on'); apply();});
+document.getElementById('f-min').onchange=function(){st.min=+this.value;apply();};
+document.getElementById('f-sort').onchange=function(){st.sort=this.value;apply();};
+const num=v=>v===''||isNaN(+v)?null:+v;
+document.getElementById('f-lo').oninput=function(){st.lo=num(this.value);apply();};
+document.getElementById('f-hi').oninput=function(){st.hi=num(this.value);apply();};
+document.getElementById('q').oninput=function(){st.q=this.value.trim().toLowerCase();apply();};
+
 // シリーズは複数選択。選ぶたびに閉じないパネルを出す
 const serBtn=document.getElementById('f-ser'), serPanel=document.getElementById('serpanel'),
       serList=document.getElementById('sp-list');
@@ -301,11 +318,6 @@ addEventListener('pointerdown',e=>{ if(serOpen && !serPanel.contains(e.target) &
 addEventListener('keydown',e=>{ if(serOpen && e.key==='Escape') serShow(false); });
 addEventListener('scroll',()=>{ if(serOpen) serPlace(); },true);
 addEventListener('resize',()=>{ if(serOpen) serPlace(); });
-document.getElementById('f-min').onchange=function(){st.min=+this.value;apply();};
-const num=v=>v===''||isNaN(+v)?null:+v;
-document.getElementById('f-lo').oninput=function(){st.lo=num(this.value);apply();};
-document.getElementById('f-hi').oninput=function(){st.hi=num(this.value);apply();};
-document.getElementById('q').oninput=function(){st.q=this.value.trim().toLowerCase();apply();};
-document.querySelectorAll('th[data-k]').forEach(t=>t.onclick=()=>sort(t.dataset.k));
+
 load(false);
 </script></body></html>
