@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""カードラッシュの「状態B」「状態C」を全件取り直して、買い得リストのデータを作る。
+"""カードラッシュとトレカキャンプの在庫を取り直して、買い得リストのデータを作る。
 
 やっていること:
-  1. カードラッシュの検索を全ページたどって、状態B/Cの商品を集める
+  1. カードラッシュ（状態B/C/Dの検索）とトレカキャンプ（コレクション別のJSON）から商品を集める
   2. カード番号＋セット記号＋カード名で手元のDB（data.json＋delta.json）に突き合わせる
-  3. 売り切れを落とし、同じカードの出品はいちばん安いものだけ残す
+  3. 売り切れを落とし、同じカード・同じ状態の出品はいちばん安いものだけ残す
   4. docs/buylist-rush-bc.json に書き出して push する（ページはこれを読む）
 
 前回のJSONと比べて、消えた商品（＝売れた）と新しく出た商品を数える。
@@ -71,17 +71,26 @@ def parse_page(html):
     return out
 
 
-def scrape():
-    """1ページ100件・最大100ページ（=1万件）で頭打ちになるので、
-    価格の安い順と高い順の両方から取って重複を消す"""
+def cr_scrape():
+    """カードラッシュ。1ページ100件・最大100ページ（=1万件）で頭打ちになるので、
+    価格の安い順と高い順の両方から取って重複を消す。
+
+    短時間に叩きすぎると 403 で弾かれる。連続で失敗したら早めに諦めて、
+    前回ぶんを使い回す（失敗を「全部売り切れた」と誤解しないため）"""
     items = {}
+    miss = 0
     for kw in ('状態B', '状態C', '状態D'):
         for order in ('asc', 'desc'):
             for page in range(1, 101):
                 h = fetch(page_url(kw, order, page))
                 if not h:
-                    log('%s %s p%d 取得失敗' % (kw, order, page))
+                    miss += 1
+                    log('%s %s p%d 取得失敗（%d回目）' % (kw, order, page, miss))
+                    if miss >= 3:
+                        log('  カードラッシュに繋がらないので今回は見送ります')
+                        return []
                     continue
+                miss = 0
                 got = parse_page(h)
                 for it in got:
                     items.setdefault(it['pid'], it)
@@ -90,8 +99,164 @@ def scrape():
                     log('  %s %s p%d/%d 累計%d' % (kw, order, page, last, len(items)))
                 if page >= last or not got:
                     break
-                time.sleep(.25)
+                time.sleep(.5)
+    out = []
+    for it in items.values():
+        m = ALT.match(it['alt'])
+        if not m:
+            continue
+        cond = m.group(1)
+        if cond not in ('状態B', '状態C', '状態D'):
+            continue
+        out.append({
+            'shop': 'CR', 'pid': it['pid'], 'cond': cond[-1],
+            'url': 'https://www.cardrush-pokemon.jp/product/' + it['pid'],
+            'name': m.group(2), 'rarity': m.group(3),
+            'num': m.group(4).strip().upper(), 'setcode': it.get('model') or '',
+            'settitle': '', 'price': it['price'],
+            'stock': int(re.sub(r'\D', '', it['stock']) or 0), 'soldout': it['soldout']})
+    log('  カードラッシュ 状態B/C/D %d件' % len(out))
+    return out
+
+
+# ── トレカキャンプ（Shopify） ─────────────────────────
+TC = 'https://torecacamp-pokemon.com'
+# 「094/106」だけでなく、DP期の「DPBP#161」も番号として扱う（DB側も同じ書き方）
+TC_NUM = re.compile(r'(?<![0-9A-Za-z/#])(?:[0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,6}|[A-Za-z]{2,6}#\d{1,4})(?![0-9A-Za-z/])')
+TC_SKIP = ('海外版', '英語版', '鑑定品', 'PSA', 'ARS', '韓国版', '北米版', '中国語')
+TC_SKIP_TITLE = ('未開封', 'BOX', 'ボックス', 'デッキケース', 'スリーブ', 'プレイマット')
+TC_CODE = re.compile(r'^[0-9A-Za-z][0-9A-Za-z\-_]{0,9}$')
+# 商品名のうしろに付くレアリティ表記（「キテルグマ R」「ねがいのバトン UR (K)」）
+TC_RARITY = {'C', 'U', 'R', 'RR', 'RRR', 'SR', 'HR', 'UR', 'AR', 'SAR', 'CHR', 'CSR',
+             'K', 'PR', 'TR', 'ACE', 'SP', 'SSR', 'S', 'H', 'P', 'A', 'LEGEND', 'PROMO',
+             '●', '◆', '★', '☆', '-'}
+
+
+def tc_json(path, tries=4):
+    for i in range(tries):
+        try:
+            r = urllib.request.Request(TC + path, headers={'User-Agent': UA, 'Accept': 'application/json'})
+            return json.loads(urllib.request.urlopen(r, timeout=90).read())
+        except Exception as e:
+            log('  retry %d: %s' % (i + 1, e))
+            time.sleep(2 + i * 3)
+    return {}
+
+
+def tc_parse(p, settitle):
+    """「ニドラン♀ ● 1st2 002/048 【アンリミ】」のような商品名をほどく"""
+    title = p.get('title') or ''
+    tags = p.get('tags') or []
+    if 'ポケモンカードシングル' not in tags and not settitle:
+        return None
+    # 海外版などはタグにも出るので両方見る。「BOX」は収録弾名（エクストラ
+    # レギュレーションBOX）にも入っているので、商品名だけで判定する
+    if any(w in title + ' ' + ' '.join(tags) for w in TC_SKIP):
+        return None
+    if any(w in title for w in TC_SKIP_TITLE):
+        return None
+    notes = re.findall(r'【([^】]*)】', title)
+    core = re.sub(r'【[^】]*】', '', title).strip()
+    ms = list(TC_NUM.finditer(core))
+    if ms:
+        m = ms[-1]
+        num = m.group(0).upper()
+        toks = core[:m.start()].split()
+    else:
+        # 番号が無い商品（「パチリス DP4」など）。セット記号＋名前で引く
+        num = ''
+        toks = core.split()
+        if len(toks) < 2 or not TC_CODE.match(toks[-1]):
+            return None
+    if len(toks) < 2:
+        return None
+    setcode = toks[-1]
+    head = toks[:-1]
+    # 名前そのものがレアリティ表記と同じカード（トレーナーの「N」など）を
+    # 消さないよう、2つ以上あるときだけ落とす
+    while len(head) > 1 and head[-1].strip('()') in TC_RARITY:
+        head = head[:-1]
+    name = ' '.join(head)
+    if not name:
+        return None
+    cond = 'A'
+    for nt in notes:
+        if nt.startswith('状態') and len(nt) > 2:
+            # 状態A-・B+ などは頭文字に丸める（A/B/C/Dの4段だけ扱う）
+            cond = nt[2]
+    if cond not in ('A', 'B', 'C', 'D'):
+        cond = 'A'
+    v = (p.get('variants') or [{}])[0]
+    try:
+        price = int(float(v.get('price') or 0))
+    except Exception:
+        price = 0
+    if not price:
+        return None
+    return {
+        'shop': 'TC', 'pid': 'tc' + str(p.get('id')), 'cond': cond,
+        'url': TC + '/products/' + (p.get('handle') or ''),
+        'name': name + (' (' + '/'.join(n for n in notes if not n.startswith('状態')) + ')' if
+                        [n for n in notes if not n.startswith('状態')] else ''),
+        'rarity': '', 'num': num, 'setcode': setcode,
+        'settitle': settitle, 'price': price,
+        'stock': 0, 'soldout': not v.get('available')}
+
+
+def tc_scrape():
+    """products.json は100ページ（2.5万件）で頭打ちになるので、
+    収録弾ごとのコレクションを1つずつたどる"""
+    cols = []
+    for page in range(1, 6):
+        d = tc_json('/collections.json?limit=250&page=%d' % page)
+        c = d.get('collections') or []
+        if not c:
+            break
+        cols += c
+        time.sleep(.2)
+    log('  トレカキャンプ コレクション %d件' % len(cols))
+    items = {}
+    for i, col in enumerate(cols):
+        # 「#neo1_金、銀、新世界へ…」のような弾名。旧裏の絞り込みに使う
+        settitle = (col.get('title') or '').split('/')[0].strip()
+        for page in range(1, 21):
+            d = tc_json('/collections/%s/products.json?limit=250&page=%d'
+                        % (urllib.parse.quote(col.get('handle') or '', safe=''), page))
+            ps = d.get('products') or []
+            if not ps:
+                break
+            for p in ps:
+                if p.get('id') in items:
+                    continue
+                it = tc_parse(p, settitle)
+                if it:
+                    items[p['id']] = it
+            if len(ps) < 250:
+                break
+            time.sleep(.2)
+        if (i + 1) % 100 == 0:
+            log('  トレカキャンプ %d/%d コレクション 累計%d件' % (i + 1, len(cols), len(items)))
+        time.sleep(.15)
+    log('  トレカキャンプ %d件' % len(items))
     return list(items.values())
+
+
+def scrape():
+    """店ごとに集めて、ちゃんと取れた店の集合も返す。
+    取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
+    items, ok = [], set()
+    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500)):
+        try:
+            got = fn()
+        except Exception as e:
+            log('%s の取得に失敗: %s' % (shop, e))
+            got = []
+        if len(got) >= least:
+            items += got
+            ok.add(shop)
+        else:
+            log('※ %s は %d件しか取れませんでした。前回のぶんをそのまま残します' % (shop, len(got)))
+    return items, ok
 
 
 # ── 2. 突き合わせ ─────────────────────────────────────
@@ -142,54 +307,58 @@ def load_db():
 def match(items, cards):
     """迷ったら捨てる。間違った紐付けを1件出すほうが、取りこぼすより害が大きい"""
     by_num = collections.defaultdict(list)
-    by_old = collections.defaultdict(list)     # 旧裏は番号が無いので名前で引く
+    by_old = collections.defaultdict(list)     # 旧裏はDBに番号が無いので名前で引く
+    by_set = collections.defaultdict(list)     # 番号が書かれていない商品は 収録記号＋名前 で引く
     for c in cards.values():
         n = (c.get('cardNumber') or '').strip().upper()
         if n and n != '-':
             by_num[n].append(c)
         if '旧裏' in (c.get('quickTags') or []):
             by_old[norm((c.get('name') or '').split(':')[0])].append(c)
+        sid = (c.get('setId') or '').lower()
+        if sid:
+            by_set[(sid, norm((c.get('name') or '').split(':')[0]))].append(c)
 
     out, stat = [], collections.Counter()
     for it in items:
-        m = ALT.match(it['alt'])
-        if not m:
-            stat['状態表記なし'] += 1
-            continue
-        cond = m.group(1)
-        if cond not in ('状態B', '状態C', '状態D'):
-            stat['B/C以外'] += 1
-            continue
-        raw, rarity, num = m.group(2), m.group(3), m.group(4).strip().upper()
-        if not num or num == '/':
-            stat['番号なし'] += 1
-            continue
+        raw, num = it['name'], it['num']
+        if num == '/':
+            num = ''
         base = norm(LV.sub('', PAREN.sub('', raw)))
-        if num == '旧裏':
-            # 旧裏は番号もセット記号も無いので名前で引くしかない。
-            # 同じ名前が複数の弾にあるとき（リザードンLV.76は40万と65万）は
-            # 取り違えると害が大きいので、下の同点判定で捨てる
-            cand = by_old.get(base, [])
+        cand = []
+        if not num:
+            # 番号が書かれていない商品。収録記号（DP4 等）と名前が両方合う
+            # ものが1枚だけのときに限って採用する
+            mo = (it.get('setcode') or '').strip().lower()
+            cand = list(by_set.get((mo, base), [])) if mo else []
             if not cand:
-                stat['旧裏でDBに無い'] += 1
+                stat['番号なし'] += 1
                 continue
-        else:
+        elif num != '旧裏':
             cand = by_num.get(num, [])
-            if not cand:
-                stat['DBに番号なし'] += 1
-                continue
             # セット記号（S8b 等）で絞る。DBのsetIdは s8b / s8b-m のように派生を持つ
-            mo = (it.get('model') or '').strip().lower()
+            mo = (it.get('setcode') or '').strip().lower()
             if mo and mo != 'その他':
                 nar = [c for c in cand if (c.get('setId') or '').lower() == mo
                        or (c.get('setId') or '').lower().startswith(mo + '-')]
                 if nar:
                     cand = nar
             cand = [c for c in cand if norm((c.get('name') or '').split(':')[0]) == base]
+        if not cand:
+            # 旧裏はDB側に番号が無い（店は {旧裏} や「1st2 002/048」と書く）ので名前で引く。
+            # 同じ名前が複数の弾にあるとき（リザードンLV.76は40万と65万）は
+            # 取り違えの害が大きいので、下の同点判定で捨てる
+            cand = by_old.get(base, [])
+            # 店が弾名を持っているなら、それで候補を絞れる
+            st = norm(re.sub(r'[（(].*', '', it.get('settitle') or '')).replace('…', '')
+            if cand and st and len(st) >= 3:
+                nar = [c for c in cand if st in norm(c.get('setName') or '')]
+                if nar:
+                    cand = nar
             if not cand:
-                stat['名前が合わない'] += 1
+                stat['DBに無い'] += 1
                 continue
-        want = variant_of(raw + rarity)
+        want = variant_of(raw + it.get('rarity', ''))
         # 「アンリミ」と書かれた商品を1ED版に当ててはいけない（値段が桁違いになる）
         unlim = 'アンリミ' in raw
         marked = 'マークあり' in raw or 'マーク有' in raw
@@ -210,8 +379,9 @@ def match(items, cards):
             stat['版の判断がつかない'] += 1
             continue
         c = scored[0][1]
-        stat['照合できた'] += 1
-        out.append({'pid': it['pid'], 'cond': cond, 'crPrice': it['price'],
+        stat['照合できた(' + it['shop'] + ')'] += 1
+        out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'],
+                    'cond': it['cond'], 'crPrice': it['price'],
                     'stock': it['stock'], 'soldout': it['soldout'], 'num': num,
                     'id': c['id'], 'name': c.get('name') or '',
                     'setName': c.get('setName') or '', 'series': c.get('series') or '',
@@ -222,27 +392,66 @@ def match(items, cards):
 
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
-        'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id']
+        'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
+        'shop', 'url']
+# 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
+# （スマホで毎回落とすファイルなので、数MB減るのは効く）
+IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
+TC_PROD = TC + '/products/'
+CR_PROD = 'https://www.cardrush-pokemon.jp/product/'
+
+
+def shrink(row):
+    i = COLS.index
+    img = row[i('img')] or ''
+    if img.startswith(IMG_BASE):
+        row[i('img')] = img[len(IMG_BASE):]
+    url = row[i('url')] or ''
+    if url.startswith(TC_PROD):
+        row[i('url')] = url[len(TC_PROD):]
+    elif url.startswith(CR_PROD):
+        row[i('url')] = ''
+    cid, hr = row[i('id')] or '', row[i('hr')] or ''
+    if hr and cid == 'hareruya2-' + hr:
+        row[i('id')] = ''
+    return row
 KEEP_SOLD_DAYS = 14        # 売れたものを何日ぶん残して見せるか
+MAX_RATIO = 1.3            # 相場よりこれ以上高いものは買い得リストに載せない
 
 
-def build(rows, prev):
+def build(rows, prev, ok_shops=None):
+    ok_shops = ok_shops if ok_shops is not None else {'CR', 'TC'}
     live = [r for r in rows if not r['soldout'] and r['price'] > 0 and r['crPrice'] > 0]
-    # 「安い」の基準は状態ごとの実勢から決める。
-    # 状態B/Cはそもそも相場より安いので、単純比較では全部が「安い」になってしまう
-    th = {}
-    for cond in ('状態B', '状態C', '状態D'):
-        rr = sorted(r['crPrice'] / r['price'] for r in live if r['cond'] == cond)
-        # 状態Dは母数が小さいので、実勢が取れないうちは状態Cの基準を借りる
-        if len(rr) < 30 and cond == '状態D' and 'C' in th:
-            th['D'] = dict(th['C'], borrowed=1)
+
+    # 「安い」の基準は店と状態ごとに決める。
+    # 状態B/Cはそもそも相場より安いので、店をまたいだ一律の線では意味がない
+    th, small = {}, []
+    for key in sorted({r['shop'] + r['cond'] for r in live}):
+        rr = sorted(r['crPrice'] / r['price'] for r in live
+                    if r['shop'] + r['cond'] == key)
+        if len(rr) < 30:
+            small.append(key)          # 母数が足りないものは後で同じ店の代表値を借りる
             continue
-        th[cond[-1]] = {'med': round(statistics.median(rr), 4) if rr else 0,
-                        'q25': round(rr[int(len(rr) * .25)], 4) if rr else 0}
-    # 同じカードに複数の出品があるので、いちばん安いものだけ残す
+        th[key] = {'med': round(statistics.median(rr), 4),
+                   'q25': round(rr[int(len(rr) * .25)], 4)}
+    for key in (prev.get('th') or {}):
+        if key[:2] not in ok_shops and key not in th:
+            th[key] = prev['th'][key]
+    for key in small:
+        shop = key[:2]
+        src = th.get(shop + 'C') or th.get(shop + 'A') or th.get(shop + 'B')
+        if src:
+            th[key] = dict(src, borrowed=1)
+        else:
+            th[key] = {'med': 1, 'q25': 0, 'borrowed': 1}
+
+    # 同じカード・同じ店・同じ状態の出品は、いちばん安いものだけ残す。
+    # 相場より明らかに高いものは買う対象にならないので載せない（ファイルも軽くなる）
     best = {}
     for r in live:
-        k = (r['id'], r['cond'])
+        if r['crPrice'] > r['price'] * MAX_RATIO:
+            continue
+        k = (r['id'], r['shop'], r['cond'])
         if k not in best or r['crPrice'] < best[k]['crPrice']:
             best[k] = r
     items = sorted(best.values(), key=lambda r: -(r['price'] - r['crPrice']))
@@ -260,50 +469,77 @@ def build(rows, prev):
             prev_live[pget(a, 'pid')] = a
 
     live_pids = {r['pid'] for r in live}
+    # 取得できなかった店のぶんは、前回の行をそのまま残す。
+    # ここで落とすと「まとめて売り切れた」ように見えてしまう
+    carried = []
+    for pid, a in list(prev_live.items()):
+        shop = pget(a, 'shop', '') or ('TC' if str(pid).startswith('tc') else 'CR')
+        if shop not in ok_shops:
+            row = [pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold')
+                        else '') for c in COLS]
+            row[COLS.index('new')] = 0
+            row[COLS.index('shop')] = shop
+            carried.append(row)
+            live_pids.add(pid)
+            del prev_live[pid]
+    if carried:
+        log('  取得できなかった店の %d件は前回のまま残しました' % len(carried))
     today = datetime.date.today().isoformat()
-    had_prev = bool(prev_live or prev_sold or prev.get('pids'))
-    fresh = {r['pid'] for r in items if had_prev and r['pid'] not in prev_live
+    # 前回そもそも扱っていなかった店は、全部「新着」になってしまうので印を付けない
+    prev_shops = {'TC' if p.startswith('tc') else 'CR' for p in list(prev_live) + [pget(a, 'pid', '') for a in prev_sold]}
+    fresh = {r['pid'] for r in items
+             if r['shop'] in prev_shops and r['pid'] not in prev_live
              and r['pid'] not in set(prev.get('pids') or [])}
 
-    rowsout = []
+    rowsout = list(carried)
     for r in items:
         handle = r['id'].split('-', 1)[1] if r['id'].startswith('hareruya2-') else ''
+        key = r['shop'] + r['cond']
         rowsout.append([
-            r['pid'], r['cond'][-1], r['name'], r['setName'], r['num'], r['series'],
-            r['image'], r['price'], r['crPrice'],
-            int(re.sub(r'\D', '', r['stock']) or 0), r['owned'],
-            1 if r['crPrice'] / r['price'] <= th[r['cond'][-1]]['q25'] else 0,
+            r['pid'], r['cond'], r['name'], r['setName'], r['num'], r['series'],
+            r['image'], r['price'], r['crPrice'], r['stock'], r['owned'],
+            1 if r['crPrice'] / r['price'] <= th[key]['q25'] else 0,
             1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
+            r['shop'], r['url'],
         ])
+        shrink(rowsout[-1])
 
     # 売れて消えたものは、前回の行をそのまま持ち越して「売れた」印を付ける。
     # 買おうとしていたものが無くなったのは見えたほうがいい
     limit = (datetime.date.today() - datetime.timedelta(days=KEEP_SOLD_DAYS)).isoformat()
     sold_now = 0
+    blank = lambda c: 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold') else ''
     for pid, a in prev_live.items():
         if pid in live_pids:
             continue
-        row = [pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold') else '')
-               for c in COLS]
+        row = [pget(a, c, blank(c)) for c in COLS]
         row[COLS.index('new')] = 0
         row[COLS.index('stock')] = 0
         row[COLS.index('sold')] = 1
         row[COLS.index('soldAt')] = today
+        if not row[COLS.index('shop')]:
+            row[COLS.index('shop')] = 'TC' if str(pid).startswith('tc') else 'CR'
+        if not row[COLS.index('url')]:
+            row[COLS.index('url')] = 'https://www.cardrush-pokemon.jp/product/' + str(pid)
         rowsout.append(row)
         sold_now += 1
     for a in prev_sold:
         when = pget(a, 'soldAt', '')
         if when and when >= limit:
-            rowsout.append([pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned',
-                                                  'cheap', 'new', 'sold') else '') for c in COLS])
+            rowsout.append([pget(a, c, blank(c)) for c in COLS])
 
+    byshop = collections.Counter(r['shop'] for r in items)
+    for a in carried:
+        byshop[a[COLS.index('shop')]] += 1
     return {
         'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
         'cols': COLS,
+        'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'id': 'hareruya2-'},
         'th': th,
-        'stats': {'listings': len(live), 'cards': len(items),
+        'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),
-                  'soldKept': sum(1 for a in rowsout if a[COLS.index('sold')])},
+                  'soldKept': sum(1 for a in rowsout if a[COLS.index('sold')]),
+                  'CR': byshop.get('CR', 0), 'TC': byshop.get('TC', 0)},
         'pids': sorted(live_pids),
         'items': rowsout,
     }
@@ -370,15 +606,17 @@ def main():
             prev = json.load(io.open(OUT, encoding='utf-8'))
         except Exception:
             pass
-    log('カードラッシュを取得中…')
-    items = scrape()
-    log('取得 %d件' % len(items))
+    log('お店の在庫を取得中…')
+    items, ok_shops = scrape()
+    log('取得 %d件（%s）' % (len(items), '／'.join(sorted(ok_shops)) or 'なし'))
+    if not ok_shops:
+        raise RuntimeError('どの店からも取得できませんでした')
     cards = load_db()
     log('DB %d件' % len(cards))
     rows, stat = match(items, cards)
     for k, v in stat.most_common():
         log('  %-14s %d' % (k, v))
-    data = build(rows, prev)
+    data = build(rows, prev, ok_shops)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     io.open(OUT, 'w', encoding='utf-8', newline='').write(
         json.dumps(data, ensure_ascii=False, separators=(',', ':')))
