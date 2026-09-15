@@ -260,7 +260,7 @@ def tc_scrape():
         cols += c
         time.sleep(.2)
     log('  トレカキャンプ コレクション %d件' % len(cols))
-    items = {}
+    items, miss = {}, 0
     for i, col in enumerate(cols):
         # 「#neo1_金、銀、新世界へ…」のような弾名。旧裏の絞り込みに使う
         settitle = (col.get('title') or '').split('/')[0].strip()
@@ -268,6 +268,14 @@ def tc_scrape():
             d = tc_json('/collections/%s/products.json?limit=250&page=%d'
                         % (urllib.parse.quote(col.get('handle') or '', safe=''), page))
             ps = d.get('products') or []
+            if not d:
+                # 429で弾かれ続けている。粘ると余計に閉じられるので早めに諦める
+                miss += 1
+                if miss >= 5:
+                    log('  トレカキャンプに繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
             if not ps:
                 break
             for p in ps:
