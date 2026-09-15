@@ -203,6 +203,11 @@ def match(items, cards):
 
 
 # ── 3. まとめてJSONに ─────────────────────────────────
+COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
+        'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr']
+KEEP_SOLD_DAYS = 14        # 売れたものを何日ぶん残して見せるか
+
+
 def build(rows, prev):
     live = [r for r in rows if not r['soldout'] and r['price'] > 0 and r['crPrice'] > 0]
     # 「安い」の基準は状態ごとの実勢から決める。
@@ -220,32 +225,64 @@ def build(rows, prev):
             best[k] = r
     items = sorted(best.values(), key=lambda r: -(r['price'] - r['crPrice']))
 
-    seen_before = set(prev.get('pids') or [])
-    first = {str(k): v for k, v in (prev.get('first') or {}).items()}
+    # 前回の一覧を、列名で引ける形に戻す（列が増えても読めるように名前で対応づける）
+    pcol = {c: i for i, c in enumerate(prev.get('cols') or [])}
+    def pget(a, key, dflt=''):
+        i = pcol.get(key)
+        return a[i] if i is not None and i < len(a) else dflt
+    prev_live, prev_sold = {}, []
+    for a in (prev.get('items') or []):
+        if pget(a, 'sold', 0):
+            prev_sold.append(a)
+        else:
+            prev_live[pget(a, 'pid')] = a
+
+    live_pids = {r['pid'] for r in live}
     today = datetime.date.today().isoformat()
-    for r in items:
-        first.setdefault(r['pid'], today if seen_before else '')
-    gone = len(seen_before - {r['pid'] for r in live}) if seen_before else 0
-    fresh = [r['pid'] for r in items if seen_before and r['pid'] not in seen_before]
+    had_prev = bool(prev_live or prev_sold or prev.get('pids'))
+    fresh = {r['pid'] for r in items if had_prev and r['pid'] not in prev_live
+             and r['pid'] not in set(prev.get('pids') or [])}
 
     rowsout = []
     for r in items:
+        handle = r['id'].split('-', 1)[1] if r['id'].startswith('hareruya2-') else ''
         rowsout.append([
             r['pid'], r['cond'][-1], r['name'], r['setName'], r['num'], r['series'],
             r['image'], r['price'], r['crPrice'],
             int(re.sub(r'\D', '', r['stock']) or 0), r['owned'],
             1 if r['crPrice'] / r['price'] <= th[r['cond'][-1]]['q25'] else 0,
-            1 if r['pid'] in fresh else 0,
+            1 if r['pid'] in fresh else 0, 0, '', handle,
         ])
+
+    # 売れて消えたものは、前回の行をそのまま持ち越して「売れた」印を付ける。
+    # 買おうとしていたものが無くなったのは見えたほうがいい
+    limit = (datetime.date.today() - datetime.timedelta(days=KEEP_SOLD_DAYS)).isoformat()
+    sold_now = 0
+    for pid, a in prev_live.items():
+        if pid in live_pids:
+            continue
+        row = [pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold') else '')
+               for c in COLS]
+        row[COLS.index('new')] = 0
+        row[COLS.index('stock')] = 0
+        row[COLS.index('sold')] = 1
+        row[COLS.index('soldAt')] = today
+        rowsout.append(row)
+        sold_now += 1
+    for a in prev_sold:
+        when = pget(a, 'soldAt', '')
+        if when and when >= limit:
+            rowsout.append([pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned',
+                                                  'cheap', 'new', 'sold') else '') for c in COLS])
+
     return {
         'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
-        'cols': ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
-                 'price', 'cr', 'stock', 'owned', 'cheap', 'new'],
+        'cols': COLS,
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items),
-                  'sold': gone, 'added': len(fresh)},
-        'pids': sorted({r['pid'] for r in live}),
-        'first': first,
+                  'sold': sold_now, 'added': len(fresh),
+                  'soldKept': sum(1 for a in rowsout if a[COLS.index('sold')])},
+        'pids': sorted(live_pids),
         'items': rowsout,
     }
 

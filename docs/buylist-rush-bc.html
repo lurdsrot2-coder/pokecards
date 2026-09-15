@@ -31,6 +31,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  font-size:11px;padding:5px 10px;cursor:pointer}
 .tg.on{background:rgba(0,245,255,.22);border-color:var(--cy);color:#fff;font-weight:700}
 .tg.on.own{background:rgba(255,0,255,.22);border-color:var(--pk)}
+.tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
 .hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
 table{width:100%;border-collapse:collapse}
 th{position:sticky;top:0;background:#141433;font-size:11px;color:var(--sub);text-align:left;
@@ -47,6 +48,36 @@ tr:hover{background:rgba(0,245,255,.06)}
 .tagnew{display:inline-block;background:var(--gr);color:#06210f;font-size:9px;font-weight:900;
  border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:1px}
 .se{font-size:11px;color:#b9b9e0;white-space:nowrap}
+.shops{margin-left:8px;white-space:nowrap}
+.shops a{display:inline-block;font-size:9.5px;font-weight:700;border-radius:3px;padding:0 5px;
+ margin-right:4px;text-decoration:none;border:1px solid}
+.shops a.cr{color:var(--gr);border-color:rgba(0,229,149,.45)}
+.shops a.cr:hover{background:rgba(0,229,149,.18)}
+.shops a.hr{color:var(--gd);border-color:rgba(255,230,0,.4)}
+.shops a.hr:hover{background:rgba(255,230,0,.15)}
+tr.gone{opacity:.5}
+tr.gone .cr,tr.gone .sv{color:var(--sub)}
+.soldat{color:var(--rd);font-weight:700}
+/* シリーズの複数選択。selectだと1つしか選べないので自前のパネルを出す */
+.serbtn{background:#0a0a20;border:1px solid var(--bd);border-radius:4px;color:var(--tx);
+ font-size:12px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
+#serpanel{position:fixed;z-index:20;display:none;flex-direction:column;background:#0a0a20;
+ border:1px solid rgba(255,0,255,.5);border-radius:6px;box-shadow:0 12px 34px rgba(0,0,0,.65);
+ max-height:min(62vh,440px);overflow:hidden;min-width:250px}
+#serpanel.open{display:flex}
+#serpanel .sp-hd{display:flex;align-items:center;gap:6px;padding:6px 8px;flex-shrink:0;
+ border-bottom:1px solid rgba(255,0,255,.28);font-size:10px;font-weight:700;color:#ff88ff}
+#serpanel .sp-hd span{margin-right:auto}
+#serpanel .sp-hd button{background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:4px;
+ color:rgba(255,255,255,.7);font-size:10px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+#serpanel .sp-list{overflow-y:auto;overscroll-behavior:contain}
+#serpanel .sp-it{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:11px;
+ cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);user-select:none}
+#serpanel .sp-it:hover{background:rgba(255,0,255,.12)}
+#serpanel .sp-it.sel{background:rgba(255,0,255,.18);color:#ff88ff;font-weight:700}
+#serpanel .sp-ck{flex:0 0 12px;text-align:center;color:#ff88ff}
+#serpanel .sp-n{margin-left:auto;color:var(--sub);font-size:10px;font-weight:400}
 .cond{text-align:center;font-weight:900;width:28px}
 .cond.B{color:var(--gd)}.cond.C{color:var(--rd)}
 .ow{text-align:center;width:34px;font-weight:700;color:#3a3a55}
@@ -75,12 +106,13 @@ tr:hover{background:rgba(0,245,255,.06)}
 <div class="meta" id="meta">読み込み中…</div>
 <div class="ctl">
  <button class="tg on" id="f-cheap">割安のみ</button>
- <button class="tg" id="f-new">新着のみ</button>
+ <button class="tg" id="f-new">新着</button>
+ <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
  <button class="tg" data-o="0">未所持</button>
  <button class="tg own" data-o="1">所持</button>
- <select id="f-ser"><option value="">全シリーズ</option></select>
+ <button class="serbtn" id="f-ser">シリーズ ▾</button>
  <span class="rng"><span>ラッシュ</span>
   <input type="number" id="f-lo" placeholder="下限" min="0" inputmode="numeric">
   <span>〜</span>
@@ -91,6 +123,9 @@ tr:hover{background:rgba(0,245,255,.06)}
  <input type="search" id="q" placeholder="カード名で絞る">
  <span class="hit" id="hit"></span>
 </div></header>
+<div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
+ <button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
+<div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
 <table id="tbl" hidden><thead><tr>
 <th></th><th data-k="name">カード</th><th data-k="ser">シリーズ</th><th data-k="cond">状態</th>
@@ -106,7 +141,7 @@ tr:hover{background:rgba(0,245,255,.06)}
 </div>
 <script>
 const SRC='buylist-rush-bc.json';
-let DATA=null, rows=[], st={cheap:1,new:0,cond:'',own:'',ser:'',lo:null,hi:null,min:0,q:''},
+let DATA=null, rows=[], st={cheap:1,flag:'',cond:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:''},
     sortK='save', sortD=-1;
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -117,25 +152,33 @@ function toRows(d){
     const price=a[i.price], cr=a[i.cr];
     return {pid:a[i.pid],cond:a[i.cond],name:a[i.name],set:a[i.set],num:a[i.num],ser:a[i.ser]||'—',
       img:a[i.img],price:price,cr:cr,stock:a[i.stock],owned:a[i.owned],
-      cheap:a[i.cheap],isnew:a[i.new],ratio:price?cr/price:0,save:price-cr};
+      cheap:a[i.cheap],isnew:a[i.new],sold:i.sold==null?0:a[i.sold],
+      soldAt:i.soldAt==null?'':a[i.soldAt],hr:i.hr==null?'':a[i.hr],
+      ratio:price?cr/price:0,save:price-cr};
   });
 }
 function render(list){
   const h=[];
   for(const r of list){
     const pc=Math.round(r.ratio*100);
-    h.push('<tr><td class="im">'+(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'')+'</td>'
+    h.push('<tr'+(r.sold?' class="gone"':'')+'><td class="im">'+(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'')+'</td>'
       +'<td class="nm"><a href="https://www.cardrush-pokemon.jp/product/'+esc(r.pid)+'" target="_blank" rel="noopener">'
       +esc(r.name)+'</a>'+(r.isnew?'<span class="tagnew">NEW</span>':'')
       +'<div class="sub">'+esc(r.set)+'<span class="num">'+esc(r.num)+'</span>'
-      +'<span class="mo">相場'+yen(r.price)+'</span></div></td>'
+      +'<span class="mo">相場'+yen(r.price)+'</span>'
+      +'<span class="shops"><a class="cr" target="_blank" rel="noopener" '
+      +'href="https://www.cardrush-pokemon.jp/product/'+esc(r.pid)+'">ラッシュ</a>'
+      +(r.hr?'<a class="hr" target="_blank" rel="noopener" '
+        +'href="https://www.hareruya2.com/products/'+esc(r.hr)+'">晴れる屋2</a>':'')
+      +'</span></div></td>'
       +'<td class="se">'+esc(r.ser)+'</td>'
       +'<td class="cond '+r.cond+'">'+r.cond+'</td>'
       +'<td class="ow'+(r.owned>0?' has':'')+'">'+(r.owned>0?r.owned:'–')+'</td>'
       +'<td class="n pr">'+yen(r.price)+'</td><td class="n cr">'+yen(r.cr)+'</td>'
       +'<td class="n pc"><span class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></span>'+pc+'%</td>'
       +'<td class="n sv">'+yen(r.save)+'</td>'
-      +'<td class="st">'+(r.stock?r.stock+'枚':'—')+'</td></tr>');
+      +'<td class="st">'+(r.sold?'<span class="soldat">売切 '+esc((r.soldAt||'').slice(5))+'</span>'
+                                 :(r.stock?r.stock+'枚':'—'))+'</td></tr>');
   }
   document.getElementById('tb').innerHTML=h.join('');
   document.getElementById('hit').textContent=list.length.toLocaleString()+'件';
@@ -144,10 +187,10 @@ function apply(){
   const q=st.q;
   let list=rows.filter(r=>
        (!st.cheap || r.cheap)
-    && (!st.new   || r.isnew)
+    && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
     && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
-    && (!st.ser   || r.ser===st.ser)
+    && (!st.ser.size || st.ser.has(r.ser))
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
@@ -182,9 +225,8 @@ function show(d){
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
     +'<br>相場＝アプリ内の時価（晴れる屋2の販売価格）。状態Bは相場の<b>'+B+'%</b>、状態Cは<b>'+C+'%</b>が実勢の中央値なので、'
     +'それより明確に安い（B:'+bq+'%以下 / C:'+cq+'%以下）ものを「割安」としています。';
-  const sel=document.getElementById('f-ser');
-  const sers=[...new Set(rows.map(r=>r.ser))].sort((a,b)=>a.localeCompare(b,'ja'));
-  sel.innerHTML='<option value="">全シリーズ</option>'+sers.map(s=>'<option>'+esc(s)+'</option>').join('');
+  [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
+  serSync();
   document.getElementById('msg').hidden=true;
   document.getElementById('tbl').hidden=false;
   sortK=''; sortD=-1; sort('save');   // 差額の大きい順から見せる
@@ -204,7 +246,13 @@ async function load(force){
 }
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
-document.getElementById('f-new').onclick=function(){st.new=st.new?0:1;this.classList.toggle('on',!!st.new);apply();};
+// 新着 / 売れた は排他。どちらもOFFのときは在庫のあるものだけ出す
+document.querySelectorAll('#f-new,#f-sold').forEach(b=>b.onclick=function(){
+  const k=this.id==='f-new'?'new':'sold';
+  st.flag = st.flag===k ? '' : k;
+  document.querySelectorAll('#f-new,#f-sold').forEach(x=>x.classList.remove('on'));
+  if(st.flag)this.classList.add('on');
+  apply();});
 document.querySelectorAll('.tg[data-c]').forEach(b=>b.onclick=function(){
   const on=st.cond===this.dataset.c; st.cond=on?'':this.dataset.c;
   document.querySelectorAll('.tg[data-c]').forEach(x=>x.classList.remove('on'));
@@ -213,7 +261,46 @@ document.querySelectorAll('.tg[data-o]').forEach(b=>b.onclick=function(){
   const on=st.own===this.dataset.o; st.own=on?'':this.dataset.o;
   document.querySelectorAll('.tg[data-o]').forEach(x=>x.classList.remove('on'));
   if(!on)this.classList.add('on'); apply();});
-document.getElementById('f-ser').onchange=function(){st.ser=this.value;apply();};
+// シリーズは複数選択。選ぶたびに閉じないパネルを出す
+const serBtn=document.getElementById('f-ser'), serPanel=document.getElementById('serpanel'),
+      serList=document.getElementById('sp-list');
+let serOpen=false;
+function serPlace(){
+  const b=serBtn.getBoundingClientRect();
+  const w=Math.min(Math.max(b.width,250), innerWidth-16);
+  serPanel.style.left=Math.max(8,Math.min(b.left, innerWidth-8-w))+'px';
+  serPanel.style.top=(b.bottom+4)+'px';
+  serPanel.style.width=w+'px';
+}
+function serSync(){
+  const cnt={};
+  for(const r of rows) cnt[r.ser]=(cnt[r.ser]||0)+1;
+  serList.innerHTML=[...new Set(rows.map(r=>r.ser))].sort((a,b)=>a.localeCompare(b,'ja'))
+    .map(v=>'<div class="sp-it'+(st.ser.has(v)?' sel':'')+'" data-v="'+esc(v)+'">'
+      +'<span class="sp-ck">'+(st.ser.has(v)?'✓':'')+'</span>'+esc(v)
+      +'<span class="sp-n">'+cnt[v]+'</span></div>').join('');
+  serBtn.textContent = st.ser.size ? 'シリーズ '+st.ser.size+'件 ▾' : 'シリーズ ▾';
+  serBtn.classList.toggle('on', st.ser.size>0);
+}
+function serShow(v){
+  serOpen = v===undefined ? !serOpen : v;
+  serPanel.classList.toggle('open',serOpen);
+  if(serOpen){ serPlace(); serSync(); }
+}
+serBtn.onclick=e=>{e.stopPropagation();serShow();};
+serPanel.onclick=e=>{
+  e.stopPropagation();
+  if(e.target.id==='sp-cls'){serShow(false);return;}
+  if(e.target.id==='sp-clr'){st.ser.clear();serSync();apply();return;}
+  const it=e.target.closest('.sp-it'); if(!it)return;
+  const v=it.dataset.v;
+  st.ser.has(v)?st.ser.delete(v):st.ser.add(v);
+  serSync(); apply();          // パネルは閉じない
+};
+addEventListener('pointerdown',e=>{ if(serOpen && !serPanel.contains(e.target) && e.target!==serBtn) serShow(false); },true);
+addEventListener('keydown',e=>{ if(serOpen && e.key==='Escape') serShow(false); });
+addEventListener('scroll',()=>{ if(serOpen) serPlace(); },true);
+addEventListener('resize',()=>{ if(serOpen) serPlace(); });
 document.getElementById('f-min').onchange=function(){st.min=+this.value;apply();};
 const num=v=>v===''||isNaN(+v)?null:+v;
 document.getElementById('f-lo').oninput=function(){st.lo=num(this.value);apply();};
