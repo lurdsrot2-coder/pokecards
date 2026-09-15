@@ -5325,12 +5325,16 @@ async function dailyAutoRefresh(){
     const last=+localStorage.getItem('pc_autoReprice')||0;
     if(Date.now()-last<20*3600*1000)return;
     const today=_today();
-    const tracked=db.cards.filter(c=>isTracked(c)&&c.priceHandle&&c.priceUpdatedAt!==today);
+    // 所持しているカードを古い順に。全部を毎日は取れないので1日ぶんだけ進める
+    // （以前は購入記録のあるカードだけで、実質ほとんど更新されていなかった）
+    const tracked=_repriceOrder(db.cards.filter(c=>
+      (c.owned||0)>0 && c.id.startsWith('hareruya2-') && c.priceUpdatedAt!==today)).slice(0,3000);
     localStorage.setItem('pc_autoReprice',String(Date.now()));
     if(!tracked.length)return;
     let done=0,changed=0;
     _setSyncStatus('syncing',`時価更新中 0/${tracked.length}`);
-    await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;if(done%4===0)_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);},5);
+    await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;
+      if(done%20===0){_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);saveDbDebounced();}},3);
     if(changed){saveDb();renderStats();renderCards({keepSet:true});}
     _setSyncStatus('synced',`時価更新 ${changed}件`);
   }catch(e){console.warn('autoReprice',e);}
@@ -5475,27 +5479,38 @@ async function _drainFixQ(){
   _fixRunning=false;
   if(fixed)_saveLocalOnly();   // 端末内にだけ保存（同期は起こさない）
 }
+// 古い順に並べる。所持しているカードを先に直す（見ている数字がまず正しくなるように）
+function _repriceOrder(list){
+  return list.slice().sort((a,b)=>{
+    const ao=(a.owned||0)>0?0:1, bo=(b.owned||0)>0?0:1;
+    if(ao!==bo)return ao-bo;
+    return String(a.priceUpdatedAt||'').localeCompare(String(b.priceUpdatedAt||''));
+  });
+}
 async function refreshAllOwned(){
-  const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-') && (c.image||''));
-  if(!hare.length){alert('対象カードがありません。');return;}
-  // ── ① 絞り込み（通信なし・一瞬）: ランダムハッシュ名の画像＝リンク切れの可能性が高いカードだけを対象に ──
-  const dead=hare.filter(c=>!_looksLikeStructuredImg(c.image));
-  if(!dead.length){alert('修復が必要そうなリンク切れ画像は見つかりませんでした。');return;}
-  if(!confirm(`リンク切れの可能性がある画像 ${dead.length}件 を晴れる屋2から修復します。\n数分かかることがあります。実行しますか？`))return;
   const today=_today();
-  // 今画面に出しているカードを先に直す（見ているところから埋まっていくように）
-  try{
-    const vis=new Set(filtered().map(c=>c.id));
-    if(vis.size)dead.sort((a,b)=>(vis.has(b.id)?1:0)-(vis.has(a.id)?1:0));
-  }catch(e){}
+  // 晴れる屋2から取れるカード全部が対象。
+  // 以前は「画像が壊れていそうなもの」だけを見ていたので、画像が直ったあとは
+  // 時価がいつまでも古いままになっていた（7月のまま、が大量に残っていた原因）
+  const hare=db.cards.filter(c=>c.id.startsWith('hareruya2-'));
+  if(!hare.length){alert('対象カードがありません。');return;}
+  const dead=_repriceOrder(hare.filter(c=>c.priceUpdatedAt!==today));
+  if(!dead.length){alert('時価は今日すべて更新済みです。');return;}
+  const ownedN=dead.filter(c=>(c.owned||0)>0).length;
+  const oldest=dead.map(c=>c.priceUpdatedAt||'').filter(Boolean).sort()[0]||'不明';
+  if(!confirm('晴れる屋2から時価を取り直します。\n\n'
+    +'対象 '+dead.length+'件（うち所持 '+ownedN+'件 ／ いちばん古い記録は '+oldest+'）\n'
+    +'所持しているカードから、古い順に更新します。\n'
+    +'全部だと20〜40分ほどかかります。途中で「停止」を押しても、そこまでは保存されます。\n\n'
+    +'実行しますか？'))return;
   // ── ② 修復（handle=数値ID なので /products/<ID>.json を直接取得・プロキシ不要） ──
   let imgFixed=0,priceUpd=0,gone=0,done=0;
   let miss=0;          // 直近の連続失敗数（Cloudflareに弾かれ始めたサイン）
   _repairAbort=false;
   const failed=[]; // 一時的な通信失敗で取得できなかったカード（廃番=404は含めない）
-  _progShow('画像修復中...');
+  _progShow('時価更新中...');
   _progStopBtn(true);
-  _setSyncStatus('syncing',`画像修復 0/${dead.length}`);
+  _setSyncStatus('syncing',`時価更新 0/${dead.length}`);
   const repairOne=async c=>{
     if(_repairAbort)return;
     const id=c.id.slice(10);
@@ -5524,8 +5539,11 @@ async function refreshAllOwned(){
     if(_repairAbort)return;   // 中断後は残りを数えない（件数表示が実態とずれるため）
     await repairOne(c);
     done++;
-    if(done%5===0){_setSyncStatus('syncing',`画像修復 ${done}/${dead.length} (直した${imgFixed})`);_progSet(done,dead.length,'画像修復中');}
-    if(done%60===0){saveDb();}   // 全再描画すると操作中のタップが外れるので画像は個別に差し替え済み
+    if(done%5===0){_setSyncStatus('syncing',`時価更新 ${done}/${dead.length} (${priceUpd}件)`);_progSet(done,dead.length,'時価更新中');}
+    // 途中経過は端末内にだけ保存する。ここで saveDb() を呼ぶと2.5秒ごとに
+    // GitHubへの全体送信(16MB)が走ってしまう（8月に全体送信が1,930回あった原因）。
+    // クラウドへは最後に1回だけ送る
+    if(done%60===0){_saveLocalOnly();}
   }, 3);   // 同時3件。増やすとCloudflareに弾かれて、かえって遅くなる
   // 一時的な通信失敗ぶんを最後にもう一度だけ再挑戦
   if(failed.length && !_repairAbort){
@@ -5536,16 +5554,16 @@ async function refreshAllOwned(){
   }
   _progStopBtn(false);
   saveDb();renderAllKeepView();
-  _setSyncStatus('synced',`画像修復 ${imgFixed}件`);
+  _setSyncStatus('synced',`時価更新 ${priceUpd}件`);
   if(_repairAbort){
     _repairAbort=false;
-    _progDone(`■ 中断：${imgFixed}件まで修復（保存済み）`);
-    alert(`中断しました。${done}/${dead.length}件まで処理し、${imgFixed}件の画像を修復しています（保存済みです）。
-もう一度実行すると、まだ直っていないぶんから続きます。`);
+    _progDone(`■ 中断：時価${priceUpd}件まで更新（保存済み）`);
+    alert(`中断しました。${done}/${dead.length}件まで処理し、時価 ${priceUpd}件・画像 ${imgFixed}件を更新しています（保存済みです）。
+もう一度実行すると、まだ古いぶんから続きます。`);
     return;
   }
-  _progDone(`✅ 完了：${imgFixed}件修復${gone?` / ${gone}件は廃番`:''}`);
-  alert(`リンク切れ ${dead.length}件のうち、${imgFixed}件の画像を修復しました。\n時価 ${priceUpd}件 更新。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}${failed.length?`\n${failed.length}件は通信エラーが続き取得できませんでした。もう一度「時価更新」を実行してみてください。`:''}`);
+  _progDone(`✅ 完了：時価${priceUpd}件更新${imgFixed?` / 画像${imgFixed}件`:''}`);
+  alert(`時価を ${priceUpd}件 更新しました（対象 ${dead.length}件）。\n画像もあわせて ${imgFixed}件 直しています。\n${gone?`${gone}件は廃番/在庫消滅のため取得できませんでした（🃏のまま）。`:''}${failed.length?`\n${failed.length}件は通信エラーが続き取得できませんでした。もう一度実行すると、その分から再開します。`:''}`);
 }
 /* ---- 値動きグラフ（純SVG・依存なし） ---- */
 function _chartSVG(points,opt){
