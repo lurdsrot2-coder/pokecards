@@ -451,19 +451,46 @@ def db_variant(suffix):
     return v
 
 
+def _fetch_raw(sha, name):
+    url = 'https://raw.githubusercontent.com/%s/%s/%s/%s' % (OWNER, REPO, sha, name)
+    r = urllib.request.Request(url, headers={'User-Agent': UA})
+    return json.loads(urllib.request.urlopen(r, timeout=180).read())
+
+
 def load_db():
-    """data.json に delta.json を重ねた、いま画面に出ているのと同じ状態"""
-    full = json.load(io.open(os.path.join(HERE, 'data.json'), encoding='utf-8'))
-    cards = {c['id']: c for c in full.get('cards', [])}
+    """data.json に delta.json を重ねた、アプリに出ているのと同じ状態。
+
+    GitHub から取る。手元の作業ツリーのファイルは git pull したときしか
+    新しくならないので、そこを見ていると時価更新や＋1が何日も反映されない
+    （相場が古いままだったのはこれが原因）。取れないときだけ手元を使う。
+    """
+    full = delta = None
     try:
-        delta = json.load(io.open(os.path.join(HERE, 'delta.json'), encoding='utf-8'))
-        for cid, card in (delta.get('ops') or {}).items():
-            if card is None:
-                cards.pop(cid, None)
-            else:
-                cards[cid] = card
+        ref = json.loads(urllib.request.urlopen(urllib.request.Request(
+            'https://api.github.com/repos/%s/%s/git/ref/heads/main' % (OWNER, REPO),
+            headers={'User-Agent': UA}), timeout=60).read())
+        sha = ref['object']['sha']
+        full = _fetch_raw(sha, 'data.json')
+        try:
+            delta = _fetch_raw(sha, 'delta.json')
+        except Exception:
+            delta = None
+        log('  DBはGitHubの %s から読みました' % sha[:7])
     except Exception as e:
-        log('delta.json を読めませんでした（data.json だけで続けます）: %s' % e)
+        log('  GitHubからDBを取れませんでした（手元のファイルを使います）: %s' % e)
+    if full is None:
+        full = json.load(io.open(os.path.join(HERE, 'data.json'), encoding='utf-8'))
+        try:
+            delta = json.load(io.open(os.path.join(HERE, 'delta.json'), encoding='utf-8'))
+        except Exception as e:
+            log('delta.json を読めませんでした（data.json だけで続けます）: %s' % e)
+            delta = None
+    cards = {c['id']: c for c in full.get('cards', [])}
+    for cid, card in ((delta or {}).get('ops') or {}).items():
+        if card is None:
+            cards.pop(cid, None)
+        else:
+            cards[cid] = card
     return cards
 
 
@@ -872,16 +899,16 @@ def sync_only():
         t = th.get((a[ix['shop']] or 'CR') + a[ix['cond']])
         a[ix['cheap']] = 1 if (t and a[ix['cr']] / a[ix['price']] <= t['q25']) else 0
         cheap += a[ix['cheap']]
+    if not (changed_p or changed_o):
+        log('DB同期: 変わりなし（割安%d件）' % cheap)
+        return 0
     data['th'] = th
     data['syncedAt'] = datetime.datetime.now().isoformat(timespec='seconds')
     io.open(OUT, 'w', encoding='utf-8', newline='').write(
         json.dumps(data, ensure_ascii=False, separators=(',', ':')))
     log('DB同期: 相場%d件・所持%d件を更新／割安%d件' % (changed_p, changed_o, cheap))
     if '--no-push' not in sys.argv:
-        if changed_p or changed_o:
-            log('push: ' + ('OK' if push(OUT) else '失敗'))
-        else:
-            log('変更なし')
+        log('push: ' + ('OK' if push(OUT) else '失敗'))
     return 0
 
 
