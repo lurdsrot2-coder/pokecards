@@ -180,13 +180,29 @@ def _backoff(e, i):
 
 
 def tc_json(path, tries=4):
+    """トレカキャンプは curl で取る。
+
+    PythonのurllibだとTLSの指紋で弾かれるらしく、同じURL・同じヘッダでも
+    curlは200、urllibは429を返し続ける（時間をあけても変わらない）。
+    Windows標準の curl.exe を使えば普通に取れる。
+    """
+    url = TC + path
     for i in range(tries):
         try:
-            r = urllib.request.Request(TC + path, headers={'User-Agent': UA, 'Accept': 'application/json'})
-            return json.loads(urllib.request.urlopen(r, timeout=90).read())
+            r = subprocess.run(
+                ['curl', '-sS', '--compressed', '-m', '90', '-w', '\n%{http_code}',
+                 '-A', UA, '-H', 'Accept: application/json', url],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            out = r.stdout.decode('utf-8', 'replace')
+            code = out.rsplit('\n', 1)[-1].strip()
+            body = out.rsplit('\n', 1)[0]
+            if code == '200' and body.strip():
+                return json.loads(body)
+            log('  retry %d: HTTP %s' % (i + 1, code or '?'))
+            time.sleep(max(20 * (i + 1), 20) if code in ('429', '403', '503') else 3)
         except Exception as e:
             log('  retry %d: %s' % (i + 1, e))
-            _backoff(e, i)
+            time.sleep(3 + i * 3)
     return {}
 
 
@@ -254,13 +270,18 @@ def tc_scrape():
     """products.json は100ページ（2.5万件）で頭打ちになるので、
     収録弾ごとのコレクションを1つずつたどる"""
     cols = []
-    for page in range(1, 6):
-        d = tc_json('/collections.json?limit=250&page=%d' % page)
-        c = d.get('collections') or []
-        if not c:
+    for attempt in range(2):
+        for page in range(1, 6):
+            d = tc_json('/collections.json?limit=250&page=%d' % page)
+            c = d.get('collections') or []
+            if not c:
+                break
+            cols += c
+            time.sleep(.5)
+        if cols:
             break
-        cols += c
-        time.sleep(.2)
+        log('  トレカキャンプの一覧が取れないので60秒待ちます')
+        time.sleep(60)
     log('  トレカキャンプ コレクション %d件' % len(cols))
     items, miss = {}, 0
     for i, col in enumerate(cols):
@@ -288,10 +309,10 @@ def tc_scrape():
                     items[p['id']] = it
             if len(ps) < 250:
                 break
-            time.sleep(.5)
+            time.sleep(1.0)
         if (i + 1) % 100 == 0:
             log('  トレカキャンプ %d/%d コレクション 累計%d件' % (i + 1, len(cols), len(items)))
-        time.sleep(.4)
+        time.sleep(.8)
     log('  トレカキャンプ %d件' % len(items))
     return list(items.values())
 
@@ -499,6 +520,19 @@ def load_db():
 OLD_CODE = re.compile(r'^(1st|neo|旧|gym|opg|pmcg|vending)', re.I)
 
 
+# 「PROMO」「その他」のように、どの弾か分からない書き方。収録弾の照合には使えない
+GENERIC_CODE = {'promo', 'pr', 'p', 'その他', 'other', 'sp', 'etc', ''}
+
+
+def _code_usable(code, num):
+    code = (code or '').strip().lower()
+    if code in GENERIC_CODE:
+        return False
+    # 「112/BW-P」のように番号の分母が弾名そのものなら、番号だけで十分決まる
+    tail = (num or '').split('/')[-1]
+    return tail.isdigit()
+
+
 def _code_ok(code, setid):
     """店の収録記号とDBのsetIdが同じ弾を指していそうか。
     ADV1↔ad1 のように書き方が違うだけのことが多いので、頭2文字まで見る"""
@@ -568,7 +602,7 @@ def match(items, cards):
             # 店が弾を名乗っているのに、DB側がまるで別の弾しか持っていないときは捨てる。
             # 番号と名前だけで当てると、同じ番号を使う別の弾のカードに化ける
             # （エンテイ PRE2 002/009 が「ポケパーク」の5万円に化けるたぐい）
-            if cand and mo and mo != 'その他' and not _is_old_back(it):
+            if cand and _code_usable(mo, num) and not _is_old_back(it):
                 keep = [c for c in cand if _code_ok(mo, c.get('setId'))]
                 if not keep:
                     stat['収録弾が合わない'] += 1
@@ -622,7 +656,9 @@ def match(items, cards):
         # 店が収録弾を書いていない商品（カードラッシュの「その他」）は、
         # 同じ番号・同じ名前の別の弾かもしれない。あとで印を出すために残す
         code = (it.get('setcode') or '').strip()
-        sure = 1 if (code and code != 'その他' and _code_ok(code, c.get('setId'))) else 0
+        # 番号の分母が弾名（112/BW-P）なら、記号が無くても弾は確定している
+        sure = 1 if ((_code_usable(code, num) and _code_ok(code, c.get('setId')))
+                     or not (num or '').split('/')[-1].isdigit()) else 0
         out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'], 'sure': sure,
                     'vid': it.get('vid', ''),
                     'cond': it['cond'], 'crPrice': it['price'],
