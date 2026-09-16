@@ -1189,6 +1189,8 @@ function _clearPending(){
   if(!Object.keys(_pendingEdits).length)return;
   _pendingEdits={};
   _idbPutPending();
+  // 保存済みの控えを残すと、あとで −1 した値を古い値で上書きしてしまう
+  try{ localStorage.removeItem('pokecards_pending_v1'); }catch(e){}
 }
 function saveDb(){
   db.lastUpdated=new Date().toISOString();
@@ -1203,12 +1205,19 @@ function saveDbDebounced(){
   clearTimeout(_saveTimer);
   _saveTimer=setTimeout(()=>{_saveTimer=null;_doSave();_clearPending();_scheduleGistSave();},400);
 }
-// タブを閉じる前: IndexedDB + localStorage 両方に保存
+// タブを閉じる前: IndexedDB に保存し、まだ送っていない編集を localStorage にも控える
+const SK_PEND='pokecards_pending_v1';
 window.addEventListener('beforeunload',()=>{
   clearTimeout(_saveTimer);
   _idbPut(db);
-  // localStorage にも素のJSONを緊急バックアップ（圧縮なし＝高速）
-  try{localStorage.setItem(SK,JSON.stringify(db));localStorage.removeItem(SK_LZ);}catch(e){}
+  // 以前はDB全体(16MB)を localStorage に入れようとしていたが、
+  // localStorage の上限は5MBなので毎回黙って失敗していた（緊急バックアップが無い状態）。
+  // 本当に失いたくないのは「まだ保存/送信できていない編集」だけなので、そこだけ控える
+  try{
+    const n=Object.keys(_pendingEdits||{}).length;
+    if(n) localStorage.setItem(SK_PEND,JSON.stringify(_pendingEdits));
+    else localStorage.removeItem(SK_PEND);
+  }catch(e){}
 });
 function getCard(id){return db.cards.find(c=>c.id===id)}
 function upsertCard(c){
@@ -5668,7 +5677,14 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
   _baseDb=await _idbGetBase();   // 前回同期時点の基準を復元（マージ用）
   // 保存が間に合わずタブを閉じた分を復元する
-  const pend=await _idbGetPending();
+  let pend=await _idbGetPending();
+  // IndexedDBのジャーナルが取れなかったときは、localStorage の控えを使う
+  if(!pend || !Object.keys(pend).length){
+    try{
+      const raw=localStorage.getItem(SK_PEND);
+      if(raw){ const j=JSON.parse(raw); if(j && Object.keys(j).length) pend=j; }
+    }catch(e){}
+  }
   if(pend && Object.keys(pend).length && db && Array.isArray(db.cards)){
     const map=new Map(db.cards.map(c=>[c.id,c]));
     let n=0;
