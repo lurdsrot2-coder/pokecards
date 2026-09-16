@@ -784,7 +784,7 @@ def build(rows, prev, ok_shops=None):
     for a in carried:
         byshop[a[COLS.index('shop')]] += 1
     return {
-        'createdAt': datetime.datetime.now().isoformat(timespec='seconds'),
+        'createdAt': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
         'cols': COLS,
         'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'tt': TT_PROD,
                  'id': 'hareruya2-', 'cart': TC + '/cart/'},
@@ -924,7 +924,7 @@ def sync_only():
         log('DB同期: 変わりなし（割安%d件）' % cheap)
         return 0
     data['th'] = th
-    data['syncedAt'] = datetime.datetime.now().isoformat(timespec='seconds')
+    data['syncedAt'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
     io.open(OUT, 'w', encoding='utf-8', newline='').write(
         json.dumps(data, ensure_ascii=False, separators=(',', ':')))
     log('DB同期: 相場%d件・所持%d件を更新／割安%d件' % (changed_p, changed_o, cheap))

@@ -204,7 +204,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 状態D＝それ以上に傷んでいるもの。B以下は店側が「コレクション用にはお勧めしない」としているので、
 プレイ用・穴埋め用として見てください。<br>
 大きい数字がカードラッシュの価格、その下の取り消し線が相場（アプリ内の時価＝晴れる屋2の販売価格）です。<br>
-お店の在庫は毎朝5時に取り直します。相場と所持枚数は1時間ごとにアプリのデータと合わせています。
+お店の在庫は1日3回（5時・13時・21時）取り直します。相場と所持枚数は1時間ごとにアプリのデータと合わせています。
 「⟳ 更新」を押すと、その最新に加えて、アプリの差分（delta.json）から直近の＋1と時価も取り込みます。
 </div>
 <script>
@@ -362,9 +362,14 @@ function show(d, ownedN){
   }
   const m=document.getElementById('meta');
   m.className='meta'+(days>=3?' stale':'');
-  m.innerHTML=(isNaN(t)?'?':t.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))
-    +' 時点'+(days>=3?'（'+days+'日前のデータです）':'')
-    +' ／ 在庫のあるカード <b>'+(s.cards||rows.length).toLocaleString()+'</b>件'
+  // お店の在庫がいつのものかは、いちばん大事なので古くなったら赤くする
+  const ageH=isNaN(t)?999:Math.floor((Date.now()-t.getTime())/3600000);
+  const ageTxt= ageH<1 ? 'さっき' : ageH<24 ? ageH+'時間前' : Math.floor(ageH/24)+'日前';
+  const stale = ageH>=9;
+  m.innerHTML='<span class="'+(stale?'gone':'')+'">お店の在庫は '
+    +(isNaN(t)?'?':t.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))
+    +' 時点（'+ageTxt+'）'+(stale?' ※売り切れている可能性があります':'')+'</span>'
+    +' ／ <b>'+(s.cards||rows.length).toLocaleString()+'</b>件'
     +(s.byShop?'（'+Object.keys(SHOP).filter(k=>s.byShop[k]).map(k=>SHOP[k]+' '+s.byShop[k].toLocaleString()).join(' / ')+'）':'')
     +(s.added?' ／ <span class="new">新着 '+s.added+'件</span>':'')
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
