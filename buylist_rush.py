@@ -10,8 +10,10 @@
 前回のJSONと比べて、消えた商品（＝売れた）と新しく出た商品を数える。
 新着には印を付けるので、ページ側で「新着だけ」を見られる。
 
-手動実行:  python buylist_rush.py
-           python buylist_rush.py --no-push    （pushせず手元だけ更新）
+手動実行:  python buylist_rush.py                （全部取り直す。20〜30分）
+           python buylist_rush.py --sync         （お店には行かず、相場と所持だけ合わせる。数秒）
+           python buylist_rush.py --only TT      （店を選ぶ）
+           python buylist_rush.py --no-push      （pushせず手元だけ更新）
 """
 import urllib.request, urllib.parse, re, io, json, sys, os, time, subprocess
 import unicodedata, statistics, datetime, collections
@@ -819,8 +821,74 @@ def push(path):
     return False
 
 
+def sync_only():
+    """お店には行かず、手元のDB（data.json＋delta.json）の相場と所持枚数だけを
+    いまの一覧に反映し直す。数秒で終わるので短い間隔で回せる。
+    （お店の在庫の増減は1日1回の全体取得の担当）"""
+    if not os.path.exists(OUT):
+        log('一覧がまだありません。先に通常の取得を実行してください')
+        return 1
+    data = json.load(io.open(OUT, encoding='utf-8'))
+    cols = data.get('cols') or []
+    ix = {c: i for i, c in enumerate(cols)}
+    if 'id' not in ix:
+        log('列の形が古いので同期できません')
+        return 1
+    cards = load_db()
+    base_id = (data.get('base') or {}).get('id') or 'hareruya2-'
+    changed_p = changed_o = 0
+    for a in data.get('items') or []:
+        cid = a[ix['id']] or ((base_id + a[ix['hr']]) if a[ix['hr']] else '')
+        c = cards.get(cid)
+        if not c:
+            continue
+        pr, ow = c.get('price') or 0, c.get('owned') or 0
+        if pr and a[ix['price']] != pr:
+            a[ix['price']] = pr
+            changed_p += 1
+        if a[ix['owned']] != ow:
+            a[ix['owned']] = ow
+            changed_o += 1
+    # 相場が動いたので「割安」の線も引き直す
+    groups = collections.defaultdict(list)
+    for a in data['items']:
+        if a[ix['sold']] or not a[ix['price']] or not a[ix['cr']]:
+            continue
+        groups[(a[ix['shop']] or 'CR') + a[ix['cond']]].append(a[ix['cr']] / a[ix['price']])
+    th, small = {}, []
+    for k, v in groups.items():
+        v.sort()
+        if len(v) < 30:
+            small.append(k)
+            continue
+        th[k] = {'med': round(statistics.median(v), 4), 'q25': round(v[int(len(v) * .25)], 4)}
+    for k in small:
+        src = th.get(k[:2] + 'C') or th.get(k[:2] + 'A') or th.get(k[:2] + 'B')
+        th[k] = dict(src, borrowed=1) if src else {'med': 1, 'q25': 0, 'borrowed': 1}
+    cheap = 0
+    for a in data['items']:
+        if a[ix['sold']] or not a[ix['price']] or not a[ix['cr']]:
+            continue
+        t = th.get((a[ix['shop']] or 'CR') + a[ix['cond']])
+        a[ix['cheap']] = 1 if (t and a[ix['cr']] / a[ix['price']] <= t['q25']) else 0
+        cheap += a[ix['cheap']]
+    data['th'] = th
+    data['syncedAt'] = datetime.datetime.now().isoformat(timespec='seconds')
+    io.open(OUT, 'w', encoding='utf-8', newline='').write(
+        json.dumps(data, ensure_ascii=False, separators=(',', ':')))
+    log('DB同期: 相場%d件・所持%d件を更新／割安%d件' % (changed_p, changed_o, cheap))
+    if '--no-push' not in sys.argv:
+        if changed_p or changed_o:
+            log('push: ' + ('OK' if push(OUT) else '失敗'))
+        else:
+            log('変更なし')
+    return 0
+
+
 def main():
     _trim_log()
+    if '--sync' in sys.argv:
+        return sync_only()
     prev = {}
     if os.path.exists(OUT):
         try:

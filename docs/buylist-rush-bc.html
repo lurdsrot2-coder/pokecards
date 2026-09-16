@@ -195,8 +195,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 状態D＝それ以上に傷んでいるもの。B以下は店側が「コレクション用にはお勧めしない」としているので、
 プレイ用・穴埋め用として見てください。<br>
 大きい数字がカードラッシュの価格、その下の取り消し線が相場（アプリ内の時価＝晴れる屋2の販売価格）です。<br>
-データは毎朝5時に自動で取り直します。「⟳ 更新」でその最新を読み込み、
-所持枚数はアプリの差分（delta.json）から今の状態に更新します。
+お店の在庫は毎朝5時に取り直します。相場と所持枚数は1時間ごとにアプリのデータと合わせています。
+「⟳ 更新」を押すと、その最新に加えて、アプリの差分（delta.json）から直近の＋1と時価も取り込みます。
 </div>
 <script>
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
@@ -351,8 +351,9 @@ function show(d, ownedN){
     +(s.byShop?'（'+Object.keys(SHOP).filter(k=>s.byShop[k]).map(k=>SHOP[k]+' '+s.byShop[k].toLocaleString()).join(' / ')+'）':'')
     +(s.added?' ／ <span class="new">新着 '+s.added+'件</span>':'')
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
-    +(ownedN>0?' ／ <span class="new">所持を'+ownedN+'件更新</span>'
-      :ownedN<0?' ／ <span class="gone">所持の更新に失敗（表示は'+(isNaN(t)?'取得時':'5時')+'の状態）</span>':'')
+    +(d.syncedAt?' ／ 相場と所持は '+new Date(d.syncedAt).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+' 時点':'')
+    +(ownedN>0?' ／ <span class="new">直近の変更 '+ownedN+'件を反映</span>'
+      :ownedN<0?' ／ <span class="gone">アプリの差分を読めませんでした</span>':'')
     +'<br>相場に対する実勢の中央値 → 割安とみなす線（'+line.join(' ／ ')+'）';
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
@@ -360,8 +361,8 @@ function show(d, ownedN){
   document.getElementById('msg').hidden=true;
   apply();
 }
-// 所持枚数はアプリ側の delta.json（＋1した差分）を重ねて最新にする。
-// 一覧そのものは朝5時のぶんでも、持っているかどうかだけは今の状態になる
+// 相場と所持枚数を、アプリ側の delta.json（直近の変更ぶん）で上書きする。
+// 一覧そのものは定期更新のぶんでも、この2つは押した時点の値になる
 async function overlayOwned(force){
   try{
     const r=await fetch(DELTA+'?t='+Date.now(), force?{cache:'reload'}:{});
@@ -372,7 +373,11 @@ async function overlayOwned(force){
       if(!row.id || !(row.id in ops)) continue;
       const c=ops[row.id];
       const o=c ? (c.owned||0) : 0;
-      if(o!==row.owned){ row.owned=o; n++; }
+      const p=c ? (c.price||0) : 0;
+      let hit=false;
+      if(o!==row.owned){ row.owned=o; hit=true; }
+      if(p && p!==row.price){ row.price=p; row.ratio=row.cr/p; row.save=p-row.cr; hit=true; }
+      if(hit) n++;
     }
     return n;
   }catch(e){ return -1; }
