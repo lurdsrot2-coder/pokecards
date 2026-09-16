@@ -68,6 +68,13 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .st{font-size:9.5px;color:var(--sub);line-height:1.3;
  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+/* パック記号・カード番号・レアリティ（アプリの表示に合わせる） */
+.cs{display:flex;align-items:center;gap:5px;font-size:9px;line-height:1.4;white-space:nowrap;
+ overflow:hidden}
+.cs .ccode{background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.3);color:var(--cy);
+ border-radius:3px;padding:0 4px;font-weight:700;flex-shrink:0}
+.cs .cnum{color:#8f8fb5;overflow:hidden;text-overflow:ellipsis}
+.cs .crar{margin-left:auto;color:var(--gd);font-weight:700;flex-shrink:0}
 .pr{display:flex;align-items:baseline;gap:5px;margin-top:3px}
 .pr .cr{font-size:15px;font-weight:900;color:var(--gr);font-variant-numeric:tabular-nums}
 .pr .pc{font-size:10px;font-weight:700;color:var(--gd)}
@@ -164,6 +171,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg" data-o="0">未所持</button>
  <button class="tg own" data-o="1">所持</button>
  <button class="serbtn" id="f-ser">シリーズ ▾</button>
+ <button class="serbtn" id="f-rar">レアリティ ▾</button>
+ <button class="serbtn" id="f-tag">タグ ▾</button>
  <span class="rng"><span>価格</span>
   <input type="number" id="f-lo" placeholder="下限" min="0" inputmode="numeric">
   <span>〜</span>
@@ -183,7 +192,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <span class="hit" id="hit"></span>
 <div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
-<div id="serpanel"><div class="sp-hd"><span>シリーズ（複数選べます）</span>
+<div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
  <button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
@@ -204,7 +213,7 @@ const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
-    st={cheap:1,flag:'',cond:'',shop:'',own:'',ser:new Set(),lo:null,hi:null,min:0,q:'',sort:'save',card:''};
+    st={cheap:1,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'save',card:''};
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
@@ -227,6 +236,9 @@ function toRows(d){
       price:price,cr:cr,stock:a[i.stock],owned:a[i.owned],
       cheap:a[i.cheap],isnew:a[i.new],sold:i.sold==null?0:a[i.sold],
       sure:i.sure==null?1:a[i.sure],
+      code:i.code==null?'':(a[i.code]||''),
+      rar:i.rar==null?'':(a[i.rar]||''),
+      tags:i.tags==null?[]:String(a[i.tags]||'').split('|').filter(Boolean),
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
       id:rawId || (hr?bd+hr:''),
       shop:shop,
@@ -256,7 +268,10 @@ function tile(r){
     +'</div>'
     +'<div class="bd">'
     +'<div class="nm">'+esc(r.name)+'</div>'
-    +'<div class="st">'+esc(r.set)+' '+esc(r.num)+'</div>'
+    +'<div class="cs">'+(r.code?'<span class="ccode">'+esc(r.code)+'</span>':'')
+      +'<span class="cnum">'+esc(r.num)+'</span>'
+      +(r.rar?'<span class="crar">'+esc(r.rar)+'</span>':'')+'</div>'
+    +'<div class="st">'+esc(r.set)+'</div>'
     +'<div class="pr"><span class="cr">'+yen(r.cr)+'</span><span class="pc">'+pc+'%</span></div>'
     +'<div class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
@@ -298,6 +313,8 @@ function apply(){
     && (!st.shop  || r.shop===st.shop)
     && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
     && (!st.ser.size || st.ser.has(r.ser))
+    && (!st.rar.size || st.rar.has(r.rar))
+    && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
@@ -357,6 +374,8 @@ function show(d, ownedN){
     +'<br>相場に対する実勢の中央値 → 割安とみなす線（'+line.join(' ／ ')+'）';
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
+  [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
+  [...st.tag].forEach(v=>{ if(!rows.some(r=>r.tags.includes(v))) st.tag.delete(v); });
   serSync();
   document.getElementById('msg').hidden=true;
   apply();
@@ -462,46 +481,67 @@ document.getElementById('f-lo').oninput=function(){st.lo=num(this.value);apply()
 document.getElementById('f-hi').oninput=function(){st.hi=num(this.value);apply();};
 document.getElementById('q').oninput=function(){st.q=this.value.trim().toLowerCase();apply();};
 
-// シリーズは複数選択。選ぶたびに閉じないパネルを出す
-const serBtn=document.getElementById('f-ser'), serPanel=document.getElementById('serpanel'),
-      serList=document.getElementById('sp-list');
-let serOpen=false;
+// シリーズ・レアリティ・タグの複数選択。選ぶたびに閉じないパネルを1つ使い回す
+const serPanel=document.getElementById('serpanel'),
+      serList=document.getElementById('sp-list'),
+      serTtl=document.getElementById('sp-ttl');
+// [ボタン, 見出し, 状態のSet, 1行から値を取り出す関数]
+const PICKERS=[
+  ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
+  ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
+  ['f-tag','タグ',      ()=>st.tag, r=>r.tags],
+];
+let pick=null;           // いま開いているもの
+function pickBtn(){ return pick? document.getElementById(pick[0]) : null; }
 function serPlace(){
-  const b=serBtn.getBoundingClientRect();
+  const b=pickBtn().getBoundingClientRect();
   const w=Math.min(Math.max(b.width,250), innerWidth-16);
   serPanel.style.left=Math.max(8,Math.min(b.left, innerWidth-8-w))+'px';
   serPanel.style.top=(b.bottom+4)+'px';
   serPanel.style.width=w+'px';
 }
 function serSync(){
+  for(const [id,label,getSet] of PICKERS){
+    const b=document.getElementById(id), n=getSet().size;
+    b.textContent = n ? label+' '+n+'件 ▾' : label+' ▾';
+    b.classList.toggle('on', n>0);
+  }
+  if(!pick) return;
+  const [,label,getSet,valsOf]=pick, sel=getSet();
   const cnt={};
-  for(const r of rows) cnt[r.ser]=(cnt[r.ser]||0)+1;
-  serList.innerHTML=[...new Set(rows.map(r=>r.ser))].sort((a,b)=>a.localeCompare(b,'ja'))
-    .map(v=>'<div class="sp-it'+(st.ser.has(v)?' sel':'')+'" data-v="'+esc(v)+'">'
-      +'<span class="sp-ck">'+(st.ser.has(v)?'✓':'')+'</span>'+esc(v)
+  for(const r of rows) for(const v of valsOf(r)) cnt[v]=(cnt[v]||0)+1;
+  serTtl.textContent=label+'（複数選べます）';
+  serList.innerHTML=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b,'ja'))
+    .map(v=>'<div class="sp-it'+(sel.has(v)?' sel':'')+'" data-v="'+esc(v)+'">'
+      +'<span class="sp-ck">'+(sel.has(v)?'✓':'')+'</span>'+esc(v)
       +'<span class="sp-n">'+cnt[v]+'</span></div>').join('');
-  serBtn.textContent = st.ser.size ? 'シリーズ '+st.ser.size+'件 ▾' : 'シリーズ ▾';
-  serBtn.classList.toggle('on', st.ser.size>0);
 }
-function serShow(v){
-  serOpen = v===undefined ? !serOpen : v;
-  serPanel.classList.toggle('open',serOpen);
-  if(serOpen){ serPlace(); serSync(); }
+function serShow(which){
+  pick = which || null;
+  serPanel.classList.toggle('open', !!pick);
+  if(pick){ serSync(); serPlace(); }
 }
-serBtn.onclick=e=>{e.stopPropagation();serShow();};
+for(const pk of PICKERS){
+  document.getElementById(pk[0]).onclick=e=>{
+    e.stopPropagation();
+    serShow(pick && pick[0]===pk[0] ? null : pk);
+  };
+}
 serPanel.onclick=e=>{
   e.stopPropagation();
-  if(e.target.id==='sp-cls'){serShow(false);return;}
-  if(e.target.id==='sp-clr'){st.ser.clear();serSync();apply();return;}
-  const it=e.target.closest('.sp-it'); if(!it)return;
-  const v=it.dataset.v;
-  st.ser.has(v)?st.ser.delete(v):st.ser.add(v);
+  if(e.target.id==='sp-cls'){serShow(null);return;}
+  if(e.target.id==='sp-clr'){ if(pick){pick[2]().clear();serSync();apply();} return; }
+  const it=e.target.closest('.sp-it'); if(!it||!pick)return;
+  const v=it.dataset.v, sel=pick[2]();
+  sel.has(v)?sel.delete(v):sel.add(v);
   serSync(); apply();          // パネルは閉じない
 };
-addEventListener('pointerdown',e=>{ if(serOpen && !serPanel.contains(e.target) && e.target!==serBtn) serShow(false); },true);
-addEventListener('keydown',e=>{ if(serOpen && e.key==='Escape') serShow(false); });
-addEventListener('scroll',()=>{ if(serOpen) serPlace(); },true);
-addEventListener('resize',()=>{ if(serOpen) serPlace(); });
+addEventListener('pointerdown',e=>{
+  if(pick && !serPanel.contains(e.target) && !PICKERS.some(x=>e.target===document.getElementById(x[0]))) serShow(null);
+},true);
+addEventListener('keydown',e=>{ if(pick && e.key==='Escape') serShow(null); });
+addEventListener('scroll',()=>{ if(pick) serPlace(); },true);
+addEventListener('resize',()=>{ if(pick) serPlace(); });
 
 load(false);
 </script></body></html>

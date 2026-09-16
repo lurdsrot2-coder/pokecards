@@ -629,6 +629,9 @@ def match(items, cards):
                     'stock': it['stock'], 'soldout': it['soldout'], 'num': num,
                     'id': c['id'], 'name': c.get('name') or '',
                     'setName': c.get('setName') or '', 'series': c.get('series') or '',
+                    'code': (c.get('setCode') or c.get('setId') or '').upper(),
+                    'rar': c.get('rarityLabel') or c.get('rarity') or '',
+                    'tags': '|'.join(c.get('quickTags') or []),
                     'image': c.get('customImage') or c.get('image') or '',
                     'price': c.get('price') or 0, 'owned': c.get('owned') or 0})
     return out, stat
@@ -637,7 +640,7 @@ def match(items, cards):
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
-        'shop', 'url', 'vid', 'sure']
+        'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags']
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -748,6 +751,7 @@ def build(rows, prev, ok_shops=None):
             1 if r['crPrice'] / r['price'] <= th[key]['q25'] else 0,
             1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
             r['shop'], r['url'], r.get('vid', ''), r.get('sure', 1),
+            r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
         ])
         shrink(rowsout[-1])
 
@@ -857,18 +861,35 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
+    for extra in ('code', 'rar', 'tags'):
+        if extra not in cols:
+            cols.append(extra)
+    data['cols'] = cols
     ix = {c: i for i, c in enumerate(cols)}
     if 'id' not in ix:
         log('列の形が古いので同期できません')
         return 1
     cards = load_db()
     base_id = (data.get('base') or {}).get('id') or 'hareruya2-'
+    padded = any(len(a) < len(cols) for a in (data.get('items') or []))
     changed_p = changed_o = 0
     for a in data.get('items') or []:
+        while len(a) < len(cols):      # 列が増えたぶんを埋める
+            a.append('')
         cid = a[ix['id']] or ((base_id + a[ix['hr']]) if a[ix['hr']] else '')
         c = cards.get(cid)
         if not c:
             continue
+        # パック記号・レアリティ・タグは、取り直さなくてもDBから埋められる
+        for key, val in (('code', (c.get('setCode') or c.get('setId') or '').upper()),
+                         ('rar', c.get('rarityLabel') or c.get('rarity') or ''),
+                         ('tags', '|'.join(c.get('quickTags') or []))):
+            i = ix.get(key)
+            if i is None:
+                continue
+            if a[i] != val:
+                a[i] = val
+                changed_o += 1
         pr, ow = c.get('price') or 0, c.get('owned') or 0
         if pr and a[ix['price']] != pr:
             a[ix['price']] = pr
@@ -899,7 +920,7 @@ def sync_only():
         t = th.get((a[ix['shop']] or 'CR') + a[ix['cond']])
         a[ix['cheap']] = 1 if (t and a[ix['cr']] / a[ix['price']] <= t['q25']) else 0
         cheap += a[ix['cheap']]
-    if not (changed_p or changed_o):
+    if not (changed_p or changed_o) and not padded:
         log('DB同期: 変わりなし（割安%d件）' % cheap)
         return 0
     data['th'] = th
