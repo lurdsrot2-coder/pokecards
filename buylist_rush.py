@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""カードラッシュとトレカキャンプの在庫を取り直して、買い得リストのデータを作る。
+"""カードラッシュ・トレカキャンプ・トレトク・福福トレカの在庫を取り直して、買い得リストを作る。
 
 やっていること:
   1. カードラッシュ（状態B/C/Dの検索）とトレカキャンプ（コレクション別のJSON）から商品を集める
@@ -419,6 +419,66 @@ def tt_scrape():
     return list(items.values())
 
 
+# ── 福福トレカ（カラーミーショップ） ──────────────────
+FF = 'https://pokemon.fukufukutoreka.com'
+FF_ITEM = re.compile(r'<li class="product-list__item">.*?(?=<li class="product-list__item">|</ul>)', re.S)
+# 「いちげきウーラオスV(075/070)[SA]【S5I】」…名前・番号・レアリティ・収録弾が全部入っている
+FF_TITLE = re.compile(r'^(.*?)[(（]([^)）]*)[)）]\s*[\[［]([^\]］]*)[\]］]\s*【([^】]*)】')
+FF_SKIP = ('PSA', '鑑定', 'ARS', '未開封', 'BOX', '英語版', '海外版', '韓国版')
+
+
+def ff_scrape():
+    """福福トレカ。カテゴリ（収録弾）ごとに1回ずつ、1ページ210件で全部取れる。
+    状態の区分は無いので、すべて通常品(A)として扱う"""
+    top = fetch(FF + '/')
+    if not top:
+        log('  福福トレカに繋がりません')
+        return []
+    cats = sorted({int(x) for x in re.findall(r'/products/list\?category_id=(\d+)', top)})
+    log('  福福トレカ カテゴリ %d件' % len(cats))
+    items, miss = {}, 0
+    for i, cid in enumerate(cats):
+        h = fetch('%s/products/list?category_id=%d&disp_number=5' % (FF, cid))
+        if not h:
+            miss += 1
+            if miss >= 3:
+                log('  福福トレカに繋がらないので今回は見送ります')
+                return []
+            continue
+        miss = 0
+        for seg in FF_ITEM.findall(h):
+            m = re.search(r'/products/detail/(\d+)', seg)
+            t = re.search(r'title--name text-link"[^>]*>([^<]+)<', seg)
+            if not m or not t:
+                continue
+            pid = m.group(1)
+            if pid in items:
+                continue
+            title = t.group(1).strip()
+            if any(w in title for w in FF_SKIP):
+                continue
+            mt = FF_TITLE.match(title)
+            if not mt:
+                continue
+            p = re.search(r'--price">[￥¥]?([\d,]+)', seg)
+            if not p:
+                continue
+            st = re.search(r'<span>/(\d+)</span>', seg)
+            items[pid] = {
+                'shop': 'FF', 'pid': 'ff' + pid, 'cond': 'A',
+                'url': FF + '/products/detail/' + pid,
+                'name': mt.group(1).strip(), 'rarity': mt.group(3).strip(),
+                'num': mt.group(2).strip().upper(), 'setcode': mt.group(4).strip(),
+                'settitle': '', 'price': int(p.group(1).replace(',', '')),
+                'stock': int(st.group(1)) if st else 0,
+                'soldout': 'add_cart' not in seg}
+        if (i + 1) % 40 == 0:
+            log('  福福トレカ %d/%d カテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+        time.sleep(.4)
+    log('  福福トレカ %d件' % len(items))
+    return list(items.values())
+
+
 def scrape():
     """店ごとに集めて、ちゃんと取れた店の集合も返す。
     取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
@@ -426,7 +486,8 @@ def scrape():
     if '--only' in sys.argv:
         only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
     items, ok = [], set()
-    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500), ('TT', tt_scrape, 500)):
+    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500),
+                            ('TT', tt_scrape, 500), ('FF', ff_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -683,6 +744,7 @@ IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
 TC_PROD = TC + '/products/'
 CR_PROD = 'https://www.cardrush-pokemon.jp/product/'
 TT_PROD = TT + '/item/details/'
+FF_PROD = FF + '/products/detail/'
 
 
 def shrink(row):
@@ -695,6 +757,8 @@ def shrink(row):
         row[i('url')] = url[len(TC_PROD):]
     elif url.startswith(TT_PROD):
         row[i('url')] = url[len(TT_PROD):]
+    elif url.startswith(FF_PROD):
+        row[i('url')] = url[len(FF_PROD):]
     elif url.startswith(CR_PROD):
         row[i('url')] = ''
     cid, hr = row[i('id')] or '', row[i('hr')] or ''
@@ -823,7 +887,7 @@ def build(rows, prev, ok_shops=None):
         'createdAt': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
         'cols': COLS,
         'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'tt': TT_PROD,
-                 'id': 'hareruya2-', 'cart': TC + '/cart/'},
+                 'ff': FF_PROD, 'id': 'hareruya2-', 'cart': TC + '/cart/'},
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),

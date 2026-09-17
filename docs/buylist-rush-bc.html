@@ -35,6 +35,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.CR{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
 .tg.on.TT{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
+.tg.on.FF{background:rgba(255,120,170,.28);border-color:#ff78aa;color:#fff}
 .serbtn{cursor:pointer;white-space:nowrap}
 .serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
 .hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
@@ -61,6 +62,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .b.CR{background:rgba(0,229,149,.9);color:#032317}
 .b.TC{background:rgba(90,160,255,.92);color:#04122b}
 .b.TT{background:rgba(255,170,60,.92);color:#2b1600}
+.b.FF{background:rgba(255,120,170,.92);color:#2b0015}
 .b.new{background:var(--gr);color:#06210f}
 .b.sold{background:rgba(255,68,68,.95);color:#fff}
 .bd{padding:6px 8px 8px;display:flex;flex-direction:column;gap:2px;flex:1}
@@ -92,6 +94,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .lk a.t:hover{background:rgba(90,160,255,.2)}
 .lk a.k{color:#ffc37a;border-color:rgba(255,170,60,.5)}
 .lk a.k:hover{background:rgba(255,170,60,.2)}
+.lk a.f{color:#ff9cc4;border-color:rgba(255,120,170,.5)}
+.lk a.f:hover{background:rgba(255,120,170,.2)}
 /* ほかの店にも同じカードが出ているときの案内。押すとそのカードだけに絞る */
 .alt{margin-top:4px;font-size:9.5px;color:#7fd8ff;background:rgba(0,245,255,.08);
  border:1px solid rgba(0,245,255,.25);border-radius:3px;padding:2px 5px;cursor:pointer;
@@ -164,6 +168,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg CR" data-s="CR">ラッシュ</button>
  <button class="tg TC" data-s="TC">キャンプ</button>
  <button class="tg TT" data-s="TT">トレトク</button>
+ <button class="tg FF" data-s="FF">福福</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -199,7 +204,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div id="toast"></div>
 <div id="grid"></div><div id="more"></div>
 <div id="note">
-カードラッシュ（状態B/C/Dのみ）・トレカキャンプ・トレトクの在庫を並べています。
+カードラッシュ（状態B/C/Dのみ）・トレカキャンプ・トレトク・福福トレカの在庫を並べています。
 状態の表記がないものは A（通常品）です。<br>
 状態B＝キズ・スレ・くすみ・小さな凹みあり。状態C＝全体のキズ、折れ、凹み、軽度の水濡れ等あり。
 状態D＝それ以上に傷んでいるもの。B以下は店側が「コレクション用にはお勧めしない」としているので、
@@ -214,7 +219,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 <script>
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
-const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク'};
+const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
@@ -227,7 +232,7 @@ function toRows(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
   // 共通の頭（画像URL・商品URL・カードid）はファイルを小さくするため外に出してある
   const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'',
-        bk=B.tt||'', cartBase=B.cart||'';
+        bk=B.tt||'', bf=B.ff||'', cartBase=B.cart||'';
   CART=cartBase;
   return d.items.map(a=>{
     const price=a[i.price], cr=a[i.cr];
@@ -251,6 +256,7 @@ function toRows(d){
       url:/^https?:/.test(rawUrl) ? rawUrl
           : !rawUrl ? bc+a[i.pid]
           : shop==='TT' ? bk+rawUrl
+          : shop==='FF' ? bf+rawUrl
           : bt+rawUrl,
       ratio:price?cr/price:0,save:price-cr};
   });
@@ -258,7 +264,7 @@ function toRows(d){
 function tile(r){
   const pc=Math.round(r.ratio*100);
   const shopName=SHOP[r.shop]||'ラッシュ';
-  const lkCls=r.shop==='TC'?'t':r.shop==='TT'?'k':'c';
+  const lkCls=r.shop==='TC'?'t':r.shop==='TT'?'k':r.shop==='FF'?'f':'c';
   const others=(byCard.get(r.id)||[]).filter(x=>x!==r && !x.sold);
   const cru=r.url;
   return '<div class="card'+(r.sold?' gone':'')+'">'
@@ -357,9 +363,9 @@ function show(d, ownedN){
   const s=d.stats||{}, t=new Date(d.createdAt);
   const days=Math.floor((Date.now()-t.getTime())/86400000);
   // 実勢は店ごと・状態ごとに違うので、店で束ねて出す
-  const SH={CR:'ラッシュ',TC:'キャンプ'};
+  const SH=SHOP;
   const line=[];
-  for(const sh of ['CR','TC']){
+  for(const sh of ['CR','TC','TT','FF']){
     const ks=Object.keys(d.th||{}).filter(k=>k.startsWith(sh)).sort();
     if(!ks.length) continue;
     line.push(SH[sh]+' '+ks.map(k=>k.slice(2)+' '+Math.round((d.th[k].med||0)*100)+'%→'
