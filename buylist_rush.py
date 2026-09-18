@@ -737,7 +737,7 @@ def match(items, cards):
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
-        'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags']
+        'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags', 'fst']
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -818,6 +818,14 @@ def build(rows, prev, ok_shops=None):
         else:
             prev_live[pget(a, 'pid')] = a
 
+    # その商品を初めて見かけた日。新着順に並べるために持っておく
+    first_seen = {}
+    for a in (prev.get('items') or []):
+        v = pget(a, 'fst', '')
+        if v:
+            first_seen[pget(a, 'pid')] = v
+    today_s = datetime.date.today().isoformat()
+
     live_pids = {r['pid'] for r in live}
     # 取得できなかった店のぶんは、前回の行をそのまま残す。
     # ここで落とすと「まとめて売り切れた」ように見えてしまう
@@ -836,10 +844,15 @@ def build(rows, prev, ok_shops=None):
         log('  取得できなかった店の %d件は前回のまま残しました' % len(carried))
     today = datetime.date.today().isoformat()
     # 前回そもそも扱っていなかった店は、全部「新着」になってしまうので印を付けない
-    prev_shops = {'TC' if p.startswith('tc') else 'CR' for p in list(prev_live) + [pget(a, 'pid', '') for a in prev_sold]}
+    def _shop_of(a):
+        return pget(a, 'shop', '') or ({'tc': 'TC', 'tt': 'TT', 'ff': 'FF'}
+                                       .get(str(pget(a, 'pid', ''))[:2], 'CR'))
+    prev_shops = {_shop_of(a) for a in list(prev_live.values()) + prev_sold}
+    had_prev = bool(prev_shops)
+    prev_pids = set(prev.get('pids') or [])
     fresh = {r['pid'] for r in items
              if r['shop'] in prev_shops and r['pid'] not in prev_live
-             and r['pid'] not in set(prev.get('pids') or [])}
+             and r['pid'] not in prev_pids}
 
     rowsout = list(carried)
     for r in items:
@@ -852,6 +865,7 @@ def build(rows, prev, ok_shops=None):
             1 if r['pid'] in fresh else 0, 0, '', handle, r['id'],
             r['shop'], r['url'], r.get('vid', ''), r.get('sure', 1),
             r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
+            first_seen.get(r['pid'], today_s if had_prev else ''),
         ])
         shrink(rowsout[-1])
 
@@ -961,7 +975,7 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
-    for extra in ('code', 'rar', 'tags'):
+    for extra in ('code', 'rar', 'tags', 'fst'):
         if extra not in cols:
             cols.append(extra)
     data['cols'] = cols

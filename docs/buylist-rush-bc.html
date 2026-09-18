@@ -187,6 +187,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
   <option value="100000">相場¥100,000+</option></select>
  <select id="f-sort">
   <option value="save">差額の大きい順</option>
+  <option value="fst">新着順</option>
   <option value="ratio">割安な順（比率）</option>
   <option value="cr">店の価格 安い順</option>
   <option value="cr-">店の価格 高い順</option>
@@ -245,6 +246,7 @@ function toRows(d){
       img:(rawImg && !/^https?:/.test(rawImg)) ? bi+rawImg : rawImg,
       price:price,cr:cr,stock:a[i.stock],owned:a[i.owned],
       cheap:a[i.cheap],isnew:a[i.new],sold:i.sold==null?0:a[i.sold],
+      fst:i.fst==null?'':(a[i.fst]||''),
       sure:i.sure==null?1:a[i.sure],
       code:i.code==null?'':(a[i.code]||''),
       rar:i.rar==null?'':(a[i.rar]||''),
@@ -332,9 +334,12 @@ function apply(){
     && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q)));
   // 差額・相場は大きい順、比率・ラッシュ価格・名前は小さい順が既定
   const k=st.sort.replace(/-$/,'');
-  const dir=(k==='save'||st.sort==='price-'||st.sort==='cr-')?-1:1;
-  view.sort((a,b)=>{const x=a[k],y=b[k];
-    return (typeof x==='number'?x-y:String(x).localeCompare(String(y),'ja'))*dir;});
+  const dir=(k==='save'||k==='fst'||st.sort==='price-'||st.sort==='cr-')?-1:1;
+  view.sort((a,b)=>{
+    const x=a[k],y=b[k];
+    const c=(typeof x==='number'?x-y:String(x).localeCompare(String(y),'ja'))*dir;
+    // 新着順は同じ日のものが多いので、その中では差額の大きい順に見せる
+    return (k==='fst' && c===0) ? b.save-a.save : c;});
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
