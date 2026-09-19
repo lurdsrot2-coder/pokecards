@@ -1181,7 +1181,9 @@ function _updateUnsentBadge(){
   if(n>0){
     el.className='cfg-status error';
     el.textContent=`⚠ 未送信 ${n}件`;
-    el.title='この端末での変更がまだクラウドに送られていません。電波の良いところで「↑ 同期」を押してください。';
+    const last=(lastSyncErrors()[0]||null);
+    el.title='この端末での変更がまだクラウドに送られていません。電波の良いところで「↑ 同期」を押してください。'
+      +(last?`\n直近の失敗: ${last.m}（${new Date(last.t).toLocaleTimeString('ja-JP')}）`:'');
   }
 }
 // 全体保存が完了したらジャーナルは不要になるので消す
@@ -4732,26 +4734,36 @@ async function _repoPutDelta(newOps){
   const HJ={...H,'Content-Type':'application/json'};
   const api=`https://api.github.com/repos/${owner}/${repo}`;
   try{
-    // 既存 delta.json を取得（他端末の差分と合流させるため）
-    let sha=null, cur={ops:{}};
-    const g=await fetch(`${api}/contents/delta.json?_=${Date.now()}`,{headers:H,cache:'no-store'});
-    if(g.ok){
-      const j=await g.json(); sha=j.sha;
-      try{ cur=JSON.parse(decodeURIComponent(escape(atob(String(j.content||'').replace(/\s+/g,''))))); }catch(e){ cur={ops:{}}; }
-      if(!cur.ops) cur.ops={};
+    // 他の端末が同じ瞬間に delta.json を書くと、こちらが持っている sha が
+    // 古くなって 409 で弾かれる。取り直して入れ直せば済む話なので、
+    // すぐ16MBの全体送信に落とさず、数回だけやり直す
+    for(let attempt=0; attempt<3; attempt++){
+      // 既存 delta.json を取得（他端末の差分と合流させるため）
+      let sha=null, cur={ops:{}};
+      const g=await fetch(`${api}/contents/delta.json?_=${Date.now()}`,{headers:H,cache:'no-store'});
+      if(g.ok){
+        const j=await g.json(); sha=j.sha;
+        try{ cur=JSON.parse(decodeURIComponent(escape(atob(String(j.content||'').replace(/\s+/g,''))))); }catch(e){ cur={ops:{}}; }
+        if(!cur.ops) cur.ops={};
+      }
+      const merged={...cur.ops, ...newOps};                  // 自分の変更を上乗せ
+      if(Object.keys(merged).length>DELTA_MAX_OPS) return false;  // 溜まりすぎ→畳み込みへ
+      const body=JSON.stringify({ops:merged,updatedAt:new Date().toISOString()});
+      const content=btoa(unescape(encodeURIComponent(body)));
+      if(content.length>900000) return false;                // 1MB制限に近い→畳み込みへ
+      const payload={message:'pokecards delta',content};
+      if(sha) payload.sha=sha;
+      const r=await fetch(`${api}/contents/delta.json`,{method:'PUT',headers:HJ,body:JSON.stringify(payload)});
+      if(r.ok){
+        try{ const rj=await r.json(); _pushedSha=(rj.commit&&rj.commit.sha)||null; }catch(e){}
+        console.log(`差分送信: ${Object.keys(newOps).length}件 / ${Math.round(content.length/1024)}KB`);
+        return true;
+      }
+      _lastSyncErr=`delta ${r.status}`;
+      if(r.status!==409 && r.status!==422) return false;    // ぶつかり以外はやり直さない
+      await new Promise(s=>setTimeout(s, 400*(attempt+1)));
     }
-    const merged={...cur.ops, ...newOps};                  // 自分の変更を上乗せ
-    if(Object.keys(merged).length>DELTA_MAX_OPS) return false;  // 溜まりすぎ→畳み込みへ
-    const body=JSON.stringify({ops:merged,updatedAt:new Date().toISOString()});
-    const content=btoa(unescape(encodeURIComponent(body)));
-    if(content.length>900000) return false;                // 1MB制限に近い→畳み込みへ
-    const payload={message:'pokecards delta',content};
-    if(sha) payload.sha=sha;
-    const r=await fetch(`${api}/contents/delta.json`,{method:'PUT',headers:HJ,body:JSON.stringify(payload)});
-    if(!r.ok){ _lastSyncErr=`delta ${r.status}`; return false; }
-    try{ const rj=await r.json(); _pushedSha=(rj.commit&&rj.commit.sha)||null; }catch(e){}
-    console.log(`差分送信: ${Object.keys(newOps).length}件 / ${Math.round(content.length/1024)}KB`);
-    return true;
+    return false;
   }catch(e){ _lastSyncErr='delta例外'; return false; }
 }
 // delta を data.json に畳み込んで delta.json を空にする
@@ -4864,9 +4876,23 @@ async function _repoPut(data) {
 }
 
 // 同期ステータスバッジ更新
+// 直近の同期エラーを控えておく。エラー表示は「未送信」バッジにすぐ上書きされて
+// 一瞬しか見えないので、理由をあとから確認できるようにする
+function _noteSyncError(msg){
+  try{
+    const a=JSON.parse(localStorage.getItem('pc_syncErrors')||'[]');
+    a.unshift({t:new Date().toISOString(), m:String(msg||'').slice(0,120)});
+    localStorage.setItem('pc_syncErrors', JSON.stringify(a.slice(0,10)));
+  }catch(e){}
+  console.warn('同期エラー:', msg);
+}
+function lastSyncErrors(){            // コンソールから lastSyncErrors() で確認できる
+  try{ return JSON.parse(localStorage.getItem('pc_syncErrors')||'[]'); }catch(e){ return []; }
+}
 function _setSyncStatus(state, msg) {
   const el = document.getElementById('cfg-status');
   if (!el) return;
+  if (state === 'error') _noteSyncError(msg);
   el.className = 'cfg-status' + (state ? ' ' + state : '');
   if (state === 'syncing') el.textContent = '🔄 同期中';
   else if (state === 'synced') el.textContent = '✅ ' + (msg || '同期済');
@@ -5344,8 +5370,11 @@ async function dailyAutoRefresh(){
     let done=0,changed=0;
     _setSyncStatus('syncing',`時価更新中 0/${tracked.length}`);
     await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;
-      if(done%20===0){_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);saveDbDebounced();}},3);
-    if(changed){saveDb();renderStats();renderCards({keepSet:true});}
+      // 途中経過は端末内にだけ保存する。ここで saveDbDebounced() を呼ぶと、
+      // 変更が1,500件を超えた時点で16MBの全体送信が何度も走り、
+      // その間に押した＋1が送信エラーになっていた
+      if(done%20===0){_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);_saveLocalOnly();}},3);
+    if(changed){saveDb();renderStats();renderCards({keepSet:true});}   // クラウドへは最後に1回
     _setSyncStatus('synced',`時価更新 ${changed}件`);
   }catch(e){console.warn('autoReprice',e);}
 }
