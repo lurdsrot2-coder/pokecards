@@ -27,6 +27,9 @@ DEST = os.path.join(os.environ.get('USERPROFILE', r'C:\Users\okudaira'), 'OneDri
 KEEP_DAYS = 30
 STALE_DAYS = 3          # 前回の成功からこれ以上空いたら知らせる
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 外部コマンド（curl・git・PowerShell）を呼ぶたびに黒い窓が前面に出て
+# 操作が中断されるので、窓を作らないようにする（Windowsのみ）
+NOWIN = 0x08000000 if os.name == 'nt' else 0
 
 
 def notify(title, message):
@@ -35,7 +38,7 @@ def notify(title, message):
         subprocess.run(
             ['powershell', '-ExecutionPolicy', 'Bypass', '-File', os.path.join(HERE, 'notify.ps1'),
              '-Title', title, '-Message', message],
-            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NOWIN)
     except Exception:
         pass
 
@@ -48,7 +51,11 @@ def fetch(url):
 
 def log(msg):
     line = '%s  %s' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
-    print(line)
+    # 自動実行は pythonw（黒い窓なし）なので、画面が無いことがある
+    try:
+        print(line)
+    except Exception:
+        pass
     try:
         with io.open(os.path.join(DEST, 'backup.log'), 'a', encoding='utf-8') as f:
             f.write(line + '\n')
@@ -161,7 +168,7 @@ def write_status(status):
 
     def git(args, cwd, timeout=180):
         return subprocess.run(['git'] + args, cwd=cwd, timeout=timeout,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NOWIN)
 
     try:
         if not os.path.isdir(os.path.join(work, '.git')):

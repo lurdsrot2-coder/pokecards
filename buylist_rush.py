@@ -20,6 +20,9 @@ import unicodedata, statistics, datetime, collections
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 外部コマンド（curl・git・PowerShell）を呼ぶたびに黒い窓が前面に出て
+# 操作が中断されるので、窓を作らないようにする（Windowsのみ）
+NOWIN = 0x08000000 if os.name == 'nt' else 0
 OUT = os.path.join(HERE, 'docs', 'buylist-rush-bc.json')
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36')
@@ -39,9 +42,13 @@ LOG = os.path.join(HERE, 'buylist_rush.log')
 
 def log(msg):
     line = '%s  %s' % (datetime.datetime.now().strftime('%m-%d %H:%M:%S'), msg)
-    sys.stderr.write(line + '\n')
-    sys.stderr.flush()
-    # 自動実行（毎朝5時）の様子は画面に出ないので、ファイルにも残す
+    # 自動実行は pythonw（黒い窓なし）で動かすので、画面が無いことがある
+    try:
+        sys.stderr.write(line + '\n')
+        sys.stderr.flush()
+    except Exception:
+        pass
+    # 様子が画面に出ないので、ファイルにも残す
     try:
         with io.open(LOG, 'a', encoding='utf-8') as f:
             f.write(line + '\n')
@@ -55,7 +62,7 @@ def notify(title, message):
         subprocess.run(
             ['powershell', '-ExecutionPolicy', 'Bypass', '-File', os.path.join(HERE, 'notify.ps1'),
              '-Title', title, '-Message', message],
-            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NOWIN)
     except Exception:
         pass
 
@@ -192,7 +199,7 @@ def tc_json(path, tries=4):
             r = subprocess.run(
                 ['curl', '-sS', '--compressed', '-m', '90', '-w', '\n%{http_code}',
                  '-A', UA, '-H', 'Accept: application/json', url],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, creationflags=NOWIN)
             out = r.stdout.decode('utf-8', 'replace')
             code = out.rsplit('\n', 1)[-1].strip()
             body = out.rsplit('\n', 1)[0]
@@ -920,7 +927,7 @@ def push(path):
 
     def git(args, cwd=work, timeout=300):
         return subprocess.run(['git'] + args, cwd=cwd, timeout=timeout,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NOWIN)
 
     if not os.path.isdir(os.path.join(work, '.git')):
         os.makedirs(work, exist_ok=True)
