@@ -270,7 +270,9 @@ function tile(r){
   const others=(byCard.get(r.id)||[]).filter(x=>x!==r && !x.sold);
   const cru=r.url;
   return '<div class="card'+(r.sold?' gone':'')+'">'
-    +'<div class="ph"><a href="'+cru+'" target="_blank" rel="noopener">'
+    // 画像はアプリ側（そのカードだけを出した状態）へ。店へは下のボタンから
+    +'<div class="ph"><a href="'+(r.id?'../index.html?card='+encodeURIComponent(r.id):cru)
+      +'" target="_blank" rel="noopener" title="'+(r.id?'カードマネージャーでこのカードを見る':'商品ページ')+'">'
     +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'<div class="ni">画像なし</div>')
     +'</a>'
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'

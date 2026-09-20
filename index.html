@@ -5104,7 +5104,28 @@ function _buyQueueReady(){
     if(!_buyQueueReady()) return;
     clearInterval(t);
     _showBuyQueue();
+    _focusCardFromUrl();
   }, 1500);
+}
+// ── 買い得リストの画像から飛んできたとき ──
+// ?card=<カードid> が付いていたら、そのカードだけを出す
+function _focusCardFromUrl(){
+  let id='';
+  try{ id=new URLSearchParams(location.search).get('card')||''; }catch(e){ return; }
+  if(!id) return;
+  const c=db.cards.find(x=>x.id===id);
+  if(!c){
+    alert('このカードは手元のデータに見つかりませんでした。\n' + id);
+    return;
+  }
+  clearFilters();
+  fs.importedIds=new Set([id]);
+  const badge=document.getElementById('import-badge');
+  const txt=document.getElementById('import-badge-txt');
+  if(txt) txt.textContent=`買い得リストから 「${c.name}」`;
+  if(badge) badge.style.display='';
+  renderAll();
+  scrollTo(0,0);
 }
 // 買い得リストのタブから戻ってきたときにも拾う
 addEventListener('focus', ()=>{ if(_buyQueueReady()) _showBuyQueue(); });
