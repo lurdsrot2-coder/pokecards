@@ -5104,7 +5104,6 @@ function _buyQueueReady(){
     if(!_buyQueueReady()) return;
     clearInterval(t);
     _showBuyQueue();
-    _focusCardFromUrl();
   }, 1500);
 }
 // ── 買い得リストの画像から飛んできたとき ──
@@ -5793,6 +5792,9 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
   fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
   renderAll();
+  // 買い得リストの画像から飛んできたときの絞り込みは、ここで当てる。
+  // fs を作り直した後でないと、せっかく絞ってもこの行で消えてしまう
+  try{ _focusCardFromUrl(); }catch(e){}
   // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
 });
