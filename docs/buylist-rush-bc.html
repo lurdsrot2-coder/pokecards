@@ -316,7 +316,8 @@ function apply(){
   if(st.card){
     // 同じカードの他店の値段を見るためのモード。ほかの条件は全部外す
     view=rows.filter(r=>r.id===st.card);
-    view.sort((a,b)=>a.cr-b.cr);
+    // 今買えるものを先に。売り切れは値段が過去のものなので後ろへ
+    view.sort((a,b)=>(a.sold-b.sold)||(a.cr-b.cr));
     grid.innerHTML=''; shown=0; draw();
     document.getElementById('hit').textContent=view.length+'件';
     return;
@@ -345,14 +346,31 @@ function apply(){
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
-function focusCard(id){
+function focusCard(id, alt){
   st.card=id;
   const r=rows.find(x=>x.id===id);
+  const nm=r?r.name:(alt||'');
   const f=document.getElementById('focus');
   f.classList.add('on');
-  document.getElementById('focus-t').innerHTML='<b>'+esc(r?r.name:'')+'</b> の出品を安い順に表示中';
+  // 出品が1件も無いときに空の画面だけ出すと壊れて見えるので、無いことを書く
+  document.getElementById('focus-t').innerHTML = r
+    ? '<b>'+esc(nm)+'</b> の出品を安い順に表示中'
+    : '<b>'+esc(nm)+'</b> の出品は今ありません（4店・売り切れ含めて0件）';
   apply();
   scrollTo(0,0);
+}
+// アプリでカードをAlt+クリックして飛んできたとき。?card=<カードid>&name=<カード名>
+// 更新のたびに絞り直さないよう、最初の1回だけ
+let _urlCardDone=false;
+function focusFromUrl(){
+  if(_urlCardDone) return;
+  _urlCardDone=true;
+  let id='', nm='';
+  try{
+    const q=new URLSearchParams(location.search);
+    id=q.get('card')||''; nm=q.get('name')||'';
+  }catch(e){ return; }
+  if(id) focusCard(id, nm);
 }
 document.getElementById('focus-x').onclick=()=>{
   st.card=''; document.getElementById('focus').classList.remove('on'); apply();
@@ -402,6 +420,7 @@ function show(d, ownedN){
   serSync();
   document.getElementById('msg').hidden=true;
   apply();
+  focusFromUrl();   // apply() の後。中でもう一度絞り直す
 }
 // 相場と所持枚数を、アプリ側の delta.json（直近の変更ぶん）で上書きする。
 // 一覧そのものは定期更新のぶんでも、この2つは押した時点の値になる

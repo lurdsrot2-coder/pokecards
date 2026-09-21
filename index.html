@@ -1650,7 +1650,7 @@ function cardHTML(c){
   const isSel=selIds.has(c.id);
   return `<div class="ci ${c.owned>0?'owned':''} ${c.favorite?'fav':''} ${isSel?'selected':''} ${c.hidden?'card-hidden':''}" data-id="${c.id}">
     <button class="cfav" data-act="fav" data-id="${c.id}" title="お気に入り">${c.favorite?'★':'☆'}</button>
-    <div class="ciwrap"><div class="cimg">${img}</div></div>
+    <div class="ciwrap" title="クリックで詳細 ／ Alt+クリックで、このカードの出品を買い得リストで見る"><div class="cimg">${img}</div></div>
     <div class="cinf">
       <div class="cname" data-act="namefilter" data-id="${c.id}" title="同名カードをすべて表示: ${esc(c.name)}">${esc(c.name)}</div>
       <div class="csub">
@@ -1961,6 +1961,22 @@ function patchOwnedEl(c){
 }
 
 document.getElementById('grid').addEventListener('click',e=>{
+  // Alt+クリック: そのカードが4店に出ていないかを買い得リストで見る。
+  // Ctrl / Shift は選択モードに使っているので Alt に割り当てた。
+  // ＋/− より先に見るので、ボタンの上で押しても枚数は動かない
+  if(e.altKey){
+    const ciAlt=e.target.closest('.ci');
+    if(ciAlt){
+      e.preventDefault(); e.stopPropagation();
+      const ca=getCard(ciAlt.dataset.id);
+      if(ca){
+        // 名前も渡す。出品が1件も無いときに「何が無いのか」を出すため
+        window.open('docs/buylist-rush-bc.html?card='+encodeURIComponent(ca.id)
+                    +'&name='+encodeURIComponent(ca.name||''), '_blank', 'noopener');
+      }
+      return;
+    }
+  }
   // +/- ボタンは選択モードでも動作
   const btn=e.target.closest('[data-act]');
   if(btn){
