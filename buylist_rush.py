@@ -17,6 +17,7 @@
 """
 import urllib.request, urllib.parse, re, io, json, sys, os, time, subprocess
 import unicodedata, statistics, datetime, collections
+import concurrent.futures as futures
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -832,16 +833,46 @@ PB_TITLE = re.compile(r'^(.*?)[（(]([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})[）)]\
                       r'[［\[]([^］\]]*)[］\]]\s*(?:【([^】]*)】)?')
 
 
-def pb_scrape():
-    """PRICE BASE。収録弾ごとのカテゴリに商品名の形で番号もレアリティも入っている。
-    ADV や PCG など古い弾のノーマルが安く出ているのがここの強み"""
+PB_LD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S)
+PB_COND = re.compile(r'状態\s*([A-D])')
+
+
+def pb_product(url):
+    """商品ページの構造化データから、状態ごとの値段と在庫を読む。
+    一覧の値段は売り切れの状態まで含めた最安値なので当てにならない"""
+    h = fetch(url, tries=2)
+    if not h:
+        return None
+    for blk in PB_LD.findall(h):
+        try:
+            d = json.loads(blk)
+        except Exception:
+            continue
+        if d.get('@type') != 'ProductGroup':
+            continue
+        out = []
+        for v in (d.get('hasVariant') or []):
+            of = v.get('offers') or {}
+            if 'InStock' not in str(of.get('availability') or ''):
+                continue          # 売り切れの状態は出さない
+            price = int(float(of.get('price') or 0))
+            if price <= 0:
+                continue
+            mc = PB_COND.search(v.get('name') or '')
+            out.append((mc.group(1) if mc else 'A', price))
+        return out
+    return None
+
+
+def pb_links():
+    """一覧をめくって、商品の場所（URL）と商品名だけを集める"""
     top = fetch(PB + '/c/pokemon')
     cats = sorted({c for c in PB_CAT.findall(top or '') if c.count('/') == 3})
     if not cats:
         log('  PRICE BASE のカテゴリ一覧が読めません')
-        return []
+        return {}
     log('  PRICE BASE カテゴリ %d件' % len(cats))
-    items, miss = {}, 0
+    found, miss = {}, 0
     for i, c in enumerate(cats):
         for page in range(1, 21):
             url = PB + c + ('?page=%d' % page if page > 1 else '')
@@ -850,20 +881,21 @@ def pb_scrape():
                 miss += 1
                 if miss >= 5:
                     log('  PRICE BASE に繋がらないので今回は見送ります')
-                    return []
+                    return {}
                 break
             miss = 0
             added = 0
             for seg in h.split('fs-c-productListItem__image')[1:]:
                 mn = PB_NAME.search(seg)
                 ml = PB_LINK.search(seg)
-                mp = PB_PRICE.search(seg)
-                if not (mn and ml and mp):
+                if not (mn and ml):
                     continue
+                slug = ml.group(1)
+                if slug in found:
+                    continue
+                added += 1
+                # 一覧の「在庫切れ」は商品ごと。付いていれば状態A〜Dすべて在庫なし
                 if '在庫切れ' in seg:
-                    continue
-                pid = 'pb' + ml.group(1).rsplit('/', 1)[-1]
-                if pid in items:
                     continue
                 title = unicodedata.normalize('NFKC', mn.group(1)).strip()
                 title = re.sub(r'^【[^】]*】\s*', '', title)
@@ -871,21 +903,48 @@ def pb_scrape():
                     continue
                 mt = PB_TITLE.match(title)
                 if not mt:
-                    continue          # 番号が書かれていない商品は当てられないので捨てる
-                items[pid] = {
-                    'shop': 'PB', 'pid': pid, 'cond': 'A',
-                    'url': PB + ml.group(1),
-                    'name': mt.group(1).strip(), 'rarity': (mt.group(3) or '').strip(),
-                    'num': mt.group(2).upper(), 'setcode': '',
-                    'settitle': (mt.group(4) or '').strip(),
-                    'price': int(mp.group(1).replace(',', '')),
-                    'stock': 1, 'soldout': False}
-                added += 1
+                    continue      # 番号が書かれていない商品は当てられないので捨てる
+                found[slug] = (mt.group(1).strip(), mt.group(2).upper(),
+                               (mt.group(3) or '').strip(), (mt.group(4) or '').strip())
             if added == 0:
                 break
-            time.sleep(.3)
+            time.sleep(.25)
         if (i + 1) % 50 == 0:
-            log('  PRICE BASE %d/%dカテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+            log('  PRICE BASE %d/%dカテゴリ 商品%d件' % (i + 1, len(cats), len(found)))
+    return found
+
+
+def pb_scrape():
+    """PRICE BASE。1商品に状態A〜Dがぶら下がっていて、一覧に出ている値段は
+    売り切れの状態まで含めた最安値なので当てにならない。
+    商品ページを見て、在庫のある状態だけを出す"""
+    found = pb_links()
+    if not found:
+        return []
+    log('  PRICE BASE 商品 %d件。状態ごとの在庫を見にいきます' % len(found))
+    items, done = {}, 0
+    with futures.ThreadPoolExecutor(max_workers=5) as ex:
+        jobs = {ex.submit(pb_product, PB + slug): slug for slug in found}
+        for f in futures.as_completed(jobs):
+            slug = jobs[f]
+            done += 1
+            try:
+                conds = f.result()
+            except Exception:
+                conds = None
+            if not conds:
+                continue          # 全部売り切れ、または読めなかった
+            name, num, rar, settitle = found[slug]
+            for cond, price in conds:
+                pid = 'pb' + slug.rsplit('/', 1)[-1] + '-' + cond.lower()
+                items[pid] = {
+                    'shop': 'PB', 'pid': pid, 'cond': cond,
+                    'url': PB + slug,
+                    'name': name, 'rarity': rar, 'num': num,
+                    'setcode': '', 'settitle': settitle,
+                    'price': price, 'stock': 1, 'soldout': False}
+            if done % 500 == 0:
+                log('  PRICE BASE %d/%d商品 累計%d件' % (done, len(found), len(items)))
     log('  PRICE BASE %d件' % len(items))
     return list(items.values())
 
