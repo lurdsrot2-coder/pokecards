@@ -36,6 +36,15 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
 .tg.on.TT{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .tg.on.FF{background:rgba(255,120,170,.28);border-color:#ff78aa;color:#fff}
+.thline{margin-top:4px}
+.thline summary{cursor:pointer;color:var(--cy);opacity:.75;font-size:11px}
+.thline>*:not(summary){opacity:.75;line-height:1.5}
+.tg.on.BW{background:rgba(160,107,255,.28);border-color:#a06bff;color:#fff}
+.tg.on.YY{background:rgba(154,209,42,.28);border-color:#9ad12a;color:#fff}
+.tg.on.TR{background:rgba(46,211,211,.28);border-color:#2ed3d3;color:#fff}
+.tg.on.PB{background:rgba(255,122,69,.28);border-color:#ff7a45;color:#fff}
+.tg.on.OL{background:rgba(255,210,74,.28);border-color:#ffd24a;color:#fff}
+.tg.on.MY{background:rgba(127,140,255,.28);border-color:#7f8cff;color:#fff}
 .serbtn{cursor:pointer;white-space:nowrap}
 .serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
 .hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
@@ -169,6 +178,12 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg TC" data-s="TC">キャンプ</button>
  <button class="tg TT" data-s="TT">トレトク</button>
  <button class="tg FF" data-s="FF">福福</button>
+ <button class="tg BW" data-s="BW">BIGWEB</button>
+ <button class="tg YY" data-s="YY">遊々亭</button>
+ <button class="tg TR" data-s="TR">トレコロ</button>
+ <button class="tg PB" data-s="PB">プライスベース</button>
+ <button class="tg OL" data-s="OL">オルタ</button>
+ <button class="tg MY" data-s="MY">マイカ</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -220,7 +235,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 <script>
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
-const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福'};
+const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
+            YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
@@ -233,7 +249,7 @@ function toRows(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
   // 共通の頭（画像URL・商品URL・カードid）はファイルを小さくするため外に出してある
   const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'',
-        bk=B.tt||'', bf=B.ff||'', cartBase=B.cart||'';
+        cartBase=B.cart||'';
   CART=cartBase;
   return d.items.map(a=>{
     const price=a[i.price], cr=a[i.cr];
@@ -255,11 +271,10 @@ function toRows(d){
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
+      // 店ごとの頭（base.tt / base.bw …）を戻す。カードラッシュだけは商品番号から組む
       url:/^https?:/.test(rawUrl) ? rawUrl
           : !rawUrl ? bc+a[i.pid]
-          : shop==='TT' ? bk+rawUrl
-          : shop==='FF' ? bf+rawUrl
-          : bt+rawUrl,
+          : (B[String(shop).toLowerCase()]||bt)+rawUrl,
       ratio:price?cr/price:0,save:price-cr};
   });
 }
@@ -390,7 +405,7 @@ function show(d, ownedN){
   // 実勢は店ごと・状態ごとに違うので、店で束ねて出す
   const SH=SHOP;
   const line=[];
-  for(const sh of ['CR','TC','TT','FF']){
+  for(const sh of Object.keys(SHOP)){
     const ks=Object.keys(d.th||{}).filter(k=>k.startsWith(sh)).sort();
     if(!ks.length) continue;
     line.push(SH[sh]+' '+ks.map(k=>k.slice(2)+' '+Math.round((d.th[k].med||0)*100)+'%→'
@@ -406,13 +421,15 @@ function show(d, ownedN){
     +(isNaN(t)?'?':t.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))
     +' 時点（'+ageTxt+'）'+(stale?' ※売り切れている可能性があります':'')+'</span>'
     +' ／ <b>'+(s.cards||rows.length).toLocaleString()+'</b>件'
-    +(s.byShop?'（'+Object.keys(SHOP).filter(k=>s.byShop[k]).map(k=>SHOP[k]+' '+s.byShop[k].toLocaleString()).join(' / ')+'）':'')
+    +(s.byShop?'<span class="byshop">（'+Object.keys(SHOP).filter(k=>s.byShop[k])
+        .map(k=>SHOP[k]+' '+s.byShop[k].toLocaleString()).join(' / ')+'）</span>':'')
     +(s.added?' ／ <span class="new">新着 '+s.added+'件</span>':'')
     +(s.sold ?' ／ <span class="gone">売れた '+s.sold+'件</span>':'')
     +(d.syncedAt?' ／ 相場と所持は '+new Date(d.syncedAt).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+' 時点':'')
     +(ownedN>0?' ／ <span class="new">直近の変更 '+ownedN+'件を反映</span>'
       :ownedN<0?' ／ <span class="gone">アプリの差分を読めませんでした</span>':'')
-    +'<br>相場に対する実勢の中央値 → 割安とみなす線（'+line.join(' ／ ')+'）';
+    +'<details class="thline"><summary>割安とみなす線（'+line.length+'店）</summary>'
+      +'相場に対する実勢の中央値 → 割安とみなす線<br>'+line.join('<br>')+'</details>';
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
@@ -456,7 +473,13 @@ async function load(force){
   }catch(e){
     const m=document.getElementById('msg');
     m.hidden=false;
-    m.textContent='データを読み込めませんでした（'+e.message+'）。時間をおいて「⟳ 更新」を押してください。';
+    // file:// で開くと、ブラウザがローカルのJSONを読ませてくれない（CORS）。
+    // ダブルクリックで開いたときは必ずここに来るので、URLを案内する
+    m.innerHTML = location.protocol==='file:'
+      ? 'このページはファイルを直接開くと表示できません（ブラウザがデータの読み込みを止めます）。<br>'
+        +'<a href="https://lurdsrot2-coder.github.io/pokecards/docs/buylist-rush-bc.html">'
+        +'https://lurdsrot2-coder.github.io/pokecards/docs/buylist-rush-bc.html</a> を開いてください。'
+      : 'データを読み込めませんでした（'+esc(e.message)+'）。時間をおいて「⟳ 更新」を押してください。';
   }
   b.disabled=false; b.textContent='⟳ 更新';
 }

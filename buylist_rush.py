@@ -486,6 +486,561 @@ def ff_scrape():
     return list(items.values())
 
 
+# ── ここから下は追加の店 ──────────────────────────────
+# どの店も、返すのは同じ形の辞書:
+#   shop / pid / cond / url / name / rarity / num / setcode / settitle /
+#   price / stock / soldout
+# 画像は手元のDBのものを使うので、店から取る必要はない。
+
+# カード以外（未開封・オリパ・鑑定品・海外版）は買い得リストの対象外。
+# 「パック」は収録弾の名前にも出るので入れない
+SKIP_WORDS = ('PSA', '鑑定', 'ARS', '未開封', 'BOX', 'ボックス', '英語版', '海外版',
+              '韓国版', '中国語', '北米版', '福袋', 'オリパ', 'くじ',
+              'スリーブ', 'デッキケース', 'プレイマット', 'サプライ')
+
+
+def curl_text(url, accept='text/html', data=None, tries=4):
+    """外の店は curl に任せる。
+
+    Pythonのurllibだと店によってはTLSの指紋で弾かれる（トレカキャンプで実際にあった）。
+    data を渡すと JSON の POST になる（オルタのGraphQL用）。
+    """
+    args = ['curl', '-sS', '-L', '--compressed', '-m', '90', '-w', '\n%{http_code}',
+            '-A', UA, '-H', 'Accept: ' + accept, '-H', 'Accept-Language: ja,en;q=0.8']
+    tmp = ''
+    if data is not None:
+        # 日本語を含むので、コマンドラインに直接書かずファイル経由で渡す
+        tmp = os.path.join(HERE, '_post_%d.json' % os.getpid())
+        with io.open(tmp, 'w', encoding='utf-8') as f:
+            f.write(json.dumps(data, ensure_ascii=False))
+        args += ['-H', 'Content-Type: application/json', '--data-binary', '@' + tmp]
+    args.append(url)
+    try:
+        for i in range(tries):
+            try:
+                r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   timeout=120, creationflags=NOWIN)
+                out = r.stdout.decode('utf-8', 'replace')
+                code = out.rsplit('\n', 1)[-1].strip()
+                body = out.rsplit('\n', 1)[0]
+                if code == '200' and body.strip():
+                    return body
+                if code == '404':
+                    return ''        # 存在しないページ。待っても現れない
+                log('  retry %d: HTTP %s %s' % (i + 1, code or '?', url[:70]))
+                time.sleep(max(20 * (i + 1), 20) if code in ('429', '403', '503') else 3)
+            except Exception as e:
+                log('  retry %d: %s' % (i + 1, e))
+                time.sleep(3 + i * 3)
+    finally:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+    return ''
+
+
+def curl_json(url, data=None, tries=4):
+    body = curl_text(url, 'application/json', data, tries)
+    if not body:
+        return {}
+    try:
+        return json.loads(body)
+    except Exception:
+        log('  JSONとして読めません: %s' % url[:70])
+        return {}
+
+
+def zero_strip(code):
+    """店によって収録弾の記号がゼロ埋めされている（m06a）。
+    手元のDBは公式表記（M6a）なので、英字の直後のゼロだけを落とす。
+    『SPROMO-100』のような数字は触らない"""
+    return re.sub(r'(?<=[A-Z])0+(?=\d)', '', (code or '').upper())
+
+
+# ── BIGWEB（公開APIをそのまま読む） ───────────────────
+BW_API = 'https://api.bigweb.co.jp/products'
+BW_VIEW = 'https://www.bigweb.co.jp/ja/products/pokemon/cardViewer/'
+BW_GAME = 170                     # ポケモンカードゲーム
+BW_SET = re.compile(r'^【([^】]+)】\s*(.*)$')
+BW_NUM = re.compile(r'[(（]\s*([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})\s*[)）]')
+BW_STATE = re.compile(r'【状態\s*([A-D])')
+JP_CHAR = re.compile(r'[ぁ-んァ-ヶ一-龥]')
+
+
+def bw_cond(it):
+    """『プレイ用』＝そのまま使える、『特価[傷含む]』＝キズあり。
+    旧裏の高額品だけは【状態B+】のように別途書かれるので、そちらを優先する"""
+    txt = ' '.join(str(it.get(k) or '') for k in ('name', 'comment', 'sale_words', 'description'))
+    m = BW_STATE.search(txt)
+    if m:
+        return m.group(1)
+    w = ((it.get('condition') or {}).get('web') or '')
+    return 'C' if ('傷' in w or '特価' in w) else 'A'
+
+
+def bw_scrape():
+    """BIGWEB。1ページ100件のJSONを最後まで読むだけ。
+    旧裏・e・ADV まで在庫があり、収録弾の記号が商品側に入っているのが強み"""
+    first = curl_json('%s?game_id=%d&page=1' % (BW_API, BW_GAME))
+    pg = first.get('pagenate') or {}
+    pages = pg.get('pageCount') or 0
+    if not pages:
+        log('  BIGWEBのAPIが読めません')
+        return []
+    log('  BIGWEB %dページ（在庫切れ含め%d件）' % (pages, pg.get('count') or 0))
+    items = {}
+    for p in range(1, pages + 1):
+        d = first if p == 1 else curl_json('%s?game_id=%d&page=%d' % (BW_API, BW_GAME, p))
+        got = d.get('items') or []
+        if not got and p > 1:
+            log('  BIGWEB %dページ目が空。ここで打ち切ります' % p)
+            break
+        for it in got:
+            if it.get('is_sold_out') or (it.get('stock_count') or 0) <= 0:
+                continue
+            if it.get('is_box') or it.get('is_supply') or it.get('is_preorder_item'):
+                continue
+            price = int(it.get('price') or 0)
+            if price <= 0:
+                continue
+            name = (it.get('name') or '').strip()
+            if not name or any(w in name for w in SKIP_WORDS):
+                continue
+            # 日本語版のコレクションなので、英語名だけの商品（海外版）は入れない
+            if not JP_CHAR.search(name):
+                continue
+            slip = ((it.get('cardset') or {}).get('slip') or '').strip()
+            if any(w in slip for w in SKIP_WORDS):
+                continue
+            m = BW_SET.match(slip)
+            code, title = (m.group(1), m.group(2)) if m else ('', slip)
+            mn = BW_NUM.search(it.get('comment') or '') or BW_NUM.search(name)
+            pid = 'bw%s' % it.get('id')
+            items[pid] = {
+                'shop': 'BW', 'pid': pid, 'cond': bw_cond(it),
+                'url': BW_VIEW + str(it.get('id')),
+                'name': BW_NUM.sub('', name).strip(),
+                'rarity': ((it.get('rarity') or {}).get('web') or '').strip(),
+                'num': mn.group(1).upper() if mn else '',
+                # 【MBG/MBD】のように2弾ぶん書かれることがあるので先頭だけ見る
+                'setcode': zero_strip(code.split('/')[0].strip()),
+                'settitle': title, 'price': price,
+                'stock': int(it.get('stock_count') or 0), 'soldout': False}
+        if p % 50 == 0:
+            log('  BIGWEB %d/%dページ 在庫あり%d件' % (p, pages, len(items)))
+        time.sleep(.2)
+    log('  BIGWEB %d件' % len(items))
+    return list(items.values())
+
+
+# ── 遊々亭（収録弾ごとの静的ページ） ───────────────────
+YY = 'https://yuyu-tei.jp'
+YY_VERS = re.compile(r'name="vers\[\]"[^>]*value="([a-z0-9_\-]+)"')
+YY_BLOCK = re.compile(r'<div\s+class="(card-product[^"]*)"(.*?)'
+                      r'(?=<div\s+class="card-product|<footer|</body)', re.S)
+YY_IMG = re.compile(r'<img\s+src="https://card\.yuyu-tei\.jp/[^"]*"\s+alt="([^"]*)"')
+YY_PRICE = re.compile(r'([\d,]+)\s*円')
+YY_HID = re.compile(r'value="([^"]*)"\s+class="cart_(cid|ver|kizu)"')
+# 在庫は「◯」（潤沢）か「2 点」（残りわずか）か「×」（売切）の3通り
+YY_ZAIKO = re.compile(r'在庫\s*:\s*([^<]*)<')
+# alt は「134/103 FUR ミュウツーex」の形（番号・レアリティ・カード名）
+YY_ALT = re.compile(r'^(\S+/\S+)\s+(\S+)\s+(.+)$')
+
+
+def yy_scrape():
+    """遊々亭。収録弾ごとに1ページで全部載っているので、弾の数だけ取る。
+    キズありは cart_kizu=1 で区別されている"""
+    top = fetch(YY + '/sell/poc/s/m06a')
+    if not top:
+        log('  遊々亭に繋がりません')
+        return []
+    vers = []
+    for v in YY_VERS.findall(top):
+        if v not in vers:
+            vers.append(v)
+    if not vers:
+        log('  遊々亭の収録弾リストが読めません')
+        return []
+    # キズあり品は弾のページには出ず、この一覧にだけ載る
+    vers.append('damage')
+    log('  遊々亭 収録弾 %d件（＋キズあり一覧）' % (len(vers) - 1))
+    items, miss = {}, 0
+    for i, v in enumerate(vers):
+        h = top if v == 'm06a' else fetch('%s/sell/poc/s/%s' % (YY, v))
+        if not h:
+            miss += 1
+            if miss >= 5:
+                log('  遊々亭に繋がらないので今回は見送ります')
+                return []
+            continue
+        miss = 0
+        code = zero_strip(v)
+        for cls, seg in YY_BLOCK.findall(h):
+            if 'sold-out' in cls:
+                continue
+            alt = YY_IMG.search(seg)
+            if not alt:
+                continue
+            ma = YY_ALT.match(alt.group(1).strip())
+            if not ma:
+                continue
+            hid = dict((k, val) for val, k in YY_HID.findall(seg))
+            cid = hid.get('cid') or ''
+            if not cid:
+                continue
+            p = YY_PRICE.search(seg)
+            if not p:
+                continue
+            z = YY_ZAIKO.search(seg)
+            zt = (z.group(1).strip() if z else '')
+            if not zt or zt[0] in '×xX':
+                continue
+            digits = re.sub(r'\D', '', zt)
+            kizu = (hid.get('kizu') or '0') != '0'
+            # キズありの一覧（/s/damage）は弾がばらばらなので、
+            # ページではなく商品じたいが持っている弾を見る
+            ver = hid.get('ver') or v
+            pid = 'yy%s-%s%s' % (ver, cid, 'k' if kizu else '')
+            name = ma.group(3).strip()
+            if any(w in name for w in SKIP_WORDS):
+                continue
+            items[pid] = {
+                'shop': 'YY', 'pid': pid, 'cond': 'C' if kizu else 'A',
+                'url': '%s/sell/poc/card/%s/%s' % (YY, ver, cid),
+                'name': name, 'rarity': ma.group(2).strip(),
+                'num': ma.group(1).strip().upper(), 'setcode': zero_strip(ver) or code,
+                'settitle': '', 'price': int(p.group(1).replace(',', '')),
+                'stock': int(digits) if digits else 9, 'soldout': False}
+        if (i + 1) % 50 == 0:
+            log('  遊々亭 %d/%d弾 累計%d件' % (i + 1, len(vers), len(items)))
+        time.sleep(.3)
+    log('  遊々亭 %d件' % len(items))
+    return list(items.values())
+
+
+# ── トレコロ（カードボックス／ecbeing） ───────────────
+TR = 'https://www.torecolo.jp'
+TR_MENU = TR + '/side_menu/pc_side_menu.html'
+TR_CAT = re.compile(r'/shop/c/(c1074\d{2,6})/')
+TR_CODE = re.compile(r'/shop/g/g([^/"]+)/')
+TR_NAME = re.compile(r'js-enhanced-ecommerce-goods-name"[^>]*>([^<]+)<')
+TR_TITLE = re.compile(r'data-category="([^"(]*)')
+TR_RAR = re.compile(r'goods-category ellipsis line\d">([^<]*)<')
+TR_PRICE = re.compile(r'goods-price">\s*([\d,]+)\s*円')
+TR_STOCK = re.compile(r'product-stock">在庫\s*<span>(\d+)</span>')
+TR_VAR = re.compile(r'variation-name[^>]*>([^<]*)<')
+# 商品コードは「135-103-M6A-B-K-SALE」＝ 番号・分母・収録弾・おまけの記号。
+# 収録弾は「S8A-P」のようにハイフンを含むことがあるので、
+# うしろから記号を落とすのではなく、前から記号に当たるまでを弾として読む
+TR_FLAG = re.compile(r'^(?:B|K|N|A|C|D|KIZU|SALE\d*)$')
+
+
+def tr_code(code):
+    parts = (code or '').split('-')
+    if len(parts) < 2:
+        return '', ''
+    if parts[1].isdigit():
+        num, rest = '%s/%s' % (parts[0], parts[1]), parts[2:]
+    else:
+        num, rest = '', parts[1:]
+    ver = []
+    for seg in rest:
+        if TR_FLAG.match(seg):
+            break
+        ver.append(seg)
+    return num.upper(), zero_strip('-'.join(ver))
+
+
+def tr_cond(var):
+    """状態は「（商品状態・中古良品）」の形で書かれている"""
+    if 'キズ' in var or '傷' in var or 'プレイ用' in var:
+        return 'C'
+    if '良品' in var:
+        return 'B'
+    return 'A'
+
+
+def tr_scrape():
+    """トレコロ。収録弾ごとのカテゴリを1ページ50件でめくる。
+    収録弾の記号が商品コードに入っているので、弾の取り違えが起きにくい"""
+    menu = fetch(TR_MENU)
+    cats = sorted(set(TR_CAT.findall(menu or '')))
+    if not cats:
+        log('  トレコロのカテゴリ一覧が読めません')
+        return []
+    log('  トレコロ カテゴリ %d件' % len(cats))
+    items, miss = {}, 0
+    for i, c in enumerate(cats):
+        for page in range(1, 41):        # 1カテゴリ2000件で頭打ち
+            url = '%s/shop/c/%s/%s' % (TR, c, '?page=%d' % page if page > 1 else '')
+            h = fetch(url)
+            if not h:
+                miss += 1
+                if miss >= 5:
+                    log('  トレコロに繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
+            added = 0
+            for seg in h.split('<dl class="block-thumbnail-t--goods')[1:]:
+                mc = TR_CODE.search(seg)
+                mn = TR_NAME.search(seg)
+                mp = TR_PRICE.search(seg)
+                if not (mc and mn and mp):
+                    continue
+                code = mc.group(1)
+                var = (TR_VAR.search(seg).group(1) if TR_VAR.search(seg) else '')
+                pid = 'tr' + code
+                if pid in items:
+                    continue
+                name = unicodedata.normalize('NFKC', mn.group(1)).strip()
+                if not name or any(w in name for w in SKIP_WORDS):
+                    continue
+                num, setcode = tr_code(code)
+                ms = TR_STOCK.search(seg)
+                mr = TR_RAR.search(seg)
+                mtt = TR_TITLE.search(seg)
+                items[pid] = {
+                    'shop': 'TR', 'pid': pid, 'cond': tr_cond(var),
+                    'url': '%s/shop/g/g%s/' % (TR, code),
+                    'name': name,
+                    'rarity': unicodedata.normalize('NFKC', mr.group(1)).strip() if mr else '',
+                    'num': num.upper(), 'setcode': setcode,
+                    'settitle': (mtt.group(1).strip() if mtt else ''),
+                    'price': int(mp.group(1).replace(',', '')),
+                    'stock': int(ms.group(1)) if ms else 1, 'soldout': False}
+                added += 1
+            if added == 0:
+                break
+            time.sleep(.3)
+        if (i + 1) % 50 == 0:
+            log('  トレコロ %d/%dカテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+    log('  トレコロ %d件' % len(items))
+    return list(items.values())
+
+
+# ── PRICE BASE（futureshop） ──────────────────────────
+PB = 'https://shop.price-base.com'
+PB_CAT = re.compile(r'href="(/c/pokemon/[a-z0-9\-]+)"')
+PB_LINK = re.compile(r'href="(/c/pokemon/[a-z0-9\-]+/[a-z0-9\-]+)"')
+PB_NAME = re.compile(r'fs-c-productName__name">([^<]{1,90})<')
+PB_PRICE = re.compile(r'fs-c-price__value">([\d,]+)<')
+# 「ドガース（001/055）［C］【ADVシリーズ】」＝ 名前・番号・レアリティ・シリーズ
+PB_TITLE = re.compile(r'^(.*?)[（(]([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})[）)]\s*'
+                      r'[［\[]([^］\]]*)[］\]]\s*(?:【([^】]*)】)?')
+
+
+def pb_scrape():
+    """PRICE BASE。収録弾ごとのカテゴリに商品名の形で番号もレアリティも入っている。
+    ADV や PCG など古い弾のノーマルが安く出ているのがここの強み"""
+    top = fetch(PB + '/c/pokemon')
+    cats = sorted({c for c in PB_CAT.findall(top or '') if c.count('/') == 3})
+    if not cats:
+        log('  PRICE BASE のカテゴリ一覧が読めません')
+        return []
+    log('  PRICE BASE カテゴリ %d件' % len(cats))
+    items, miss = {}, 0
+    for i, c in enumerate(cats):
+        for page in range(1, 21):
+            url = PB + c + ('?page=%d' % page if page > 1 else '')
+            h = fetch(url)
+            if not h:
+                miss += 1
+                if miss >= 5:
+                    log('  PRICE BASE に繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
+            added = 0
+            for seg in h.split('fs-c-productListItem__image')[1:]:
+                mn = PB_NAME.search(seg)
+                ml = PB_LINK.search(seg)
+                mp = PB_PRICE.search(seg)
+                if not (mn and ml and mp):
+                    continue
+                if '在庫切れ' in seg:
+                    continue
+                pid = 'pb' + ml.group(1).rsplit('/', 1)[-1]
+                if pid in items:
+                    continue
+                title = unicodedata.normalize('NFKC', mn.group(1)).strip()
+                title = re.sub(r'^【[^】]*】\s*', '', title)
+                if any(w in title for w in SKIP_WORDS):
+                    continue
+                mt = PB_TITLE.match(title)
+                if not mt:
+                    continue          # 番号が書かれていない商品は当てられないので捨てる
+                items[pid] = {
+                    'shop': 'PB', 'pid': pid, 'cond': 'A',
+                    'url': PB + ml.group(1),
+                    'name': mt.group(1).strip(), 'rarity': (mt.group(3) or '').strip(),
+                    'num': mt.group(2).upper(), 'setcode': '',
+                    'settitle': (mt.group(4) or '').strip(),
+                    'price': int(mp.group(1).replace(',', '')),
+                    'stock': 1, 'soldout': False}
+                added += 1
+            if added == 0:
+                break
+            time.sleep(.3)
+        if (i + 1) % 50 == 0:
+            log('  PRICE BASE %d/%dカテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+    log('  PRICE BASE %d件' % len(items))
+    return list(items.values())
+
+
+# ── カードショップオルタ（GraphQL） ───────────────────
+OL = 'https://olta-tcg.com'
+OL_Q = """query F($page:Int,$perPage:Int,$where:ProductFaceWhereInput){
+  productFaces(page:$page,perPage:$perPage,where:$where){
+    count pageCount
+    items{ name code
+      productSkus{ skuCode price stock }
+      productTags{ name }
+    }
+  }
+}"""
+# 商品名は「ナゾノクサ[タネばくだん][M2/001/080]」＝ 最後の[]に 弾/番号/総数
+OL_NAME = re.compile(r'^(.*?)\s*\[([0-9A-Za-z\-]{1,10})/([0-9A-Za-z]{1,4})/([0-9A-Za-z]{1,6})\]\s*$')
+OL_SKU = re.compile(r'^condition-([a-e])-')
+OL_COND = {'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D', 'e': 'D'}
+
+
+def ol_scrape():
+    """カードショップオルタ。状態A〜Eが1商品にぶら下がっていて、
+    それぞれ別の値段が付いている。安い状態だけを拾える"""
+    items = {}
+    page, pages = 1, 1
+    while page <= pages:
+        d = curl_json(OL + '/api', {'query': OL_Q, 'variables': {
+            'page': page, 'perPage': 100,
+            'where': {'cardTitle': {'is': {'code': {'equals': 'pokemon'}}}}}})
+        pf = ((d.get('data') or {}).get('productFaces') or {})
+        got = pf.get('items') or []
+        if page == 1:
+            pages = pf.get('pageCount') or 0
+            if not pages:
+                log('  オルタのAPIが読めません')
+                return []
+            log('  オルタ %dページ（在庫切れ含め%d件）' % (pages, pf.get('count') or 0))
+        if not got:
+            break
+        for it in got:
+            mt = OL_NAME.match((it.get('name') or '').strip())
+            if not mt:
+                continue
+            name = re.sub(r'\[[^\]]*\]', '', mt.group(1)).strip()
+            if not name or any(w in name for w in SKIP_WORDS):
+                continue
+            tags = [(t.get('name') or '').strip() for t in (it.get('productTags') or [])]
+            rar = next((t for t in tags if t in TC_RARITY), '')
+            for sk in (it.get('productSkus') or []):
+                if (sk.get('stock') or 0) <= 0 or (sk.get('price') or 0) <= 0:
+                    continue
+                ms = OL_SKU.match(sk.get('skuCode') or '')
+                if not ms:
+                    continue
+                pid = 'ol%s-%s' % (it.get('code'), ms.group(1))
+                items[pid] = {
+                    'shop': 'OL', 'pid': pid, 'cond': OL_COND[ms.group(1)],
+                    'url': '%s/pokemon/product/detail/%s' % (OL, it.get('code')),
+                    'name': name, 'rarity': rar,
+                    'num': '%s/%s' % (mt.group(3), mt.group(4)),
+                    'setcode': zero_strip(mt.group(2)), 'settitle': '',
+                    'price': int(sk['price']), 'stock': int(sk['stock']), 'soldout': False}
+        if page % 30 == 0:
+            log('  オルタ %d/%dページ 累計%d件' % (page, pages, len(items)))
+        page += 1
+        time.sleep(.25)
+    log('  オルタ %d件' % len(items))
+    return list(items.values())
+
+
+# ── DMMマイカ（全国の店が集まるモール） ───────────────
+MY = 'https://myca.dmm.com'
+MY_LIST = MY + '/pokemon-trading-card-game/list'
+MY_SPLIT = 'href="/pokemon-trading-card-game/items/single-card/'
+MY_ID = re.compile(r'^(\d+)"')
+MY_ANCHOR = re.compile(r'^\d+"[^>]*>(.*?)</a>', re.S)
+MY_COND = re.compile(r'状態([A-Z])')
+MY_YEN = re.compile(r'¥(?:<!--\s*-->)?([\d,]+)')
+MY_META = re.compile(r'text-muted-foreground[^>]*>([^<]{1,24})<')
+MY_NUM = re.compile(r'([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})\s*$')
+
+
+def my_scrape():
+    """DMMマイカ。全国のカードショップが出している商品がまとめて並ぶ。
+    1ページ50件・ページ番号だけでめくれる"""
+    items, miss, blank = {}, 0, 0
+    for page in range(1, 401):        # 1日3回まわすので、これくらいで頭打ちにする
+        h = curl_text('%s?page=%d' % (MY_LIST, page))
+        if not h:
+            miss += 1
+            # すでに集まっているなら、最後のページまで来たということ。
+            # ここで捨てると1万件超がまるごと無駄になる
+            if len(items) >= 300 and miss >= 2:
+                log('  DMMマイカ %dページ目まで（%d件）' % (page - 1, len(items)))
+                break
+            if miss >= 5:
+                log('  DMMマイカに繋がらないので今回は見送ります')
+                return []
+            continue
+        miss = 0
+        added = 0
+        for seg in h.split(MY_SPLIT)[1:]:
+            mi = MY_ID.match(seg)
+            ma = MY_ANCHOR.match(seg)
+            if not (mi and ma):
+                continue
+            pid = 'my' + mi.group(1)
+            if pid in items:
+                continue
+            head = re.sub(r'<!--.*?-->', '', ma.group(1))
+            text = unicodedata.normalize('NFKC', re.sub(r'<[^>]+>', ' ', head)).strip()
+            mn = MY_NUM.search(text)
+            name = (text[:mn.start()] if mn else text).strip()
+            if not name or any(w in name for w in SKIP_WORDS):
+                continue
+            body = seg[:3000]
+            mp = MY_YEN.search(body)
+            if not mp:
+                continue
+            mc = MY_COND.search(body)
+            meta = MY_META.findall(body)
+            # 「AR/M6a」のようにレアリティと収録弾が並ぶ。弾だけのこともある
+            rar, code = '', ''
+            for v in meta:
+                if '/' in v:
+                    rar, code = v.split('/', 1)
+                    break
+                if not code:
+                    code = v
+            items[pid] = {
+                'shop': 'MY', 'pid': pid,
+                'cond': mc.group(1) if mc and mc.group(1) in 'ABCD' else 'A',
+                'url': '%s/pokemon-trading-card-game/items/single-card/%s' % (MY, mi.group(1)),
+                'name': name, 'rarity': rar.strip(),
+                'num': mn.group(1).upper() if mn else '',
+                'setcode': zero_strip(code.strip()), 'settitle': '',
+                'price': int(mp.group(1).replace(',', '')),
+                'stock': 1, 'soldout': False}
+            added += 1
+        if added == 0:
+            # 速く叩くと空のページが返ってくる。8回続いたときだけ本当の終わりとみなす
+            blank += 1
+            if blank >= 8:
+                log('  DMMマイカ %dページ目で終わり' % page)
+                break
+        else:
+            blank = 0
+        if page % 50 == 0:
+            log('  DMMマイカ %dページ 累計%d件' % (page, len(items)))
+        time.sleep(.6)
+    log('  DMMマイカ %d件' % len(items))
+    return list(items.values())
+
+
 def scrape():
     """店ごとに集めて、ちゃんと取れた店の集合も返す。
     取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
@@ -494,7 +1049,10 @@ def scrape():
         only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
     items, ok = [], set()
     for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500),
-                            ('TT', tt_scrape, 500), ('FF', ff_scrape, 300)):
+                            ('TT', tt_scrape, 500), ('FF', ff_scrape, 300),
+                            ('BW', bw_scrape, 300), ('YY', yy_scrape, 300),
+                            ('TR', tr_scrape, 300), ('PB', pb_scrape, 200),
+                            ('OL', ol_scrape, 200), ('MY', my_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -752,6 +1310,16 @@ TC_PROD = TC + '/products/'
 CR_PROD = 'https://www.cardrush-pokemon.jp/product/'
 TT_PROD = TT + '/item/details/'
 FF_PROD = FF + '/products/detail/'
+BW_PROD = BW_VIEW
+YY_PROD = YY + '/sell/poc/card/'
+TR_PROD = TR + '/shop/g/g'
+PB_PROD = PB
+OL_PROD = OL + '/pokemon/product/detail/'
+MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
+# 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
+PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
+             ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
+             ('my', MY_PROD)]
 
 
 def shrink(row):
@@ -760,14 +1328,13 @@ def shrink(row):
     if img.startswith(IMG_BASE):
         row[i('img')] = img[len(IMG_BASE):]
     url = row[i('url')] or ''
-    if url.startswith(TC_PROD):
-        row[i('url')] = url[len(TC_PROD):]
-    elif url.startswith(TT_PROD):
-        row[i('url')] = url[len(TT_PROD):]
-    elif url.startswith(FF_PROD):
-        row[i('url')] = url[len(FF_PROD):]
-    elif url.startswith(CR_PROD):
-        row[i('url')] = ''
+    if url.startswith(CR_PROD):
+        row[i('url')] = ''            # カードラッシュは商品番号から組み立て直せる
+    else:
+        for _, b in PROD_BASE:
+            if url.startswith(b):
+                row[i('url')] = url[len(b):]
+                break
     cid, hr = row[i('id')] or '', row[i('hr')] or ''
     if hr and cid == 'hareruya2-' + hr:
         row[i('id')] = ''
@@ -907,8 +1474,8 @@ def build(rows, prev, ok_shops=None):
     return {
         'createdAt': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
         'cols': COLS,
-        'base': {'img': IMG_BASE, 'tc': TC_PROD, 'cr': CR_PROD, 'tt': TT_PROD,
-                 'ff': FF_PROD, 'id': 'hareruya2-', 'cart': TC + '/cart/'},
+        'base': dict(PROD_BASE, img=IMG_BASE, cr=CR_PROD,
+                     id='hareruya2-', cart=TC + '/cart/'),
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),
