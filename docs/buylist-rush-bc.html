@@ -241,6 +241,15 @@ const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の�
 let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
     st={cheap:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
+// この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
+// 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
+// （window.open に noopener を付けると名前が無視されて新しいタブになるので付けない）
+const TAB={BW:'bigweb'};
+function openShop(url, shop){
+  const name=TAB[shop];
+  const w = name ? open(url, name) : open(url, '_blank', 'noopener');
+  try{ if(w) w.focus(); }catch(_){}
+}
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
@@ -316,7 +325,9 @@ function tile(r){
         +(r.shop==='TC'&&r.vid?'🛒 カートへ':'🛒 買う')+'</button>')
       +'<button class="p1" data-p1="'+esc(r.pid)+'">＋1</button>'
     +'</div>'
-    +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'" target="_blank" rel="noopener">'+shopName+'</a>'
+    +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'"'
+      +(TAB[r.shop]?' target="'+TAB[r.shop]+'"':' target="_blank" rel="noopener"')
+      +'>'+shopName+'</a>'
     +(r.hr?'<a class="h" href="https://www.hareruya2.com/products/'+esc(r.hr)+'" target="_blank" rel="noopener">晴れる屋2</a>':'')
     +'</div></div></div>';
 }
@@ -497,7 +508,7 @@ grid.addEventListener('click',e=>{
     // キャンプ(Shopify)だけはカートに直接入れられる。
     // 他の2店はカート投入がPOSTなので、商品ページを開くところまで
     const u=(r.shop==='TC' && r.vid && CART) ? CART+r.vid+':1' : r.url;
-    open(u,'_blank','noopener');
+    openShop(u, r.shop);
     return;
   }
   const pb=e.target.closest('[data-p1]');
