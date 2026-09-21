@@ -162,7 +162,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button id="reload" title="最新のデータを取り直す">⟳ 更新</button></div>
 <div class="meta" id="meta">読み込み中…</div>
 <div class="ctl">
- <button class="tg on" id="f-cheap">割安のみ</button>
+ <button class="tg" id="f-cheap">割安のみ</button>
  <button class="tg" id="f-new">新着</button>
  <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
@@ -224,7 +224,7 @@ const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map();
 let rows=[], view=[], shown=0,
-    st={cheap:1,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'save',card:''};
+    st={cheap:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
@@ -518,6 +518,8 @@ document.querySelectorAll('.tg[data-o]').forEach(b=>b.onclick=function(){
   if(!on)this.classList.add('on'); apply();});
 document.getElementById('f-min').onchange=function(){st.min=+this.value;apply();};
 document.getElementById('f-sort').onchange=function(){st.sort=this.value;apply();};
+// 並びの初期値は st に合わせる（HTMLの並び順に引きずられないように）
+document.getElementById('f-sort').value=st.sort;
 const num=v=>v===''||isNaN(+v)?null:+v;
 document.getElementById('f-lo').oninput=function(){st.lo=num(this.value);apply();};
 document.getElementById('f-hi').oninput=function(){st.hi=num(this.value);apply();};
