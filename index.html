@@ -1234,10 +1234,12 @@ let db=loadDb();
 
 // ── FILTER STATE ──────────────────────────────────────
 let fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+// 起動処理が終わるまでは「カードが登録されていません」ではなく読み込み中と出す
+let _booting=true;
 function isFilterActive(){
   return !!(fs.cardTypes.size||fs.series.size||fs.title||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
 }
-function clearFilters(){
+function clearFilters(skipRender){
   fs.cardTypes=new Set();fs.series=new Set();fs.title='';fs.search='';fs.ownership='all';
   fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
   // sync UI controls
@@ -1248,7 +1250,8 @@ function clearFilters(){
   document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow==='all'));
   document.getElementById('btn-showhidden').classList.remove('on');
   const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
-  renderAll();
+  // 続けて別の絞り込みを当てるときは、ここで描くと全件を一度描いてから絞る二度手間になる
+  if(!skipRender) renderAll();
 }
 
 function _cardNumVal(s){
@@ -1748,7 +1751,9 @@ function renderCards(opt){
   if(!cards.length){
     g.innerHTML=`<div class="empty"><div class="emsg">${
       db.cards.length===0
-        ?'カードが登録されていません<span>「IMPORT SET」でカードを追加してください</span>'
+        ?(_booting
+            ?'読み込み中…<span>データを開いています</span>'
+            :'カードが登録されていません<span>「IMPORT SET」でカードを追加してください</span>')
         :'条件に一致するカードがありません'
     }</div></div>`;
     return;
@@ -5108,23 +5113,26 @@ function _buyQueueReady(){
 }
 // ── 買い得リストの画像から飛んできたとき ──
 // ?card=<カードid> が付いていたら、そのカードだけを出す
-function _focusCardFromUrl(){
-  let id='';
-  try{ id=new URLSearchParams(location.search).get('card')||''; }catch(e){ return; }
-  if(!id) return;
-  const c=db.cards.find(x=>x.id===id);
+let _focusId='';
+try{ _focusId=new URLSearchParams(location.search).get('card')||''; }catch(e){}
+// last:true ＝ 起動処理の最後の呼び出し。見つからなかったと言っていいのはこの時だけ。
+// 手元のデータを読み終える前に「無い」と言うと、ただの読み込み待ちで警告が出てしまう
+function _focusCardFromUrl(opt){
+  if(!_focusId) return false;
+  const c=(db&&db.cards)?db.cards.find(x=>x.id===_focusId):null;
   if(!c){
-    alert('このカードは手元のデータに見つかりませんでした。\n' + id);
-    return;
+    if(opt&&opt.last) alert('このカードは手元のデータに見つかりませんでした。\n' + _focusId);
+    return false;
   }
-  clearFilters();
-  fs.importedIds=new Set([id]);
+  clearFilters(true);          // 全件を一度描いてから絞る、という二度手間を避ける
+  fs.importedIds=new Set([_focusId]);
   const badge=document.getElementById('import-badge');
   const txt=document.getElementById('import-badge-txt');
   if(txt) txt.textContent=`買い得リストから 「${c.name}」`;
   if(badge) badge.style.display='';
   renderAll();
   scrollTo(0,0);
+  return true;
 }
 // 買い得リストのタブから戻ってきたときにも拾う
 addEventListener('focus', ()=>{ if(_buyQueueReady()) _showBuyQueue(); });
@@ -5725,6 +5733,9 @@ function openPortfolioTrend(){
 
 _idbReady.then(()=>loadDbAsync()).then(async d=>{
   db=d;
+  // 買い得リストから飛んできたときは、ここで先に絞る。
+  // この下でGitHubとの同期（16MBの取得）を待つので、そこまで待たせると数秒かかる
+  try{ _focusCardFromUrl(); }catch(e){}
   _baseDb=await _idbGetBase();   // 前回同期時点の基準を復元（マージ用）
   // 保存が間に合わずタブを閉じた分を復元する
   let pend=await _idbGetPending();
@@ -5791,10 +5802,12 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   const migrated=_migratePMCG(db);
   if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
   fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
-  renderAll();
-  // 買い得リストの画像から飛んできたときの絞り込みは、ここで当てる。
-  // fs を作り直した後でないと、せっかく絞ってもこの行で消えてしまう
-  try{ _focusCardFromUrl(); }catch(e){}
+  _booting=false;
+  // fs を作り直した後でないと、せっかく絞ってもここで消えてしまうので当て直す。
+  // 当て直せたときは中で描いているので、全件の描画はしない
+  let _ok=false;
+  try{ _ok=_focusCardFromUrl({last:true}); }catch(e){}
+  if(!_ok) renderAll();
   // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
 });
