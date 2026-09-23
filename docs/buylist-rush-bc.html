@@ -344,7 +344,8 @@ function tile(r){
     +'<div class="act">'
       +(r.sold?'':'<button class="cart" data-cart="'+esc(r.pid)+'">'
         +(r.shop==='TC'&&r.vid?'🛒 カートへ':'🛒 買う')+'</button>')
-      +'<button class="p1'+(doneP1.has(r.pid)?' done':'')+'" data-p1="'+esc(r.pid)+'">'
+      +'<button class="p1'+(doneP1.has(r.pid)?' done':'')+'" data-p1="'+esc(r.pid)+'"'
+        +' title="'+(doneP1.has(r.pid)?'もう一度押すと取り消します':'アプリの所持を＋1します')+'">'
         +(doneP1.has(r.pid)?'＋1 済':'＋1')+'</button>'
     +'</div>'
     +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'"'
@@ -562,6 +563,7 @@ addEventListener('focus', ()=>{
     const on=doneP1.has(b.dataset.p1);
     b.classList.toggle('done', on);
     b.textContent = on ? '＋1 済' : '＋1';
+    b.title = on ? 'もう一度押すと取り消します' : 'アプリの所持を＋1します';
   }
 });
 function toast(msg){
@@ -586,11 +588,22 @@ grid.addEventListener('click',e=>{
     const r=rows.find(x=>x.pid===pb.dataset.p1); if(!r) return;
     if(!r.id){ toast('このカードはアプリと紐づいていません'); return; }
     const q=readQueue();
+    if(doneP1.has(r.pid)){          // 押し間違いを戻せるように
+      const rest=q.filter(x=>!(x && x.pid===r.pid));
+      try{ localStorage.setItem(QKEY,JSON.stringify(rest)); }
+      catch(_){ toast('保存できませんでした'); return; }
+      doneP1.delete(r.pid);
+      pb.classList.remove('done'); pb.textContent='＋1';
+      pb.title='アプリの所持を＋1します';
+      toast(r.name+' の＋1を取り消しました'+(rest.length?'（残り'+rest.length+'件）':'（残り0件）'));
+      return;
+    }
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
     doneP1.add(r.pid);
     pb.classList.add('done'); pb.textContent='＋1 済';
+    pb.title='もう一度押すと取り消します';
     toast(r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
     return;
   }
