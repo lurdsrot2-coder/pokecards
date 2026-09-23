@@ -1087,8 +1087,9 @@ def my_shop_page(b64):
     return name, ship.split('■')[0].strip()[:40]   # キャンセルポリシー以降は要らない
 
 
-def my_parse(h, shop):
-    """一覧のHTMLから商品を取り出す"""
+def my_parse(h, shop, num):
+    """一覧のHTMLから商品を取り出す。
+    商品ページはカード単位で、店を指定しないと別の店の値段が開く（?storeIds=）"""
     out = {}
     for seg in h.split(MY_SPLIT)[1:]:
         mi = MY_ID.match(seg)
@@ -1128,19 +1129,21 @@ def my_parse(h, shop):
 
 
 def my_one(num, b64, shop):
-    """1店ぶん。店名と送料も一緒に持ち帰る"""
+    """1店ぶん。店名と送料も一緒に持ち帰る。
+    ここで取れるのはその店の在庫の一部だけ（マイカの作り）なので、
+    値段と店名の対応表を作るために使う"""
     page_name, ship = my_shop_page(b64)
     if page_name:
         shop = page_name
     got, blank = {}, 0
-    for page in range(1, 61):
+    for page in range(1, 121):
         h = curl_text('%s?storeIds=%s&page=%d' % (MY_LIST, num, page), tries=2)
         if not h:
             blank += 1
             if blank >= 3:
                 break
             continue
-        add = my_parse(h, shop)
+        add = my_parse(h, shop, num)
         new = {k: v for k, v in add.items() if k not in got}
         if not new:
             blank += 1
@@ -1156,32 +1159,70 @@ def my_one(num, b64, shop):
 MY_SHIP = {}          # 店名 → 送料の書き方（ページに出す）
 
 
+def my_all():
+    """全体の一覧。カードごとの最安値が並ぶ（店は書かれていない）"""
+    items, blank = {}, 0
+    for page in range(1, 401):
+        h = curl_text('%s?page=%d' % (MY_LIST, page))
+        if not h:
+            blank += 1
+            if blank >= 5:
+                break
+            continue
+        add = my_parse(h, '', '')
+        new = {k: v for k, v in add.items() if k not in items}
+        if not new:
+            blank += 1
+            if blank >= 8:
+                log('  DMMマイカ（全体） %dページ目で終わり' % page)
+                break
+        else:
+            blank = 0
+            items.update(new)
+        if page % 50 == 0:
+            log('  DMMマイカ（全体） %dページ 累計%d件' % (page, len(items)))
+        time.sleep(.5)
+    return items
+
+
 def my_scrape():
-    """DMMマイカ。店ごとに取る。同じ注文でも店が違えば送料が別にかかるので、
-    どの店の出品かが分からないと買い方を決められない"""
+    """DMMマイカ。全体の一覧（最安値）を本体にして、
+    店ごとの一覧から「どの店がいくらで出しているか」を拾って店名を付ける。
+    モールなので店が違えば送料が別にかかる"""
     shops = my_shops()
     if not shops:
         log('  DMMマイカの店一覧が読めません')
         return []
     log('  DMMマイカ 店 %d件' % len(shops))
-    items, done = {}, 0
     MY_SHIP.clear()
+    price_shop, done = {}, 0      # (商品id, 値段) → (店名, 店番号)
     with futures.ThreadPoolExecutor(max_workers=5) as ex:
-        jobs = {ex.submit(my_one, num, b64, name): name
+        jobs = {ex.submit(my_one, num, b64, name): num
                 for num, (b64, name) in shops.items()}
         for f in futures.as_completed(jobs):
-            name = jobs[f]
+            num = jobs[f]
             done += 1
             try:
                 got, name, ship = f.result()
             except Exception:
-                got, ship = {}, ''
-            items.update(got)
-            if ship:
+                got, name, ship = {}, '', ''
+            if ship and name:
                 MY_SHIP[name] = ship
-            if done % 25 == 0:
-                log('  DMMマイカ %d/%d店 累計%d件' % (done, len(shops), len(items)))
-    log('  DMMマイカ %d件（%d店）' % (len(items), len(MY_SHIP)))
+            for it in got.values():
+                price_shop.setdefault((it['pid'], it['price']), (it['mall'], num))
+            if done % 40 == 0:
+                log('  DMMマイカ %d/%d店 対応表%d件' % (done, len(shops), len(price_shop)))
+    log('  DMMマイカ 店ごとの出品 %d件。全体の一覧を取りにいきます' % len(price_shop))
+
+    items = my_all()
+    named = 0
+    for pid, it in items.items():
+        hit = price_shop.get((pid, it['price']))
+        if hit:
+            it['mall'], named = hit[0], named + 1
+            it['url'] += '?storeIds=%s' % hit[1]      # その店の値段が開くように
+    log('  DMMマイカ %d件（うち店が分かったもの %d件・%d店）'
+        % (len(items), named, len(MY_SHIP)))
     return list(items.values())
 
 
