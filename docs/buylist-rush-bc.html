@@ -349,8 +349,11 @@ function tile(r){
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
     +'<div class="stk'+(r.sold?' gone':'')+'">'
       +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
-    +((!r.sure && r.ratio<0.35)?'<div class="chk" title="番号が分からない出品です。同じ番号を使う別の弾や、'
-       +'旧裏の1ED・マークなしのような版違いかもしれません。リンク先で現物を確かめてください">⚠ 版・弾 未確認</div>':'')
+    // 旧裏は番号が無く名前で当てているので、1ED・マークなしの版までは分からない。
+    // 相場との差が版違いのせいであることが多いので、旧裏は差に関係なく必ず出す
+    +((!r.sure && (r.ratio<0.35 || r.num==='旧裏'))
+       ?'<div class="chk" title="番号の無い出品です。旧裏は1ED・マークなしなどの版まで判別できず、'
+       +'相場との差が版違いのこともあります。リンク先で現物を確かめてください">⚠ 版 未確認</div>':'')
     +(others.length?'<div class="alt" data-card="'+esc(r.id)+'">他の出品 '+others.length+'件 '
         +'<b>'+yen(Math.min.apply(null,others.map(x=>x.cr)))+'〜</b></div>':'')
     +'<div class="act">'

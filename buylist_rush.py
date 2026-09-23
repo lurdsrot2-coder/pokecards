@@ -1425,6 +1425,13 @@ def _code_ok(code, setid):
     return n >= 2
 
 
+def set_key(title):
+    """店が書いている弾名から、突き合わせに使える芯を取り出す。
+    「…「プレミアムファイル3」」のようにカギ括弧で弾名が書かれているものだけを信じる"""
+    m = re.search(r'[「『]([^」』]{2,})[」』]', title or '')
+    return norm(m.group(1)).replace('…', '').rstrip('.') if m else ''
+
+
 def _is_old_back(it):
     if it.get('num') == '旧裏':
         return True
@@ -1493,12 +1500,23 @@ def match(items, cards):
             # 同じ名前が複数の弾にあるとき（リザードンLV.76は40万と65万）は
             # 取り違えの害が大きいので、下の同点判定で捨てる
             cand = by_old.get(base, [])
-            # 店が弾名を持っているなら、それで候補を絞れる
-            st = norm(re.sub(r'[（(].*', '', it.get('settitle') or '')).replace('…', '')
-            if cand and st and len(st) >= 3:
-                nar = [c for c in cand if st in norm(c.get('setName') or '')]
-                if nar:
-                    cand = nar
+            # 店がカギ括弧付きで弾名を書いているなら、それで絞る。
+            # 同じ名前のカードが別の弾にもあるので（ホウオウはプレミアムファイル3にも
+            # めざめる伝説にもいる）、ここで合わせないと値段が桁違いに化ける
+            key = set_key(it.get('settitle') or '')
+            if cand and key and len(key) >= 2:
+                nar = [c for c in cand if key in norm(c.get('setName') or '')]
+                if not nar:
+                    stat['旧裏で弾が合わない'] += 1
+                    continue
+                cand = nar
+            else:
+                # カギ括弧が無い店は今までどおり。合う弾があれば寄せるだけ
+                st = norm(re.sub(r'[（(].*', '', it.get('settitle') or '')).replace('…', '')
+                if cand and st and len(st) >= 3:
+                    nar = [c for c in cand if st in norm(c.get('setName') or '')]
+                    if nar:
+                        cand = nar
             if not cand:
                 stat['旧裏でDBに無い'] += 1
                 continue
