@@ -763,61 +763,80 @@ def tr_cond(var):
     return 'A'
 
 
+def tr_category(cat):
+    """1カテゴリぶんをめくる。取れなかったら False を返して呼び元に知らせる"""
+    out = {}
+    for page in range(1, 41):        # 1カテゴリ2000件で頭打ち
+        url = '%s/shop/c/%s/%s' % (TR, cat, '?page=%d' % page if page > 1 else '')
+        h = fetch(url, tries=2)
+        if not h:
+            return out, False
+        shown = 0                    # そのページに商品が並んでいたか（ページ送りの判断用）
+        for seg in h.split('<dl class="block-thumbnail-t--goods')[1:]:
+            mc = TR_CODE.search(seg)
+            mn = TR_NAME.search(seg)
+            mp = TR_PRICE.search(seg)
+            if not (mc and mn and mp):
+                continue
+            code = mc.group(1)
+            var = (TR_VAR.search(seg).group(1) if TR_VAR.search(seg) else '')
+            pid = 'tr' + code
+            if pid in out:
+                continue
+            shown += 1
+            name = unicodedata.normalize('NFKC', mn.group(1)).strip()
+            if not name or any(w in name for w in SKIP_WORDS):
+                continue
+            # 売り切れも「在庫 0」で一覧に出てくるのでここで落とす。
+            # 数が書かれていないのは作りが変わったときなので、そのときも出さない
+            ms = TR_STOCK.search(seg)
+            stock = int(ms.group(1)) if ms else 0
+            if stock <= 0:
+                continue
+            # キズあり在庫は一覧に「有／無」としか出ず、値段が分からないので扱わない
+            num, setcode = tr_code(code)
+            mr = TR_RAR.search(seg)
+            mtt = TR_TITLE.search(seg)
+            out[pid] = {
+                'shop': 'TR', 'pid': pid, 'cond': tr_cond(var),
+                'url': '%s/shop/g/g%s/' % (TR, code),
+                'name': name,
+                'rarity': unicodedata.normalize('NFKC', mr.group(1)).strip() if mr else '',
+                'num': num.upper(), 'setcode': setcode,
+                'settitle': (mtt.group(1).strip() if mtt else ''),
+                'price': int(mp.group(1).replace(',', '')),
+                'stock': stock, 'soldout': False}
+        if shown == 0:
+            break
+        time.sleep(.2)
+    return out, True
+
+
 def tr_scrape():
     """トレコロ。収録弾ごとのカテゴリを1ページ50件でめくる。
-    収録弾の記号が商品コードに入っているので、弾の取り違えが起きにくい"""
+    収録弾の記号が商品コードに入っているので、弾の取り違えが起きにくい。
+    カテゴリが400近くあるので、何本か並行して読む"""
     menu = fetch(TR_MENU)
     cats = sorted(set(TR_CAT.findall(menu or '')))
     if not cats:
         log('  トレコロのカテゴリ一覧が読めません')
         return []
     log('  トレコロ カテゴリ %d件' % len(cats))
-    items, miss = {}, 0
-    for i, c in enumerate(cats):
-        for page in range(1, 41):        # 1カテゴリ2000件で頭打ち
-            url = '%s/shop/c/%s/%s' % (TR, c, '?page=%d' % page if page > 1 else '')
-            h = fetch(url)
-            if not h:
-                miss += 1
-                if miss >= 5:
-                    log('  トレコロに繋がらないので今回は見送ります')
-                    return []
-                break
-            miss = 0
-            added = 0
-            for seg in h.split('<dl class="block-thumbnail-t--goods')[1:]:
-                mc = TR_CODE.search(seg)
-                mn = TR_NAME.search(seg)
-                mp = TR_PRICE.search(seg)
-                if not (mc and mn and mp):
-                    continue
-                code = mc.group(1)
-                var = (TR_VAR.search(seg).group(1) if TR_VAR.search(seg) else '')
-                pid = 'tr' + code
-                if pid in items:
-                    continue
-                name = unicodedata.normalize('NFKC', mn.group(1)).strip()
-                if not name or any(w in name for w in SKIP_WORDS):
-                    continue
-                num, setcode = tr_code(code)
-                ms = TR_STOCK.search(seg)
-                mr = TR_RAR.search(seg)
-                mtt = TR_TITLE.search(seg)
-                items[pid] = {
-                    'shop': 'TR', 'pid': pid, 'cond': tr_cond(var),
-                    'url': '%s/shop/g/g%s/' % (TR, code),
-                    'name': name,
-                    'rarity': unicodedata.normalize('NFKC', mr.group(1)).strip() if mr else '',
-                    'num': num.upper(), 'setcode': setcode,
-                    'settitle': (mtt.group(1).strip() if mtt else ''),
-                    'price': int(mp.group(1).replace(',', '')),
-                    'stock': int(ms.group(1)) if ms else 1, 'soldout': False}
-                added += 1
-            if added == 0:
-                break
-            time.sleep(.3)
-        if (i + 1) % 50 == 0:
-            log('  トレコロ %d/%dカテゴリ 累計%d件' % (i + 1, len(cats), len(items)))
+    items, bad, done = {}, 0, 0
+    with futures.ThreadPoolExecutor(max_workers=5) as ex:
+        for f in futures.as_completed([ex.submit(tr_category, c) for c in cats]):
+            try:
+                got, ok = f.result()
+            except Exception:
+                got, ok = {}, False
+            done += 1
+            items.update(got)
+            if not ok:
+                bad += 1
+            if done % 100 == 0:
+                log('  トレコロ %d/%dカテゴリ 累計%d件' % (done, len(cats), len(items)))
+    if bad:
+        log('  トレコロ %dカテゴリは取れませんでした' % bad)
     log('  トレコロ %d件' % len(items))
     return list(items.values())
 
