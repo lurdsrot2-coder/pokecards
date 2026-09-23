@@ -36,6 +36,16 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
 .tg.on.TT{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .tg.on.FF{background:rgba(255,120,170,.28);border-color:#ff78aa;color:#fff}
+/* タグはアプリと同じく、ひと目で見えてワンタップで押せる並びにする。
+   種類が少ないので隠す必要がない。はみ出すぶんは横スクロール */
+.tagbar{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;
+ -webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.tagbar::-webkit-scrollbar{height:4px}
+.tagbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:2px}
+.tagbar .tg{white-space:nowrap;flex:0 0 auto}
+.tagbar .tg b{font-weight:400;opacity:.6;margin-left:4px;font-size:10px}
+.tagbar .tg.on b{opacity:.85}
+.tagbar .clr{color:var(--sub);border-style:dashed}
 .thline{margin-top:4px}
 .thline summary{cursor:pointer;color:var(--cy);opacity:.75;font-size:11px}
 .thline>*:not(summary){opacity:.75;line-height:1.5}
@@ -192,7 +202,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg own" data-o="1">所持</button>
  <button class="serbtn" id="f-ser">シリーズ ▾</button>
  <button class="serbtn" id="f-rar">レアリティ ▾</button>
- <button class="serbtn" id="f-tag">タグ ▾</button>
+
  <span class="rng"><span>価格</span>
   <input type="number" id="f-lo" placeholder="下限" min="0" inputmode="numeric">
   <span>〜</span>
@@ -211,6 +221,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  </select>
  <input type="search" id="q" placeholder="カード名で絞る">
  <span class="hit" id="hit"></span>
+<div class="tagbar" id="tagbar"></div>
 <div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
 <div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
@@ -446,6 +457,7 @@ function show(d, ownedN){
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
   [...st.tag].forEach(v=>{ if(!rows.some(r=>r.tags.includes(v))) st.tag.delete(v); });
   serSync();
+  renderTags();
   document.getElementById('msg').hidden=true;
   apply();
   focusFromUrl();   // apply() の後。中でもう一度絞り直す
@@ -567,7 +579,6 @@ const serPanel=document.getElementById('serpanel'),
 const PICKERS=[
   ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
   ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
-  ['f-tag','タグ',      ()=>st.tag, r=>r.tags],
 ];
 let pick=null;           // いま開いているもの
 function pickBtn(){ return pick? document.getElementById(pick[0]) : null; }
@@ -594,6 +605,28 @@ function serSync(){
       +'<span class="sp-ck">'+(sel.has(v)?'✓':'')+'</span>'+esc(v)
       +'<span class="sp-n">'+cnt[v]+'</span></div>').join('');
 }
+// タグはアプリの QUICK FILTER と同じ使い心地にする。
+// 出ているカードのタグだけを、件数付きで出す（無いタグは押しても0件なので出さない）
+const tagbar=document.getElementById('tagbar');
+function renderTags(){
+  const cnt={};
+  for(const r of rows) for(const t of r.tags) cnt[t]=(cnt[t]||0)+1;
+  const keys=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b,'ja'));
+  // 手元に無くなったタグが選ばれたままにならないように
+  [...st.tag].forEach(t=>{ if(!cnt[t]) st.tag.delete(t); });
+  tagbar.innerHTML = keys.length
+    ? keys.map(t=>'<button class="tg'+(st.tag.has(t)?' on':'')+'" data-t="'+esc(t)+'">'
+        +esc(t)+'<b>'+cnt[t]+'</b></button>').join('')
+      + (st.tag.size?'<button class="tg clr" data-t="">タグ解除</button>':'')
+    : '';
+}
+tagbar.onclick=e=>{
+  const b=e.target.closest('[data-t]'); if(!b) return;
+  const t=b.dataset.t;
+  if(!t) st.tag.clear();
+  else st.tag.has(t) ? st.tag.delete(t) : st.tag.add(t);
+  renderTags(); apply();
+};
 function serShow(which){
   pick = which || null;
   serPanel.classList.toggle('open', !!pick);
