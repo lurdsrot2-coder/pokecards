@@ -250,6 +250,16 @@ const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW
             YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map();
+// ＋1を押した出品。画面を作り直しても印が消えないよう、控え（localStorage）から作る。
+// アプリ側で反映すると控えが空になるので、戻ってきたときに印も消える
+let doneP1=new Set();
+function readQueue(){
+  try{ return JSON.parse(localStorage.getItem(QKEY)||'[]'); }catch(_){ return []; }
+}
+function syncDone(){
+  doneP1=new Set(readQueue().map(x=>x && x.pid).filter(Boolean));
+}
+syncDone();
 let rows=[], view=[], shown=0,
     st={cheap:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
@@ -334,7 +344,8 @@ function tile(r){
     +'<div class="act">'
       +(r.sold?'':'<button class="cart" data-cart="'+esc(r.pid)+'">'
         +(r.shop==='TC'&&r.vid?'🛒 カートへ':'🛒 買う')+'</button>')
-      +'<button class="p1" data-p1="'+esc(r.pid)+'">＋1</button>'
+      +'<button class="p1'+(doneP1.has(r.pid)?' done':'')+'" data-p1="'+esc(r.pid)+'">'
+        +(doneP1.has(r.pid)?'＋1 済':'＋1')+'</button>'
     +'</div>'
     +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'"'
       +(TAB[r.shop]?' target="'+TAB[r.shop]+'"':' target="_blank" rel="noopener"')
@@ -383,7 +394,18 @@ function apply(){
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
+let backTo=null;      // 「他の出品」に入る前に見ていた場所
+// 画面のいちばん上に見えていたタイルと、その位置を覚えておく。
+// 画素の位置だけで戻すと、作り直しの途中で高さが変わっていて戻れない
+function viewAnchor(){
+  for(const e of document.querySelectorAll('#grid .card')){
+    const r=e.getBoundingClientRect();
+    if(r.bottom>0) return {pid:(e.querySelector('[data-p1]')||{}).dataset?.p1||'', top:r.top};
+  }
+  return null;
+}
 function focusCard(id, alt){
+  if(!st.card) backTo={y:scrollY, shown:shown, anchor:viewAnchor()};
   st.card=id;
   const r=rows.find(x=>x.id===id);
   const nm=r?r.name:(alt||'');
@@ -410,7 +432,32 @@ function focusFromUrl(){
   if(id) focusCard(id, nm);
 }
 document.getElementById('focus-x').onclick=()=>{
-  st.card=''; document.getElementById('focus').classList.remove('on'); apply();
+  st.card=''; document.getElementById('focus').classList.remove('on');
+  apply();
+  // 一番上に戻さず、見ていたところまで描いてから位置を戻す
+  if(backTo){
+    let guard=0;
+    while(shown<backTo.shown && shown<view.length && guard++<200) draw();
+    // 見ていたタイルが同じ位置に来るように戻す。
+    // 作り直した直後は高さが決まっていないので、数回やり直す
+    const a=backTo.anchor, y=backTo.y; backTo=null;
+    let tries=0;
+    const back=()=>{
+      let done=false;
+      if(a && a.pid){
+        const el=[...document.querySelectorAll('#grid [data-p1]')]
+          .find(b=>b.dataset.p1===a.pid);
+        if(el){
+          const box=el.closest('.card').getBoundingClientRect();
+          scrollTo(0, Math.max(0, scrollY + box.top - a.top));
+          done=true;
+        }
+      }
+      if(!done) scrollTo(0,y);
+      if(scrollY<4 && y>4 && tries++<25) setTimeout(back,80);
+    };
+    setTimeout(back, 0);   // 裏のタブでも動くよう、描画フレーム待ちにはしない
+  }
 };
 // 同じカードが他の店にも出ているかを引けるようにしておく
 function indexCards(){
@@ -506,6 +553,17 @@ async function load(force){
   }
   b.disabled=false; b.textContent='⟳ 更新';
 }
+// アプリ側で反映すると控えが空になる。戻ってきたときに印を合わせ直す
+addEventListener('focus', ()=>{
+  const before=doneP1.size;
+  syncDone();
+  if(before===doneP1.size) return;
+  for(const b of document.querySelectorAll('[data-p1]')){
+    const on=doneP1.has(b.dataset.p1);
+    b.classList.toggle('done', on);
+    b.textContent = on ? '＋1 済' : '＋1';
+  }
+});
 function toast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('on');
@@ -527,11 +585,11 @@ grid.addEventListener('click',e=>{
   if(pb){
     const r=rows.find(x=>x.pid===pb.dataset.p1); if(!r) return;
     if(!r.id){ toast('このカードはアプリと紐づいていません'); return; }
-    let q=[];
-    try{ q=JSON.parse(localStorage.getItem(QKEY)||'[]'); }catch(_){ q=[]; }
-    q.push({id:r.id,name:r.name,shop:r.shop,price:r.cr,at:new Date().toISOString()});
+    const q=readQueue();
+    q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
+    doneP1.add(r.pid);
     pb.classList.add('done'); pb.textContent='＋1 済';
     toast(r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
     return;
