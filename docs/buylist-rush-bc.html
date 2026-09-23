@@ -9,7 +9,7 @@ body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.5 'Segoe UI',syst
 header{position:sticky;top:0;z-index:9;background:linear-gradient(90deg,#0d0d2a,var(--pa));
  border-bottom:1px solid var(--bd);padding:9px 12px}
 .hd1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-h1{margin:0;font-size:14px;letter-spacing:2px;color:var(--cy);text-shadow:0 0 12px var(--cy);white-space:nowrap}
+h1{cursor:pointer;margin:0;font-size:14px;letter-spacing:2px;color:var(--cy);text-shadow:0 0 12px var(--cy);white-space:nowrap}
 #reload{background:rgba(0,245,255,.12);border:1px solid var(--cy);border-radius:4px;color:var(--cy);
  font-size:11px;font-weight:700;padding:4px 12px;cursor:pointer;white-space:nowrap}
 #reload:hover{background:rgba(0,245,255,.25)}
@@ -181,7 +181,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 }
 </style></head><body>
 <header>
-<div class="hd1"><h1>ポケカ 買い得リスト</h1>
+<div class="hd1"><h1 id="home" title="押すと最初の状態に戻ります">ポケカ 買い得リスト</h1>
  <button id="reload" title="最新のデータを取り直す">⟳ 更新</button></div>
 <div class="meta" id="meta">読み込み中…</div>
 <div class="ctl">
@@ -582,6 +582,23 @@ addEventListener('focus', ()=>{
     b.title = on ? 'もう一度押すと取り消します' : 'アプリの所持を＋1します';
   }
 });
+// 絞り込みを全部やめて、最初の状態に戻す。
+// ESCと、左上のタイトルから呼ぶ
+function resetAll(){
+  st.cheap=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
+  st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear();
+  st.lo=null; st.hi=null; st.min=0; st.q=''; st.sort='cr'; st.card='';
+  backTo=null;
+  for(const b of document.querySelectorAll('.tg')) b.classList.remove('on');
+  for(const id of ['f-lo','f-hi','q']){ const e=document.getElementById(id); if(e) e.value=''; }
+  document.getElementById('f-min').value='0';
+  document.getElementById('f-sort').value=st.sort;
+  document.getElementById('focus').classList.remove('on');
+  serShow(null); serSync(); renderTags();
+  apply();
+  scrollTo(0,0);
+}
+document.getElementById('home').onclick=resetAll;
 function toast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('on');
@@ -738,7 +755,13 @@ serPanel.onclick=e=>{
 addEventListener('pointerdown',e=>{
   if(pick && !serPanel.contains(e.target) && !PICKERS.some(x=>e.target===document.getElementById(x[0]))) serShow(null);
 },true);
-addEventListener('keydown',e=>{ if(pick && e.key==='Escape') serShow(null); });
+addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if(pick){ serShow(null); return; }        // 開いているパネルを先に閉じる
+  const el=document.activeElement;
+  if(el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) el.blur();
+  resetAll();
+});
 addEventListener('scroll',()=>{ if(pick) serPlace(); },true);
 addEventListener('resize',()=>{ if(pick) serPlace(); });
 
