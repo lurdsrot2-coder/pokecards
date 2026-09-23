@@ -9,3 +9,6 @@ ninja_spinner_extract*
 cardrush_*
 pokemon_card_man*
 buylist_rush.log
+
+# 取得の二重起動を防ぐ鍵（実行中だけ存在する）
+buylist_rush.lock

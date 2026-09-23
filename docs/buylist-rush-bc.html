@@ -46,6 +46,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tagbar .tg b{font-weight:400;opacity:.6;margin-left:4px;font-size:10px}
 .tagbar .tg.on b{opacity:.85}
 .tagbar .clr{color:var(--sub);border-style:dashed}
+/* マイカだけ、モールの中の店名を出す。送料が店ごとにかかるので買い方が変わる */
+.mall{font-size:10px;color:var(--cy);opacity:.85;margin-top:2px;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thline{margin-top:4px}
 .thline summary{cursor:pointer;color:var(--cy);opacity:.75;font-size:11px}
 .thline>*:not(summary){opacity:.75;line-height:1.5}
@@ -55,6 +58,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.PB{background:rgba(255,122,69,.28);border-color:#ff7a45;color:#fff}
 .tg.on.OL{background:rgba(255,210,74,.28);border-color:#ffd24a;color:#fff}
 .tg.on.MY{background:rgba(127,140,255,.28);border-color:#7f8cff;color:#fff}
+.tg.on.SG{background:rgba(120,200,110,.28);border-color:#78c86e;color:#fff}
 .serbtn{cursor:pointer;white-space:nowrap}
 .serbtn.on{border-color:var(--pk);color:#ff88ff;font-weight:700}
 .hit{margin-left:auto;font-size:12px;color:var(--cy);font-weight:700;white-space:nowrap}
@@ -194,6 +198,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg PB" data-s="PB">プライスベース</button>
  <button class="tg OL" data-s="OL">オルタ</button>
  <button class="tg MY" data-s="MY">マイカ</button>
+ <button class="tg SG" data-s="SG">駿河屋</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -202,6 +207,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg own" data-o="1">所持</button>
  <button class="serbtn" id="f-ser">シリーズ ▾</button>
  <button class="serbtn" id="f-rar">レアリティ ▾</button>
+ <button class="serbtn" id="f-mall">マイカの店 ▾</button>
 
  <span class="rng"><span>価格</span>
   <input type="number" id="f-lo" placeholder="下限" min="0" inputmode="numeric">
@@ -247,9 +253,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <script>
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
 const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
-            YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ'};
+            YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',
+            SG:'駿河屋'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
-let CART='', byCard=new Map();
+let CART='', byCard=new Map(), SHIPS={};
 // ＋1を押した出品。画面を作り直しても印が消えないよう、控え（localStorage）から作る。
 // アプリ側で反映すると控えが空になるので、戻ってきたときに印も消える
 let doneP1=new Set();
@@ -261,7 +268,8 @@ function syncDone(){
 }
 syncDone();
 let rows=[], view=[], shown=0,
-    st={cheap:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
+    st={cheap:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
+        mall:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
 // （window.open に noopener を付けると名前が無視されて新しいタブになるので付けない）
@@ -281,6 +289,7 @@ function toRows(d){
   const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'',
         cartBase=B.cart||'';
   CART=cartBase;
+  SHIPS=d.ships||{};
   return d.items.map(a=>{
     const price=a[i.price], cr=a[i.cr];
     const shop=i.shop==null?'CR':(a[i.shop]||'CR');
@@ -298,6 +307,7 @@ function toRows(d){
       rar:i.rar==null?'':(a[i.rar]||''),
       tags:i.tags==null?[]:String(a[i.tags]||'').split('|').filter(Boolean),
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
+      mall:i.mall==null?'':(a[i.mall]||''),
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
@@ -332,13 +342,15 @@ function tile(r){
       +'<span class="cnum">'+esc(r.num)+'</span>'
       +(r.rar?'<span class="crar">'+esc(r.rar)+'</span>':'')+'</div>'
     +'<div class="st">'+esc(r.set)+'</div>'
+    +(r.mall?'<div class="mall" title="'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
+        +(SHIPS[r.mall]?'（'+esc(SHIPS[r.mall].slice(0,18))+'）':'')+'</div>':'')
     +'<div class="pr"><span class="cr">'+yen(r.cr)+'</span><span class="pc">'+pc+'%</span></div>'
     +'<div class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
     +'<div class="stk'+(r.sold?' gone':'')+'">'
       +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
-    +((!r.sure && r.ratio<0.35)?'<div class="chk" title="この店は収録弾を書いていないため、'
-       +'同じ番号・同じ名前の別の弾かもしれません。リンク先で現物を確かめてください">⚠ 収録弾 未確認</div>':'')
+    +((!r.sure && r.ratio<0.35)?'<div class="chk" title="番号が分からない出品です。同じ番号を使う別の弾や、'
+       +'旧裏の1ED・マークなしのような版違いかもしれません。リンク先で現物を確かめてください">⚠ 版・弾 未確認</div>':'')
     +(others.length?'<div class="alt" data-card="'+esc(r.id)+'">他の出品 '+others.length+'件 '
         +'<b>'+yen(Math.min.apply(null,others.map(x=>x.cr)))+'〜</b></div>':'')
     +'<div class="act">'
@@ -380,6 +392,7 @@ function apply(){
     && (!st.ser.size || st.ser.has(r.ser))
     && (!st.rar.size || st.rar.has(r.rar))
     && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
+    && (!st.mall.size || st.mall.has(r.mall))
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
@@ -650,6 +663,7 @@ const serPanel=document.getElementById('serpanel'),
 const PICKERS=[
   ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
   ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
+  ['f-mall','マイカの店', ()=>st.mall, r=>r.mall?[r.mall]:[]],
 ];
 let pick=null;           // いま開いているもの
 function pickBtn(){ return pick? document.getElementById(pick[0]) : null; }

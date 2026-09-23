@@ -16,7 +16,7 @@
            python buylist_rush.py --no-push      （pushせず手元だけ更新）
 """
 import urllib.request, urllib.parse, re, io, json, sys, os, time, subprocess
-import unicodedata, statistics, datetime, collections
+import unicodedata, statistics, datetime, collections, base64
 import concurrent.futures as futures
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
@@ -1039,83 +1039,253 @@ def ol_scrape():
 MY = 'https://myca.dmm.com'
 MY_LIST = MY + '/pokemon-trading-card-game/list'
 MY_SPLIT = 'href="/pokemon-trading-card-game/items/single-card/'
-MY_ID = re.compile(r'^(\d+)"')
-MY_ANCHOR = re.compile(r'^\d+"[^>]*>(.*?)</a>', re.S)
+MY_ID = re.compile(r'^(\d+)[?"]')
+MY_ANCHOR = re.compile(r'^\d+[^>]*>(.*?)</a>', re.S)
 MY_COND = re.compile(r'状態([A-Z])')
 MY_YEN = re.compile(r'¥(?:<!--\s*-->)?([\d,]+)')
 MY_META = re.compile(r'text-muted-foreground[^>]*>([^<]{1,24})<')
 MY_NUM = re.compile(r'([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})\s*$')
+MY_SHOP = re.compile(r'/other/shops/([A-Za-z0-9]+)"[^>]*>([^<]{1,40})')
+MY_SEND = re.compile(r'送料について\s*(.{0,60})', re.S)
 
 
-def my_scrape():
-    """DMMマイカ。全国のカードショップが出している商品がまとめて並ぶ。
-    1ページ50件・ページ番号だけでめくれる"""
-    items, miss, blank = {}, 0, 0
-    for page in range(1, 401):        # 1日3回まわすので、これくらいで頭打ちにする
-        h = curl_text('%s?page=%d' % (MY_LIST, page))
-        if not h:
-            miss += 1
-            # すでに集まっているなら、最後のページまで来たということ。
-            # ここで捨てると1万件超がまるごと無駄になる
-            if len(items) >= 300 and miss >= 2:
-                log('  DMMマイカ %dページ目まで（%d件）' % (page - 1, len(items)))
-                break
-            if miss >= 5:
-                log('  DMMマイカに繋がらないので今回は見送ります')
-                return []
+def my_shops():
+    """店の一覧（番号と名前）。どのポケカ商品ページにも全店のリンクが入っている"""
+    h = curl_text('%s/pokemon-trading-card-game/list' % MY)
+    ids = sorted(set(re.findall(r'/other/shops/([A-Za-z0-9]+)', h or '')))
+    if not ids:
+        return {}
+    names = {}
+    for m in MY_SHOP.finditer(h):
+        names.setdefault(m.group(1), m.group(2).strip())
+    out = {}
+    for b in ids:
+        try:
+            num = base64.b64decode(b + '=' * (-len(b) % 4)).decode()
+        except Exception:
             continue
-        miss = 0
-        added = 0
-        for seg in h.split(MY_SPLIT)[1:]:
-            mi = MY_ID.match(seg)
-            ma = MY_ANCHOR.match(seg)
-            if not (mi and ma):
-                continue
-            pid = 'my' + mi.group(1)
-            if pid in items:
-                continue
-            head = re.sub(r'<!--.*?-->', '', ma.group(1))
-            text = unicodedata.normalize('NFKC', re.sub(r'<[^>]+>', ' ', head)).strip()
-            mn = MY_NUM.search(text)
-            name = (text[:mn.start()] if mn else text).strip()
-            if not name or any(w in name for w in SKIP_WORDS):
-                continue
-            body = seg[:3000]
-            mp = MY_YEN.search(body)
-            if not mp:
-                continue
-            mc = MY_COND.search(body)
-            meta = MY_META.findall(body)
-            # 「AR/M6a」のようにレアリティと収録弾が並ぶ。弾だけのこともある
-            rar, code = '', ''
-            for v in meta:
-                if '/' in v:
-                    rar, code = v.split('/', 1)
-                    break
-                if not code:
-                    code = v
-            items[pid] = {
-                'shop': 'MY', 'pid': pid,
-                'cond': mc.group(1) if mc and mc.group(1) in 'ABCD' else 'A',
-                'url': '%s/pokemon-trading-card-game/items/single-card/%s' % (MY, mi.group(1)),
-                'name': name, 'rarity': rar.strip(),
-                'num': mn.group(1).upper() if mn else '',
-                'setcode': zero_strip(code.strip()), 'settitle': '',
-                'price': int(mp.group(1).replace(',', '')),
-                'stock': 1, 'soldout': False}
-            added += 1
-        if added == 0:
-            # 速く叩くと空のページが返ってくる。8回続いたときだけ本当の終わりとみなす
+        if num.isdigit():
+            out[num] = (b, names.get(b, '店' + num))
+    return out
+
+
+def my_shop_page(b64):
+    """店のページから、店名と送料を取る。
+    一覧の下に並ぶリンクからは名前が取れない店があるので、ここで拾い直す"""
+    h = curl_text('%s/other/shops/%s' % (MY, b64), tries=2)
+    if not h:
+        return '', ''
+    mt = re.search(r'<title>([^<|]+)', h)
+    name = mt.group(1).strip() if mt else ''
+    t = re.sub(r'<[^>]+>', ' ', h)
+    m = MY_SEND.search(t)
+    ship = re.sub(r'\s+', ' ', m.group(1)).strip() if m else ''
+    # ページの中に埋め込まれたJSONを拾ってしまうことがあるので、その時は書き直す
+    if '\"' in ship or '":"' in ship:
+        m2 = re.search(r'shippingPolicy\\?":\\?"([^"\\]{4,60})', h)
+        ship = re.sub(r'\\s+', ' ', m2.group(1)).strip() if m2 else ''
+    return name, ship.split('■')[0].strip()[:40]   # キャンセルポリシー以降は要らない
+
+
+def my_parse(h, shop):
+    """一覧のHTMLから商品を取り出す"""
+    out = {}
+    for seg in h.split(MY_SPLIT)[1:]:
+        mi = MY_ID.match(seg)
+        ma = MY_ANCHOR.match(seg)
+        if not (mi and ma):
+            continue
+        pid = 'my' + mi.group(1)
+        head = re.sub(r'<!--.*?-->', '', ma.group(1))
+        text = unicodedata.normalize('NFKC', re.sub(r'<[^>]+>', ' ', head)).strip()
+        mn = MY_NUM.search(text)
+        name = (text[:mn.start()] if mn else text).strip()
+        if not name or any(w in name for w in SKIP_WORDS):
+            continue
+        body = seg[:3000]
+        mp = MY_YEN.search(body)
+        if not mp:
+            continue
+        mc = MY_COND.search(body)
+        rar, code = '', ''
+        # 「AR/M6a」のようにレアリティと収録弾が並ぶ。弾だけのこともある
+        for v in MY_META.findall(body):
+            if '/' in v:
+                rar, code = v.split('/', 1)
+                break
+            if not code:
+                code = v
+        out[pid] = {
+            'shop': 'MY', 'pid': pid,
+            'cond': mc.group(1) if mc and mc.group(1) in 'ABCD' else 'A',
+            'url': '%s/pokemon-trading-card-game/items/single-card/%s' % (MY, mi.group(1)),
+            'name': name, 'rarity': rar.strip(),
+            'num': mn.group(1).upper() if mn else '',
+            'setcode': zero_strip(code.strip()), 'settitle': '',
+            'price': int(mp.group(1).replace(',', '')),
+            'stock': 1, 'soldout': False, 'mall': shop}
+    return out
+
+
+def my_one(num, b64, shop):
+    """1店ぶん。店名と送料も一緒に持ち帰る"""
+    page_name, ship = my_shop_page(b64)
+    if page_name:
+        shop = page_name
+    got, blank = {}, 0
+    for page in range(1, 61):
+        h = curl_text('%s?storeIds=%s&page=%d' % (MY_LIST, num, page), tries=2)
+        if not h:
             blank += 1
-            if blank >= 8:
-                log('  DMMマイカ %dページ目で終わり' % page)
+            if blank >= 3:
+                break
+            continue
+        add = my_parse(h, shop)
+        new = {k: v for k, v in add.items() if k not in got}
+        if not new:
+            blank += 1
+            if blank >= 3:
                 break
         else:
             blank = 0
-        if page % 50 == 0:
-            log('  DMMマイカ %dページ 累計%d件' % (page, len(items)))
-        time.sleep(.6)
-    log('  DMMマイカ %d件' % len(items))
+            got.update(new)
+        time.sleep(.2)
+    return got, shop, ship
+
+
+MY_SHIP = {}          # 店名 → 送料の書き方（ページに出す）
+
+
+def my_scrape():
+    """DMMマイカ。店ごとに取る。同じ注文でも店が違えば送料が別にかかるので、
+    どの店の出品かが分からないと買い方を決められない"""
+    shops = my_shops()
+    if not shops:
+        log('  DMMマイカの店一覧が読めません')
+        return []
+    log('  DMMマイカ 店 %d件' % len(shops))
+    items, done = {}, 0
+    MY_SHIP.clear()
+    with futures.ThreadPoolExecutor(max_workers=5) as ex:
+        jobs = {ex.submit(my_one, num, b64, name): name
+                for num, (b64, name) in shops.items()}
+        for f in futures.as_completed(jobs):
+            name = jobs[f]
+            done += 1
+            try:
+                got, name, ship = f.result()
+            except Exception:
+                got, ship = {}, ''
+            items.update(got)
+            if ship:
+                MY_SHIP[name] = ship
+            if done % 25 == 0:
+                log('  DMMマイカ %d/%d店 累計%d件' % (done, len(shops), len(items)))
+    log('  DMMマイカ %d件（%d店）' % (len(items), len(MY_SHIP)))
+    return list(items.values())
+
+
+# ── 駿河屋 ───────────────────────────────────────────
+SG = 'https://www.suruga-ya.jp'
+# シングルカードの一覧。旧裏面は別カテゴリになっている。
+# 現行は7.7万件（3,227ページ）あるうえ、在庫があるのは1ページに1〜3件しかない。
+# しかも現行は他の10店でほぼ拾えるので、新着順で上の方だけ見る。
+# 旧裏面は2,205件（92ページ）と小さく、ここにしか無い在庫なので全部見る。
+SG_CATS = [('501080047', '旧裏面', 92, ''),
+           ('501080033', '現行', 300, '&rankBy=modificationTime%3Adescending')]
+SG_LIST = (SG + '/search?category=%s&search_word=&boxpacksingle='
+           '%%E3%%82%%B7%%E3%%83%%B3%%E3%%82%%B0%%E3%%83%%AB&inStock=On&page=%d%s')
+SG_ITEM = re.compile(r'<div class="item_box.*?(?=<div class="item_box|<div class="pagination|</body)', re.S)
+SG_URL = re.compile(r'href="(/product/detail/[^"?]+)')
+SG_NAME = re.compile(r'<h3 class="product-name">([^<]+)</h3>')
+# 在庫があるときは「中古：￥1,580 税込」、無いときは「品切れ」。
+# 店舗によって値段が違うと「￥470 ～ ￥780」と幅で出るので、安いほうを採る
+SG_PRICE = re.compile(r'<p class="price[^"]*"[^>]*>(.{0,400}?)</p>', re.S)
+SG_YEN = re.compile(r'￥\s*([\d,]+)')
+SG_SET = re.compile(r'class="condition background-kishu"[^>]*>\s*([^<]+?)\s*</p>', re.S)
+# 「129/103[SAR]：(キラ)ミュウex」＝ 番号・レアリティ・名前
+SG_TITLE = re.compile(r'^([0-9A-Za-z][0-9A-Za-z\-#]*(?:/[0-9A-Za-z\-]+)?)'
+                      r'(?:\[([^\]]*)\])?\s*[:：]\s*(.+)$')
+SG_HURT = ('キズ', '傷', '状態難', 'ジャンク', 'プレイ用')
+# 駿河屋は「(Bランク)」のように状態を名前に書いてくる。そのまま状態として使える
+SG_RANK = re.compile(r'[(（]\s*([A-D])\s*ランク[^)）]*[)）]')
+
+
+def sg_page(cat, page, extra=''):
+    h = fetch(SG_LIST % (cat, page, extra), tries=2)
+    if not h:
+        return None
+    out = {}
+    pos = list(SG_NAME.finditer(h))
+    for i, m in enumerate(pos):
+        before = h[(pos[i - 1].end() if i else 0):m.start()]
+        after = h[m.end():(pos[i + 1].start() if i + 1 < len(pos) else len(h))]
+        us = SG_URL.findall(before)
+        mp = SG_PRICE.search(after)
+        if not (us and mp):
+            continue
+        if '品切' in mp.group(1):
+            continue                   # 売り切れは出さない
+        yens = SG_YEN.findall(mp.group(1))
+        if not yens:
+            continue
+        price = min(int(y.replace(',', '')) for y in yens)
+        title = unicodedata.normalize('NFKC', m.group(1)).strip()
+        head, sep, rest = title.partition(':')
+        if not sep:
+            continue                   # 番号とカード名が分かれていないものは捨てる
+        mrank = SG_RANK.search(rest)
+        name = SG_RANK.sub('', rest)
+        name = re.sub(r'^\([^)]*\)', '', name).strip()
+        if not name or any(w in title for w in SKIP_WORDS):
+            continue
+        mnum = re.search(r'([0-9A-Za-z][0-9A-Za-z\-]*/[0-9A-Za-z\-]+)', head)
+        mrar = re.search(r'\[([^\]]*)\]', head)
+        ms = SG_SET.search(after)
+        settitle = unicodedata.normalize('NFKC', ms.group(1)).strip() if ms else ''
+        # 旧裏は番号が振られていないので、名前で引く印を立てる（DB側も番号を持っていない）
+        num = mnum.group(1).upper() if mnum else ('旧裏' if '旧裏' in settitle else '')
+        pid = 'sg' + us[-1].rsplit('/', 1)[-1]
+        out[pid] = {
+            'shop': 'SG', 'pid': pid,
+            'cond': (mrank.group(1) if mrank else
+                     ('C' if any(w in title for w in SG_HURT) else 'A')),
+            'url': SG + us[-1],
+            'name': name, 'rarity': (mrar.group(1) if mrar else '').strip(),
+            'num': num,
+            'setcode': '',
+            'settitle': settitle,
+            'price': price, 'stock': 1, 'soldout': False}
+    return out
+
+
+def sg_scrape():
+    """駿河屋。1ページ24件と細かいので、何本か並行してめくる。
+    旧弾・旧裏面の在庫が厚いのがここの強み"""
+    items, bad = {}, 0
+    for cat, label, cap, extra in SG_CATS:
+        h = fetch(SG_LIST % (cat, 1, extra))
+        if not h:
+            log('  駿河屋（%s）に繋がりません' % label)
+            continue
+        m = re.search(r'([\d,]{2,12})\s*件', h)
+        total = int(m.group(1).replace(',', '')) if m else 0
+        pages = min((total + 23) // 24, cap) if total else min(40, cap)
+        log('  駿河屋（%s） %s件 → %dページ見ます' % (label, format(total, ','), pages))
+        # 駿河屋は同時に叩くと中身の無いページを返してくる（4本並行で取りこぼした）。
+        # 1本ずつ、少し間を置いて読む
+        for n in range(1, pages + 1):
+            got = sg_page(cat, n, extra)
+            if got is None:
+                bad += 1
+                continue
+            items.update(got)
+            if n % 100 == 0:
+                log('  駿河屋（%s） %d/%dページ 累計%d件' % (label, n, pages, len(items)))
+            time.sleep(.3)
+    if bad:
+        log('  駿河屋 %dページは取れませんでした' % bad)
+    log('  駿河屋 %d件' % len(items))
     return list(items.values())
 
 
@@ -1130,7 +1300,8 @@ def scrape():
                             ('TT', tt_scrape, 500), ('FF', ff_scrape, 300),
                             ('BW', bw_scrape, 300), ('YY', yy_scrape, 300),
                             ('TR', tr_scrape, 300), ('PB', pb_scrape, 200),
-                            ('OL', ol_scrape, 200), ('MY', my_scrape, 300)):
+                            ('OL', ol_scrape, 200), ('MY', my_scrape, 300),
+                            ('SG', sg_scrape, 150)):     # 駿河屋は在庫のある物が少ない
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -1312,7 +1483,9 @@ def match(items, cards):
                     stat['収録弾が合わない'] += 1
                     continue
                 cand = keep
+        old_hit = False
         if not cand and _is_old_back(it):
+            old_hit = True
             # 旧裏はDB側に番号が無い（店は {旧裏} や「1st2 002/048」と書く）ので名前で引く。
             # 旧裏だと分かっている商品にだけ使う。番号が合わなかっただけの現行カードに
             # これを使うと、同名の旧裏カードに化ける（エンテイ PRE2 002/009 が
@@ -1363,8 +1536,12 @@ def match(items, cards):
         # 番号の分母が弾名（112/BW-P）なら、記号が無くても弾は確定している
         sure = 1 if ((_code_usable(code, num) and _code_ok(code, c.get('setId')))
                      or not (num or '').split('/')[-1].isdigit()) else 0
+        # 旧裏は番号が無く名前で当てているので、1ED・マークなし等の版まではわからない。
+        # 値段が桁違いに見えるのはたいていこれなので、確実でない印を付けておく
+        if old_hit:
+            sure = 0
         out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'], 'sure': sure,
-                    'vid': it.get('vid', ''),
+                    'vid': it.get('vid', ''), 'mall': it.get('mall', ''),
                     'cond': it['cond'], 'crPrice': it['price'],
                     'stock': it['stock'], 'soldout': it['soldout'], 'num': num,
                     'id': c['id'], 'name': c.get('name') or '',
@@ -1380,7 +1557,8 @@ def match(items, cards):
 # ── 3. まとめてJSONに ─────────────────────────────────
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
-        'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags', 'fst']
+        'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags', 'fst',
+        'mall']       # マイカだけ。モールの中のどの店か（送料が店ごとにかかる）
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -1393,11 +1571,12 @@ YY_PROD = YY + '/sell/poc/card/'
 TR_PROD = TR + '/shop/g/g'
 PB_PROD = PB
 OL_PROD = OL + '/pokemon/product/detail/'
+SG_PROD = SG + '/product/detail/'
 MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
 # 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
 PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
              ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
-             ('my', MY_PROD)]
+             ('my', MY_PROD), ('sg', SG_PROD)]
 
 
 def shrink(row):
@@ -1518,6 +1697,7 @@ def build(rows, prev, ok_shops=None):
             r['shop'], r['url'], r.get('vid', ''), r.get('sure', 1),
             r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
             first_seen.get(r['pid'], today_s if had_prev else ''),
+            r.get('mall', ''),
         ])
         shrink(rowsout[-1])
 
@@ -1554,6 +1734,8 @@ def build(rows, prev, ok_shops=None):
         'cols': COLS,
         'base': dict(PROD_BASE, img=IMG_BASE, cr=CR_PROD,
                      id='hareruya2-', cart=TC + '/cart/'),
+        # マイカの店ごとの送料。店をまたぐと送料が別にかかるので、選ぶときの材料になる
+        'ships': dict(MY_SHIP) or (prev.get('ships') or {}),
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),
@@ -1627,7 +1809,7 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
-    for extra in ('code', 'rar', 'tags', 'fst'):
+    for extra in ('code', 'rar', 'tags', 'fst', 'mall'):
         if extra not in cols:
             cols.append(extra)
     data['cols'] = cols
@@ -1699,10 +1881,52 @@ def sync_only():
     return 0
 
 
+LOCK = os.path.join(HERE, 'buylist_rush.lock')
+LOCK_STALE = 6 * 3600      # これより古い鍵は、前回が落ちた残骸とみなす
+
+
+def _lock():
+    """同時に2つ走らせない。走っているなら False"""
+    try:
+        if os.path.exists(LOCK):
+            age = time.time() - os.path.getmtime(LOCK)
+            if age < LOCK_STALE:
+                who = ''
+                try:
+                    who = io.open(LOCK, encoding='utf-8').read().strip()
+                except Exception:
+                    pass
+                log('別の取得が動いています（%s・%d分前に開始）。今回は何もしません'
+                    % (who or '?', age / 60))
+                return False
+            log('古い鍵が残っていたので外します（%.1f時間前）' % (age / 3600))
+        io.open(LOCK, 'w', encoding='utf-8').write('pid %d %s' % (
+            os.getpid(), datetime.datetime.now().strftime('%m-%d %H:%M')))
+        return True
+    except Exception:
+        return True            # 鍵が作れないくらいで止めない
+
+
+def _unlock():
+    try:
+        os.remove(LOCK)
+    except Exception:
+        pass
+
+
 def main():
     _trim_log()
     if '--sync' in sys.argv:
         return sync_only()
+    if not _lock():
+        return 0
+    try:
+        return _run()
+    finally:
+        _unlock()
+
+
+def _run():
     prev = {}
     if os.path.exists(OUT):
         try:
