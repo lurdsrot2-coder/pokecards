@@ -259,7 +259,8 @@ const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW
             SG:'駿河屋'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map(), SHIPS={};
-let bestCr=new Map();       // カードid → いま出ている中でいちばん安い値段
+let bestCr=new Map();       // カードid → いちばん安い値段
+let bestN=new Map();        // カードid → その値段で出ている件数（同額の判定に使う）
 // ＋1を押した出品。画面を作り直しても印が消えないよう、控え（localStorage）から作る。
 // アプリ側で反映すると控えが空になるので、戻ってきたときに印も消える
 let doneP1=new Set();
@@ -482,7 +483,7 @@ document.getElementById('focus-x').onclick=()=>{
 };
 // 同じカードが他の店にも出ているかを引けるようにしておく
 function indexCards(){
-  byCard=new Map(); bestCr=new Map();
+  byCard=new Map(); bestCr=new Map(); bestN=new Map();
   for(const r of rows){
     if(!r.id) continue;
     if(!byCard.has(r.id)) byCard.set(r.id,[]);
@@ -490,14 +491,18 @@ function indexCards(){
     // 売り切れは比べる相手にしない
     if(r.sold) continue;
     const b=bestCr.get(r.id);
-    if(b===undefined || r.cr<b) bestCr.set(r.id, r.cr);
+    if(b===undefined || r.cr<b){ bestCr.set(r.id, r.cr); bestN.set(r.id, 1); }
+    else if(r.cr===b) bestN.set(r.id, (bestN.get(r.id)||0)+1);
   }
 }
-// ほかにもっと安い出品が無いか。紐づいていないカードは比べようがないので通す
+// 1=最安値（同額も残す） 2=最最安（同額が並んでいるものは除く）
+// 紐づいていないカードは比べようがないので通す
 function isBest(r){
   if(!r.id) return true;
   const b=bestCr.get(r.id);
-  return b===undefined || r.cr<=b;
+  if(b===undefined) return true;
+  if(r.cr>b) return false;
+  return st.best<2 || (bestN.get(r.id)||1)===1;
 }
 function show(d, ownedN){
   const s=d.stats||{}, t=new Date(d.createdAt);
@@ -606,6 +611,8 @@ function resetAll(){
   for(const b of document.querySelectorAll('.tg')) b.classList.remove('on');
   for(const id of ['f-lo','f-hi','q']){ const e=document.getElementById(id); if(e) e.value=''; }
   document.getElementById('f-min').value='0';
+  const fb=document.getElementById('f-best');
+  fb.textContent='最安値'; fb.title='同じカードで一番安い出品だけ出します';
   document.getElementById('f-sort').value=st.sort;
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
@@ -661,7 +668,13 @@ new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'8
 
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
-document.getElementById('f-best').onclick=function(){st.best=st.best?0:1;this.classList.toggle('on',!!st.best);apply();};
+document.getElementById('f-best').onclick=function(){
+  st.best=(st.best+1)%3;      // 最安値 → 最最安 → 解除
+  this.classList.toggle('on', !!st.best);
+  this.textContent = st.best===2 ? '最最安' : '最安値';
+  this.title = st.best===2 ? '同額で並んでいるものを除き、1店だけが安いカードを出します'
+                           : '同じカードで一番安い出品だけ出します';
+  apply();};
 // 新着 / 売れた は排他。どちらもOFFのときは在庫のあるものだけ出す
 document.querySelectorAll('#f-new,#f-sold').forEach(b=>b.onclick=function(){
   const k=this.id==='f-new'?'new':'sold';
