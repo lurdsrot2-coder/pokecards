@@ -10,7 +10,8 @@
 前回のJSONと比べて、消えた商品（＝売れた）と新しく出た商品を数える。
 新着には印を付けるので、ページ側で「新着だけ」を見られる。
 
-手動実行:  python buylist_rush.py                （全部取り直す。20〜30分）
+手動実行:  python buylist_rush.py                （全部取り直す）
+           python buylist_rush.py --light        （動きの速い7店だけ。短時間）
            python buylist_rush.py --sync         （お店には行かず、相場と所持だけ合わせる。数秒）
            python buylist_rush.py --only TT      （店を選ぶ）
            python buylist_rush.py --no-push      （pushせず手元だけ更新）
@@ -20,6 +21,10 @@ import unicodedata, statistics, datetime, collections, base64
 import concurrent.futures as futures
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
+# 1回の巡回にかけてよい時間。超えたら残りの店は諦めて、取れたぶんで書き出す。
+# 店が1つ不調なだけで「一覧が丸一日古いまま」になるのを防ぐ
+BUDGET_MIN = 100
+_started = None          # 巡回を始めた時刻（scrape で入れる）
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 外部コマンド（curl・git・PowerShell）を呼ぶたびに黒い窓が前面に出て
 # 操作が中断されるので、窓を作らないようにする（Windowsのみ）
@@ -716,7 +721,10 @@ def yy_scrape():
                 'stock': int(digits) if digits else 9, 'soldout': False}
         if (i + 1) % 50 == 0:
             log('  遊々亭 %d/%d弾 累計%d件' % (i + 1, len(vers), len(items)))
-        time.sleep(.3)
+        if over_budget():
+            log('  遊々亭 時間切れ。%d/%d弾で切り上げます' % (i + 1, len(vers)))
+            break
+        time.sleep(.8)      # 429を出されるようになったので間隔を広げた
     log('  遊々亭 %d件' % len(items))
     return list(items.values())
 
@@ -1330,12 +1338,24 @@ def sg_scrape():
     return list(items.values())
 
 
+def over_budget():
+    """時間を使い切ったか"""
+    return _started is not None and (time.time() - _started) / 60 > BUDGET_MIN
+
+
 def scrape():
     """店ごとに集めて、ちゃんと取れた店の集合も返す。
     取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
     only = None
     if '--only' in sys.argv:
         only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
+    elif '--light' in sys.argv:
+        # 在庫の動きが速い店だけ。重い4店（遊々亭・トレコロ・プライスベース・駿河屋）は
+        # 1日1回の全体巡回にまかせる
+        only = {'CR', 'TC', 'TT', 'FF', 'BW', 'OL', 'MY'}
+        log('  軽い巡回（動きの速い7店だけ）')
+    global _started
+    _started = time.time()
     items, ok = [], set()
     for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500),
                             ('TT', tt_scrape, 500), ('FF', ff_scrape, 300),
@@ -1346,6 +1366,9 @@ def scrape():
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
+        if over_budget():
+            log('  時間切れ。%s から先は次回にまわします（前回のぶんを残します）' % shop)
+            break
         try:
             got = fn()
         except Exception as e:
@@ -1944,20 +1967,34 @@ LOCK = os.path.join(HERE, 'buylist_rush.lock')
 LOCK_STALE = 6 * 3600      # これより古い鍵は、前回が落ちた残骸とみなす
 
 
+def _alive(who):
+    """鍵を作ったプロセスがまだ生きているか。落ちた残骸で止まらないように"""
+    m = re.search(r'pid (\d+)', who or '')
+    if not m:
+        return True
+    try:
+        r = subprocess.run(['tasklist', '/FI', 'PID eq ' + m.group(1)],
+                           stdout=subprocess.PIPE, timeout=20, creationflags=NOWIN)
+        return m.group(1) in r.stdout.decode('utf-8', 'replace')
+    except Exception:
+        return True
+
+
 def _lock():
     """同時に2つ走らせない。走っているなら False"""
     try:
         if os.path.exists(LOCK):
             age = time.time() - os.path.getmtime(LOCK)
-            if age < LOCK_STALE:
-                who = ''
-                try:
-                    who = io.open(LOCK, encoding='utf-8').read().strip()
-                except Exception:
-                    pass
+            who = ''
+            try:
+                who = io.open(LOCK, encoding='utf-8').read().strip()
+            except Exception:
+                pass
+            if age < LOCK_STALE and _alive(who):
                 log('別の取得が動いています（%s・%d分前に開始）。今回は何もしません'
                     % (who or '?', age / 60))
                 return False
+            log('前の取得はもういないので鍵を外します（%s・%.1f時間前）' % (who or '?', age / 3600))
             log('古い鍵が残っていたので外します（%.1f時間前）' % (age / 3600))
         io.open(LOCK, 'w', encoding='utf-8').write('pid %d %s' % (
             os.getpid(), datetime.datetime.now().strftime('%m-%d %H:%M')))
