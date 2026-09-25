@@ -239,7 +239,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div id="toast"></div>
 <div id="grid"></div><div id="more"></div>
 <div id="note">
-カードラッシュ（状態B/C/Dのみ）・トレカキャンプ・トレトク・福福トレカの在庫を並べています。
+<details class="thline" id="thline"></details>
+カードラッシュ（状態B/C/Dのみ）・トレカキャンプ・トレトク・福福トレカ・BIGWEB・遊々亭・
+トレコロ・プライスベース・オルタ・DMMマイカ・駿河屋の在庫を並べています。
 状態の表記がないものは A（通常品）です。<br>
 状態B＝キズ・スレ・くすみ・小さな凹みあり。状態C＝全体のキズ、折れ、凹み、軽度の水濡れ等あり。
 状態D＝それ以上に傷んでいるもの。B以下は店側が「コレクション用にはお勧めしない」としているので、
@@ -533,8 +535,11 @@ function show(d, ownedN){
     +(d.syncedAt?' ／ 相場と所持は '+new Date(d.syncedAt).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+' 時点':'')
     +(ownedN>0?' ／ <span class="new">直近の変更 '+ownedN+'件を反映</span>'
       :ownedN<0?' ／ <span class="gone">アプリの差分を読めませんでした</span>':'')
-    +'<details class="thline"><summary>割安とみなす線（'+line.length+'店）</summary>'
-      +'相場に対する実勢の中央値 → 割安とみなす線<br>'+line.join('<br>')+'</details>';
+    ;
+  // 誤って押しやすいので、割安の線は一番下の説明のところに出す
+  document.getElementById('thline').innerHTML =
+    '<summary>割安とみなす線（'+line.length+'店）</summary>'
+    +'相場に対する実勢の中央値 → 割安とみなす線<br>'+line.join('<br>');
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
