@@ -32,6 +32,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on{background:rgba(0,245,255,.22);border-color:var(--cy);color:#fff;font-weight:700}
 .tg.on.own{background:rgba(255,0,255,.22);border-color:var(--pk)}
 .tg.on.best{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
+.tg.on.few{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
 .tg.on.CR{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
@@ -188,6 +189,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div class="ctl">
  <button class="tg" id="f-cheap">割安のみ</button>
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
+ <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg" id="f-new">新着</button>
  <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
@@ -247,6 +249,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 状態D＝それ以上に傷んでいるもの。B以下は店側が「コレクション用にはお勧めしない」としているので、
 プレイ用・穴埋め用として見てください。<br>
 大きい数字が店の価格、その下の取り消し線が相場（アプリ内の時価＝晴れる屋2の販売価格）です。<br>
+「残り2枚以下」はもう一度押すと「残り1枚」になります。
+トレカキャンプ・PRICE BASE・DMMマイカ・駿河屋は一覧に残り枚数が出ないため「在庫 —」で、この絞り込みには出ません。<br>
 <b>在庫は取り直した時点のものです。</b>お店の在庫は1日3回（5時・13時・21時半）取り直していますが、
 その間に売れてしまうことがあります。画面上部の「お店の在庫は○時点」が古いときは特にご注意ください。
 相場と所持枚数は1時間ごとにアプリのデータと合わせていて、「⟳ 更新」を押すと、
@@ -274,7 +278,7 @@ function syncDone(){
 }
 syncDone();
 let rows=[], view=[], shown=0,
-    st={cheap:0,best:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
+    st={cheap:0,best:0,few:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
         mall:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
@@ -395,6 +399,7 @@ function apply(){
   view=rows.filter(r=>
        (!st.cheap || r.cheap)
     && (!st.best || isBest(r))
+    && (!st.few || (r.stock>0 && r.stock<=st.few))
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
     && (!st.shop  || r.shop===st.shop)
@@ -609,7 +614,7 @@ addEventListener('focus', ()=>{
 // 絞り込みを全部やめて、最初の状態に戻す。
 // ESCと、左上のタイトルから呼ぶ
 function resetAll(){
-  st.cheap=0; st.best=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
+  st.cheap=0; st.best=0; st.few=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
   st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear();
   st.lo=null; st.hi=null; st.min=0; st.q=''; st.sort='cr'; st.card='';
   backTo=null;
@@ -618,6 +623,7 @@ function resetAll(){
   document.getElementById('f-min').value='0';
   const fb=document.getElementById('f-best');
   fb.textContent='最安値'; fb.title='同じカードで一番安い出品だけ出します';
+  document.getElementById('f-few').textContent='残り2枚以下';
   document.getElementById('f-sort').value=st.sort;
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
@@ -673,6 +679,11 @@ new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'8
 
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
+document.getElementById('f-few').onclick=function(){
+  st.few = st.few===0 ? 2 : st.few===2 ? 1 : 0;    // 2枚以下 → 1枚だけ → 解除
+  this.classList.toggle('on', !!st.few);
+  this.textContent = st.few===1 ? '残り1枚' : '残り2枚以下';
+  apply();};
 document.getElementById('f-best').onclick=function(){
   st.best=(st.best+1)%3;      // 最安値 → 最最安 → 解除
   this.classList.toggle('on', !!st.best);

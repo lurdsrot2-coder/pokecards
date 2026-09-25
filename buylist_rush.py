@@ -969,7 +969,8 @@ def pb_scrape():
                     'url': PB + slug,
                     'name': name, 'rarity': rar, 'num': num,
                     'setcode': '', 'settitle': settitle,
-                    'price': price, 'stock': 1, 'soldout': False}
+                    # 一覧に残り枚数が出ないので「分からない」扱い（0）
+                    'price': price, 'stock': 0, 'soldout': False}
             if done % 500 == 0:
                 log('  PRICE BASE %d/%d商品 累計%d件' % (done, len(found), len(items)))
     log('  PRICE BASE %d件' % len(items))
@@ -1132,7 +1133,8 @@ def my_parse(h, shop, num):
             'num': mn.group(1).upper() if mn else '',
             'setcode': zero_strip(code.strip()), 'settitle': '',
             'price': int(mp.group(1).replace(',', '')),
-            'stock': 1, 'soldout': False, 'mall': shop}
+            # 一覧に残り枚数が出ないので「分からない」扱い（0）
+            'stock': 0, 'soldout': False, 'mall': shop}
     return out
 
 
@@ -1304,7 +1306,8 @@ def sg_page(cat, page, extra=''):
             'num': num,
             'setcode': '',
             'settitle': settitle,
-            'price': price, 'stock': 1, 'soldout': False}
+            # 一覧に残り枚数が出ないので「分からない」扱い（0）
+            'price': price, 'stock': 0, 'soldout': False}
     return out
 
 
