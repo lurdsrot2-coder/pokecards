@@ -318,6 +318,24 @@ let rows=[], view=[], shown=0,
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
 // （window.open に noopener を付けると名前が無視されて新しいタブになるので付けない）
 const TAB={BW:'bigweb'};
+// キャンプのカートは、URLに並べる方式だと
+//   ・約4,000文字（200件ほど）で 414 になる
+//   ・「カートを作り直す」ので1枚ずつ入れると前のが消える
+// ので、フォームPOSTでまとめて足す
+function tcCart(vids){
+  if(!vids.length || !CART) return false;
+  const f=document.createElement('form');
+  f.method='post'; f.action=CART.replace(/\/cart\/?$/,'/cart/add'); f.target='torecacamp';
+  const put=(n,v)=>{ const i=document.createElement('input');
+    i.type='hidden'; i.name=n; i.value=v; f.appendChild(i); };
+  vids.forEach((v,i)=>{ put('items['+i+'][id]', v); put('items['+i+'][quantity]', 1); });
+  put('return_to', '/cart');
+  document.body.appendChild(f);
+  open('', 'torecacamp');        // 先にタブを用意しておく（ブロック回避）
+  f.submit();
+  f.remove();
+  return true;
+}
 function openShop(url, shop){
   const name=TAB[shop];
   const w = name ? open(url, name) : open(url, '_blank', 'noopener');
@@ -793,10 +811,9 @@ document.getElementById('memo').onclick=e=>{
   if(op){
     const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
     // キャンプ(Shopify)はまとめて1つのカートに入れられる
-    if(g.shop==='TC' && CART){
+    if(g.shop==='TC'){
       const vids=g.items.map(x=>x.row&&x.row.vid).filter(Boolean);
-      if(vids.length){ openShop(CART+vids.map(v=>v+':1').join(','), g.shop);
-        op.textContent='カートに入れました'; return; }
+      if(tcCart(vids)){ op.textContent='カートに入れました（'+vids.length+'点）'; return; }
     }
     // ほかの店は1件ずつ。まとめて開くとブラウザに止められる
     const i=+(op.dataset.i||0);
@@ -822,8 +839,11 @@ grid.addEventListener('click',e=>{
     const r=rows.find(x=>x.pid===cb.dataset.cart); if(!r) return;
     // キャンプ(Shopify)だけはカートに直接入れられる。
     // 他の2店はカート投入がPOSTなので、商品ページを開くところまで
-    const u=(r.shop==='TC' && r.vid && CART) ? CART+r.vid+':1' : r.url;
-    openShop(u, r.shop);
+    if(r.shop==='TC' && r.vid && tcCart([r.vid])){   // 1枚でも足す形で入れる
+      toast(r.name+' をカートに入れました');
+      return;
+    }
+    openShop(r.url, r.shop);
     return;
   }
   const pb=e.target.closest('[data-p1]');
