@@ -699,13 +699,26 @@ function freeLine(txt){
   const m=/([\d,]{3,9})\s*円?\s*以上[^。]{0,14}送料無料/.exec(txt||'');
   return m ? +m[1].replace(/,/g,'') : 0;
 }
-function memoCount(){
+// 控えに相場が入っていない古い分は、いまの一覧から拾う
+function mktOf(x){
+  if(x && x.mkt) return x.mkt;
+  const r=x && rows.find(y=>y.pid===x.pid);
+  return r ? r.price : 0;
+}
+function memoTotals(){
   const q=readQueue();
-  const sum=q.reduce((a,x)=>a+(x&&x.price||0),0);
+  return {n:q.length,
+          sum:q.reduce((a,x)=>a+(x&&x.price||0),0),
+          mkt:q.reduce((a,x)=>a+mktOf(x),0)};
+}
+function memoCount(){
+  const t=memoTotals();
   const b=document.getElementById('memo-open');
-  // 買うものを足し引きしながら金額が見えるように、点数と合計を出す
-  b.textContent = q.length ? '🛒 メモ '+q.length+'点 '+yen(sum) : '🛒 メモ';
-  b.classList.toggle('on', q.length>0);
+  // 買うものを足し引きしながら、いくら得かも見えるようにする
+  b.textContent = t.n
+    ? '🛒 メモ '+t.n+'点 '+yen(t.sum)+(t.mkt?'（相場 '+yen(t.mkt)+'）':'')
+    : '🛒 メモ';
+  b.classList.toggle('on', t.n>0);
 }
 // 店ごとにまとめる。マイカはモールの中の店ごと（送料がそこでかかる）
 function memoGroups(){
@@ -746,7 +759,13 @@ function memoDraw(){
       +'<div class="mg-b">'
       +'<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>'
       +'</div></div>';
-  }).join('') + '<div style="text-align:right;font-size:13px;color:#fff">合計 <b>'+yen(total)+'</b></div>'
+  }).join('') + (()=>{ const t=memoTotals();
+      const off = t.mkt ? Math.round((1-t.sum/t.mkt)*100) : 0;
+      return '<div style="text-align:right;font-size:13px;color:#fff">合計 <b>'+yen(t.sum)+'</b>'
+        + (t.mkt ? ' ／ 相場 <s style="color:var(--sub)">'+yen(t.mkt)+'</s>'
+                 + ' ／ <b style="color:var(--gr)">'+yen(t.mkt-t.sum)+' お得</b>'
+                 + '<span style="color:var(--sub);font-size:11px">（'+off+'%引き）</span>' : '')
+        + '</div>'; })()
     + '<div style="font-size:11px;color:var(--sub);margin-top:6px">'
     + 'カートに入れるところまでです。注文の確定はご自身で。'
     + 'キャンプはまとめてカートに入ります。ほかの店は1件ずつ開きます。</div>';
@@ -823,7 +842,8 @@ grid.addEventListener('click',e=>{
       toast(r.name+' の＋1を取り消しました'+(rest.length?'（残り'+rest.length+'件）':'（残り0件）'));
       return;
     }
-    q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,at:new Date().toISOString()});
+    q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
+            at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
     doneP1.add(r.pid);
