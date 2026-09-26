@@ -262,21 +262,30 @@ def tc_parse(p, settitle):
             cond = nt[2]
     if cond not in ('A', 'B', 'C', 'D'):
         cond = 'A'
-    v = (p.get('variants') or [{}])[0]
-    try:
-        price = int(float(v.get('price') or 0))
-    except Exception:
-        price = 0
-    if not price:
-        return None
-    return {
-        'shop': 'TC', 'pid': 'tc' + str(p.get('id')), 'cond': cond, 'vid': str(v.get('id') or ''),
-        'url': TC + '/products/' + (p.get('handle') or ''),
-        'name': name + (' (' + '/'.join(n for n in notes if not n.startswith('状態')) + ')' if
-                        [n for n in notes if not n.startswith('状態')] else ''),
-        'rarity': '', 'num': num, 'setcode': setcode,
-        'settitle': settitle, 'price': price,
-        'stock': 0, 'soldout': not v.get('available')}
+    disp = name + (' (' + '/'.join(n for n in notes if not n.startswith('状態')) + ')' if
+                   [n for n in notes if not n.startswith('状態')] else '')
+    vs = p.get('variants') or []
+    out = []
+    for v in vs:
+        try:
+            price = int(float(v.get('price') or 0))
+        except Exception:
+            price = 0
+        if not price:
+            continue
+        # 状態ごとにvariantが分かれている商品は、variant名から状態を取る
+        mc = re.search(r'状態\s*([A-D])', v.get('title') or '')
+        vcond = mc.group(1) if mc else cond
+        # variantが1つだけの商品（古い形）は、これまでと同じ番号のままにする
+        pid = 'tc' + str(p.get('id')) + ('-' + str(v.get('id')) if len(vs) > 1 else '')
+        out.append({
+            'shop': 'TC', 'pid': pid, 'cond': vcond, 'vid': str(v.get('id') or ''),
+            'url': TC + '/products/' + (p.get('handle') or ''),
+            'name': disp,
+            'rarity': '', 'num': num, 'setcode': setcode,
+            'settitle': settitle, 'price': price,
+            'stock': 0, 'soldout': not v.get('available')})
+    return out or None
 
 
 def tc_scrape():
@@ -317,17 +326,18 @@ def tc_scrape():
             for p in ps:
                 if p.get('id') in items:
                     continue
-                it = tc_parse(p, settitle)
-                if it:
-                    items[p['id']] = it
+                got = tc_parse(p, settitle)
+                if got:
+                    items[p['id']] = got          # 状態ごとに複数入ることがある
             if len(ps) < 250:
                 break
             time.sleep(1.0)
         if (i + 1) % 100 == 0:
             log('  トレカキャンプ %d/%d コレクション 累計%d件' % (i + 1, len(cols), len(items)))
         time.sleep(.8)
-    log('  トレカキャンプ %d件' % len(items))
-    return list(items.values())
+    out = [it for v in items.values() for it in v]     # 状態ごとに開く
+    log('  トレカキャンプ %d商品・%d件（状態ごと）' % (len(items), len(out)))
+    return out
 
 
 # ── トレトク ─────────────────────────────────────────
@@ -1833,6 +1843,35 @@ def build(rows, prev, ok_shops=None):
     }
 
 
+# 扱っている店。どれかが0件のファイルは、作りかけか事故なので公開しない
+ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG')
+
+
+def missing_shops(data):
+    """行が1件も無い店を返す"""
+    cols = data.get('cols') or []
+    if 'shop' not in cols:
+        return []
+    i = cols.index('shop')
+    have = {(a[i] if i < len(a) else '') for a in (data.get('items') or [])}
+    return [x for x in ALL_SHOPS if x not in have]
+
+
+def safe_to_push(data):
+    """公開してよいファイルか。店がまるごと欠けていたら止める"""
+    lost = missing_shops(data)
+    if not lost:
+        return True
+    log('※ %s の行が1件もありません。作りかけの可能性があるので公開しません'
+        % '／'.join(lost))
+    log('  取り直すか、それでも公開するなら --force を付けてください')
+    try:
+        notify('買い得リスト', '%s が欠けているので公開を止めました' % '／'.join(lost))
+    except Exception:
+        pass
+    return False
+
+
 def push(path):
     """本体の作業ツリーは触らずに、このファイルだけを別クローンから push する
     （バックアップの状態ファイルと同じやり方。編集中の内容を壊さないため）"""
@@ -1965,7 +2004,8 @@ def sync_only():
         json.dumps(data, ensure_ascii=False, separators=(',', ':')))
     log('DB同期: 相場%d件・所持%d件を更新／割安%d件' % (changed_p, changed_o, cheap))
     if '--no-push' not in sys.argv:
-        log('push: ' + ('OK' if push(OUT) else '失敗'))
+        if safe_to_push(data) or '--force' in sys.argv:
+            log('push: ' + ('OK' if push(OUT) else '失敗'))
     return 0
 
 
@@ -2053,7 +2093,8 @@ def _run():
     log('在庫あり %d件 → カード %d件 ／ 売れた %d件 ・ 新着 %d件 ／ %.1fMB'
         % (s['listings'], s['cards'], s['sold'], s['added'], os.path.getsize(OUT) / 1048576))
     if '--no-push' not in sys.argv:
-        log('push: ' + ('OK' if push(OUT) else '失敗'))
+        if safe_to_push(data) or '--force' in sys.argv:
+            log('push: ' + ('OK' if push(OUT) else '失敗'))
     return 0
 
 
