@@ -1001,7 +1001,8 @@ OL_Q = """query F($page:Int,$perPage:Int,$where:ProductFaceWhereInput){
 # 商品名は「ナゾノクサ[タネばくだん][M2/001/080]」＝ 最後の[]に 弾/番号/総数
 OL_NAME = re.compile(r'^(.*?)\s*\[([0-9A-Za-z\-]{1,10})/([0-9A-Za-z]{1,4})/([0-9A-Za-z]{1,6})\]\s*$')
 OL_SKU = re.compile(r'^condition-([a-e])-')
-OL_COND = {'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D', 'e': 'D'}
+# オルタの状態は A+ / A- / B+ / B- / C の5段階。他店のA〜Dに寄せる
+OL_COND = {'a': 'A', 'b': 'A', 'c': 'B', 'd': 'B', 'e': 'C'}
 
 
 def ol_scrape():
