@@ -543,6 +543,7 @@ body.progging #grid{padding-bottom:64px}
   <button class="hbtn" id="btn-sel">◻ SELECT</button>
   <button class="hbtn" id="btn-selall">全選択</button>
   <button class="hbtn" id="btn-incsel">＋1 (<span id="sel-count">0</span>)</button>
+  <button class="hbtn" id="btn-favsel">★ お気に入り</button>
   <button class="hbtn" id="btn-hidesel">🚫 非表示</button>
   <button class="hbtn" id="btn-showsel">👁 表示に戻す</button>
   <button class="hbtn" id="btn-delsel">🗑 DELETE</button>
@@ -906,6 +907,8 @@ body.progging #grid{padding-bottom:64px}
       <option value="illustrator">イラストレーター</option>
       <option value="quickTags_add">タグ追加</option>
       <option value="quickTags_del">タグ削除</option>
+      <option value="favorite_on">お気に入りを付ける</option>
+      <option value="favorite_off">お気に入りを外す</option>
     </select>
     <input class="bain" id="be-aval" placeholder="設定する値" style="width:140px">
     <button id="be-abtn">適用</button>
@@ -1330,6 +1333,7 @@ function exitSelMode(){
   document.getElementById('btn-sel').textContent='◻ SELECT';
   document.getElementById('btn-selall').classList.remove('show');
   document.getElementById('btn-incsel').classList.remove('show');
+  document.getElementById('btn-favsel').classList.remove('show');
   document.getElementById('btn-hidesel').classList.remove('show');
   document.getElementById('btn-showsel').classList.remove('show');
   document.getElementById('btn-delsel').classList.remove('show');
@@ -1387,6 +1391,15 @@ function updateDelBtn(){
   document.getElementById('s-selected').textContent=n;
   document.getElementById('chip-selected').style.display=selMode?'':'none';
   document.getElementById('btn-incsel').classList.toggle('show',n>0);
+  // 選んだものが全部★なら「外す」、そうでなければ「付ける」
+  const fb=document.getElementById('btn-favsel');
+  fb.classList.toggle('show',n>0);
+  if(n>0){
+    let allFav=true;
+    for(const c of db.cards){ if(selIds.has(c.id) && !c.favorite){ allFav=false; break; } }
+    fb.textContent = allFav ? '★ お気に入りを外す' : '★ お気に入り';
+    fb.dataset.off = allFav ? '1' : '';
+  }
   document.getElementById('btn-delsel').classList.toggle('show',n>0);
   // 非表示/表示に戻す: 選択中カードに hidden があるかで切り替え（O(n) 1回走査）
   let hasHidden=false,hasVisible=false;
@@ -2134,6 +2147,24 @@ document.getElementById('btn-incsel').addEventListener('click',()=>{
   });
   saveDbDebounced();
   renderStats();
+});
+
+// 選んだカードにまとめて★。もう一度押すと外す
+document.getElementById('btn-favsel').addEventListener('click',function(){
+  if(!selIds.size)return;
+  const off=this.dataset.off==='1';
+  let n=0;
+  db.cards.forEach((c,i)=>{
+    if(!selIds.has(c.id))return;
+    if(!!c.favorite===!off)return;          // すでにその状態なら触らない
+    const u={...c, favorite:!off};
+    db.cards[i]=u; _markEdited(u); n++;
+  });
+  if(!n)return;
+  saveDbDebounced();
+  renderCards();
+  updateDelBtn();
+  alert((off?'★を外しました：':'★を付けました：')+n+'件');
 });
 
 // 非表示
@@ -3885,7 +3916,9 @@ document.getElementById('be-abtn').addEventListener('click',()=>{
   if(!checked.length){alert('行を選択してください');return}
   checked.forEach(cb=>{
     const c=getCard(cb.dataset.id);if(!c)return;
-    if(field==='quickTags_add'){
+    if(field==='favorite_on' || field==='favorite_off'){
+      c.favorite = field==='favorite_on';
+    } else if(field==='quickTags_add'){
       if(!val)return;
       if(!(c.quickTags||[]).includes(val)) c.quickTags=[...(c.quickTags||[]),val];
     } else if(field==='quickTags_del'){
