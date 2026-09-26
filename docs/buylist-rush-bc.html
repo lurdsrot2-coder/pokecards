@@ -323,6 +323,13 @@ const TAB={BW:'bigweb'};
 //   ・約4,000文字（200件ほど）で 414 になる
 //   ・「カートを作り直す」ので1枚ずつ入れると前のが消える
 // ので、フォームPOSTでまとめて足す
+// キャンプのカートを空にする。300点を店側で1個ずつ消させないため。
+// /cart/clear に行くと空になって /cart に戻る（同じタブで開く）
+function tcClear(){
+  if(!CART) return false;
+  open(CART.replace(/\/cart\/?$/,'/cart/clear'), 'torecacamp');
+  return true;
+}
 function tcCart(vids){
   if(!vids.length || !CART) return false;
   const f=document.createElement('form');
@@ -810,6 +817,7 @@ function memoDraw(){
         ? '<button data-open="'+gi+'">カートへ（'
             +g.items.filter(x=>x.row&&x.row.vid).length+'点）</button>'
         : '<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>')
+      +(g.shop==='TC'?'<button class="rm" data-clear="1">店のカートを空にする</button>':'')
       +'<button class="rm" data-delshop="'+gi+'">この店のぶんを消す（'+g.items.length+'）</button>'
       +(g.gone?'<button class="rm" data-delgone="'+gi+'">一覧に無いぶんを消す（'+g.gone+'）</button>':'')
       +'</div></div>';
@@ -838,6 +846,14 @@ document.getElementById('memo').onclick=e=>{
   if(e.target.id==='memo'){ memoShow(false); return; }
   const del=e.target.closest('[data-del]');
   if(del){ dropPids([del.dataset.del]); return; }
+  const cl=e.target.closest('[data-clear]');
+  if(cl){
+    if(confirm('キャンプのカートを空にします。'
+      +'このメモは消えません。よろしいですか？')){
+      tcClear(); cl.textContent='空にしました';
+    }
+    return;
+  }
   const ds=e.target.closest('[data-delshop]');
   if(ds){
     const g=(window.__memoGroups||[])[+ds.dataset.delshop]; if(!g) return;
