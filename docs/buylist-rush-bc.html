@@ -33,6 +33,31 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.own{background:rgba(255,0,255,.22);border-color:var(--pk)}
 .tg.on.best{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.few{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
+.tg.on.fav{background:rgba(255,214,0,.28);border-color:#ffd600;color:#fff}
+/* ★に出品が出たときの知らせ */
+/* 買い物メモ */
+#memo{display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);
+ overflow:auto;padding:16px}
+#memo.open{display:block}
+#memobox{max-width:760px;margin:0 auto;background:var(--bg-c,#0d1030);
+ border:1px solid rgba(0,245,255,.35);border-radius:10px;padding:14px}
+#memobox h2{margin:0 0 8px;font-size:14px;color:var(--cy)}
+.mg{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:8px;margin-bottom:10px}
+.mg-h{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;font-size:12px}
+.mg-h b{font-size:13px;color:#fff}
+.mg-sum{margin-left:auto;color:var(--gr);font-weight:700}
+.mg-ship{width:100%;font-size:11px;color:var(--sub)}
+.mg-ship em{color:var(--pk);font-style:normal}
+.mg-it{display:flex;gap:8px;font-size:11px;padding:2px 0;color:var(--sub)}
+.mg-it span{margin-left:auto}
+.mg-it button{background:none;border:none;color:var(--rd);cursor:pointer;font-size:11px}
+.mg-b{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.mg-b button{font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;
+ background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.5);color:#fff}
+#memo-close{float:right;background:none;border:none;color:var(--sub);cursor:pointer;font-size:16px}
+#favnews{display:none;margin:6px 0 0;padding:6px 10px;border-radius:6px;cursor:pointer;
+ background:rgba(255,214,0,.14);border:1px solid rgba(255,214,0,.5);color:#ffd600;font-size:12px}
+#favnews b{color:#fff}
 .tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
 .tg.on.CR{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
@@ -184,12 +209,14 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </style></head><body>
 <header>
 <div class="hd1"><h1 id="home" title="押すと最初の状態に戻ります">ポケカ 買い得リスト</h1>
- <button id="reload" title="最新のデータを取り直す">⟳ 更新</button></div>
+ <button id="reload" title="最新のデータを取り直す">⟳ 更新</button>
+ <button id="memo-open" title="＋1した出品を店ごとにまとめます">🛒 メモ</button></div>
 <div class="meta" id="meta">読み込み中…</div>
 <div class="ctl">
  <button class="tg" id="f-cheap">割安のみ</button>
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
+ <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
  <button class="tg" id="f-new">新着</button>
  <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
@@ -231,6 +258,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  </select>
  <input type="search" id="q" placeholder="カード名で絞る">
  <span class="hit" id="hit"></span>
+<div id="favnews"></div>
 <div class="tagbar" id="tagbar"></div>
 <div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
@@ -239,6 +267,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
 <div id="toast"></div>
+<div id="memo"><div id="memobox"><button id="memo-close">✕</button>
+<h2>買い物メモ</h2><div id="memo-body"></div></div></div>
 <div id="grid"></div><div id="more"></div>
 <div id="note">
 <details class="thline" id="thline"></details>
@@ -278,7 +308,7 @@ function syncDone(){
 }
 syncDone();
 let rows=[], view=[], shown=0,
-    st={cheap:0,best:0,few:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
+    st={cheap:0,best:0,few:0,fav:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
         mall:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
@@ -318,6 +348,7 @@ function toRows(d){
       tags:i.tags==null?[]:String(a[i.tags]||'').split('|').filter(Boolean),
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
       mall:i.mall==null?'':(a[i.mall]||''),
+      fav:i.fav==null?0:(a[i.fav]||0),
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
@@ -400,6 +431,7 @@ function apply(){
        (!st.cheap || r.cheap)
     && (!st.best || isBest(r))
     && (!st.few || (r.stock>0 && r.stock<=st.few))
+    && (!st.fav || r.fav)
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
     && (!st.shop  || r.shop===st.shop)
@@ -551,6 +583,8 @@ function show(d, ownedN){
   [...st.tag].forEach(v=>{ if(!rows.some(r=>r.tags.includes(v))) st.tag.delete(v); });
   serSync();
   renderTags();
+  favNews();
+  memoCount();
   document.getElementById('msg').hidden=true;
   apply();
   focusFromUrl();   // apply() の後。中でもう一度絞り直す
@@ -614,7 +648,7 @@ addEventListener('focus', ()=>{
 // 絞り込みを全部やめて、最初の状態に戻す。
 // ESCと、左上のタイトルから呼ぶ
 function resetAll(){
-  st.cheap=0; st.best=0; st.few=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
+  st.cheap=0; st.best=0; st.few=0; st.fav=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
   st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear();
   st.lo=null; st.hi=null; st.min=0; st.q=''; st.sort='cr'; st.card='';
   backTo=null;
@@ -631,6 +665,121 @@ function resetAll(){
   scrollTo(0,0);
 }
 document.getElementById('home').onclick=resetAll;
+// ★を付けたカードの出品。前に見たものは覚えておいて、新しいぶんだけ知らせる
+const FAVKEY='pokecards_favseen';
+function favNews(){
+  const el=document.getElementById('favnews');
+  const now=rows.filter(r=>r.fav && !r.sold);
+  if(!now.length){ el.style.display='none'; return; }
+  let seen=[];
+  try{ seen=JSON.parse(localStorage.getItem(FAVKEY)||'[]'); }catch(_){ seen=[]; }
+  const old=new Set(seen);
+  const fresh=now.filter(r=>!old.has(r.pid));
+  try{ localStorage.setItem(FAVKEY, JSON.stringify(now.map(r=>r.pid))); }catch(_){}
+  const cheapest=Math.min.apply(null, now.map(r=>r.cr));
+  el.innerHTML = fresh.length
+    ? '★ お気に入りに<b> 新着'+fresh.length+'件</b>（全'+now.length+'件・最安 <b>'+yen(cheapest)+'</b>）押すと表示'
+    : '★ お気に入りの出品 <b>'+now.length+'件</b>（最安 <b>'+yen(cheapest)+'</b>）押すと表示';
+  el.style.display='';
+}
+document.getElementById('favnews').onclick=()=>{
+  if(!st.fav) document.getElementById('f-fav').click();
+  scrollTo(0,0);
+};
+// 「10,000以上の注文で送料無料」のような書き方から、送料無料になる金額を読む
+function freeLine(txt){
+  const m=/([\d,]{3,9})\s*円?\s*以上[^。]{0,14}送料無料/.exec(txt||'');
+  return m ? +m[1].replace(/,/g,'') : 0;
+}
+function memoCount(){
+  const n=readQueue().length;
+  const b=document.getElementById('memo-open');
+  b.textContent = n ? '🛒 メモ '+n : '🛒 メモ';
+  b.classList.toggle('on', n>0);
+}
+// 店ごとにまとめる。マイカはモールの中の店ごと（送料がそこでかかる）
+function memoGroups(){
+  const q=readQueue(), g=new Map();
+  for(const it of q){
+    const row=rows.find(r=>r.pid===it.pid) || null;
+    const mall=(row && row.mall) || '';
+    const key=it.shop+'\u0000'+mall;
+    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0});
+    const e=g.get(key);
+    e.items.push({...it, row});
+    e.sum += it.price||0;
+  }
+  return [...g.values()].sort((a,b)=>b.sum-a.sum);
+}
+function memoDraw(){
+  const box=document.getElementById('memo-body');
+  const gs=memoGroups();
+  if(!gs.length){ box.innerHTML='<div style="color:var(--sub);font-size:12px">'
+    +'まだ何も入っていません。カードの「＋1」を押すとここに溜まります。</div>'; return; }
+  let total=0;
+  box.innerHTML = gs.map((g,gi)=>{
+    total += g.sum;
+    const name=(SHOP[g.shop]||g.shop)+(g.mall?'／'+esc(g.mall):'');
+    const ship=g.mall ? (SHIPS[g.mall]||'') : '';
+    const free=freeLine(ship);
+    const left=free && g.sum<free ? free-g.sum : 0;
+    return '<div class="mg"><div class="mg-h"><b>'+name+'</b>'
+      +'<span>'+g.items.length+'点</span>'
+      +'<span class="mg-sum">'+yen(g.sum)+'</span>'
+      +(ship?'<div class="mg-ship">'+esc(ship)
+        +(left?' ／ <em>送料無料まで あと'+yen(left)+'</em>'
+              :(free?' ／ <em>送料無料に届いています</em>':''))+'</div>':'')
+      +'</div>'
+      + g.items.map((it,ii)=>'<div class="mg-it">'+esc(it.name)
+          +'<span>'+yen(it.price)+'</span>'
+          +'<button data-del="'+esc(it.pid)+'">取消</button></div>').join('')
+      +'<div class="mg-b">'
+      +'<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>'
+      +'</div></div>';
+  }).join('') + '<div style="text-align:right;font-size:13px;color:#fff">合計 <b>'+yen(total)+'</b></div>'
+    + '<div style="font-size:11px;color:var(--sub);margin-top:6px">'
+    + 'カートに入れるところまでです。注文の確定はご自身で。'
+    + 'キャンプはまとめてカートに入ります。ほかの店は1件ずつ開きます。</div>';
+  window.__memoGroups=gs;
+}
+function memoShow(on){
+  document.getElementById('memo').classList.toggle('open', on);
+  if(on) memoDraw();
+}
+document.getElementById('memo-open').onclick=()=>memoShow(true);
+document.getElementById('memo-close').onclick=()=>memoShow(false);
+document.getElementById('memo').onclick=e=>{
+  if(e.target.id==='memo'){ memoShow(false); return; }
+  const del=e.target.closest('[data-del]');
+  if(del){
+    const rest=readQueue().filter(x=>!(x && x.pid===del.dataset.del));
+    try{ localStorage.setItem(QKEY,JSON.stringify(rest)); }catch(_){}
+    doneP1.delete(del.dataset.del);
+    for(const b of document.querySelectorAll('[data-p1]')){
+      if(b.dataset.p1===del.dataset.del){ b.classList.remove('done'); b.textContent='＋1'; }
+    }
+    memoCount(); memoDraw(); return;
+  }
+  const op=e.target.closest('[data-open]');
+  if(op){
+    const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
+    // キャンプ(Shopify)はまとめて1つのカートに入れられる
+    if(g.shop==='TC' && CART){
+      const vids=g.items.map(x=>x.row&&x.row.vid).filter(Boolean);
+      if(vids.length){ openShop(CART+vids.map(v=>v+':1').join(','), g.shop);
+        op.textContent='カートに入れました'; return; }
+    }
+    // ほかの店は1件ずつ。まとめて開くとブラウザに止められる
+    const i=+(op.dataset.i||0);
+    const it=g.items[i]; if(!it) return;
+    openShop((it.row&&it.row.url)||'#', g.shop);
+    const next=i+1;
+    op.dataset.i=next;
+    op.textContent = next>=g.items.length ? '全部開きました'
+                                          : '店を開く（'+(next+1)+'/'+g.items.length+'）';
+    return;
+  }
+};
 function toast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('on');
@@ -660,6 +809,7 @@ grid.addEventListener('click',e=>{
       doneP1.delete(r.pid);
       pb.classList.remove('done'); pb.textContent='＋1';
       pb.title='アプリの所持を＋1します';
+      memoCount();
       toast(r.name+' の＋1を取り消しました'+(rest.length?'（残り'+rest.length+'件）':'（残り0件）'));
       return;
     }
@@ -669,6 +819,7 @@ grid.addEventListener('click',e=>{
     doneP1.add(r.pid);
     pb.classList.add('done'); pb.textContent='＋1 済';
     pb.title='もう一度押すと取り消します';
+    memoCount();
     toast(r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
     return;
   }
@@ -679,6 +830,8 @@ new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'8
 
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
+document.getElementById('f-fav').onclick=function(){
+  st.fav=st.fav?0:1; this.classList.toggle('on',!!st.fav); apply();};
 document.getElementById('f-few').onclick=function(){
   st.few = st.few===0 ? 2 : st.few===2 ? 1 : 0;    // 2枚以下 → 1枚だけ → 解除
   this.classList.toggle('on', !!st.few);

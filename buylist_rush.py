@@ -1635,7 +1635,8 @@ def match(items, cards):
                     'rar': c.get('rarityLabel') or c.get('rarity') or '',
                     'tags': '|'.join(c.get('quickTags') or []),
                     'image': c.get('customImage') or c.get('image') or '',
-                    'price': c.get('price') or 0, 'owned': c.get('owned') or 0})
+                    'price': c.get('price') or 0, 'owned': c.get('owned') or 0,
+                    'fav': 1 if c.get('favorite') else 0})
     return out, stat
 
 
@@ -1643,7 +1644,8 @@ def match(items, cards):
 COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold', 'soldAt', 'hr', 'id',
         'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags', 'fst',
-        'mall']       # マイカだけ。モールの中のどの店か（送料が店ごとにかかる）
+        'mall',       # マイカだけ。モールの中のどの店か（送料が店ごとにかかる）
+        'fav']        # アプリで★を付けたカードか
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -1782,7 +1784,7 @@ def build(rows, prev, ok_shops=None):
             r['shop'], r['url'], r.get('vid', ''), r.get('sure', 1),
             r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
             first_seen.get(r['pid'], today_s if had_prev else ''),
-            r.get('mall', ''),
+            r.get('mall', ''), r.get('fav', 0),
         ])
         shrink(rowsout[-1])
 
@@ -1894,7 +1896,7 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
-    for extra in ('code', 'rar', 'tags', 'fst', 'mall'):
+    for extra in ('code', 'rar', 'tags', 'fst', 'mall', 'fav'):
         if extra not in cols:
             cols.append(extra)
     data['cols'] = cols
@@ -1916,6 +1918,7 @@ def sync_only():
         # パック記号・レアリティ・タグは、取り直さなくてもDBから埋められる
         for key, val in (('code', (c.get('setCode') or c.get('setId') or '').upper()),
                          ('rar', c.get('rarityLabel') or c.get('rarity') or ''),
+                         ('fav', 1 if c.get('favorite') else 0),
                          ('tags', '|'.join(c.get('quickTags') or []))):
             i = ix.get(key)
             if i is None:
