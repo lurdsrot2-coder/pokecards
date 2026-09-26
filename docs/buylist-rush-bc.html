@@ -789,7 +789,11 @@ function memoDraw(){
           +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
           +'<button data-del="'+esc(it.pid)+'">取消</button></div>').join('')
       +'<div class="mg-b">'
-      +'<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>'
+      // キャンプはまとめてカートに入るので、実際に送れる点数を先に出す
+      +(g.shop==='TC'
+        ? '<button data-open="'+gi+'">カートへ（'
+            +g.items.filter(x=>x.row&&x.row.vid).length+'点）</button>'
+        : '<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>')
       +'</div></div>';
   }).join('') + (()=>{ const t=memoTotals();
       const off = t.mkt ? Math.round((1-t.sum/t.mkt)*100) : 0;
