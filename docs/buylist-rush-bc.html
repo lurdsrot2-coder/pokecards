@@ -602,9 +602,12 @@ async function overlayOwned(force){
       const c=ops[row.id];
       const o=c ? (c.owned||0) : 0;
       const p=c ? (c.price||0) : 0;
+      const f=c && c.favorite ? 1 : 0;
       let hit=false;
       if(o!==row.owned){ row.owned=o; hit=true; }
       if(p && p!==row.price){ row.price=p; row.ratio=row.cr/p; row.save=p-row.cr; hit=true; }
+      // ★は付けてすぐ効いてほしいので、1時間ごとの同期を待たずにここで拾う
+      if(f!==row.fav){ row.fav=f; hit=true; }
       if(hit) n++;
     }
     return n;
