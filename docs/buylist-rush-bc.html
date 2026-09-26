@@ -739,16 +739,25 @@ function memoCount(){
   b.classList.toggle('on', t.n>0);
 }
 // 店ごとにまとめる。マイカはモールの中の店ごと（送料がそこでかかる）
+// ＋1したときの出品を、いまの一覧から探し直す。
+// 取り直しで番号が変わることがあるので、同じカード・同じ店・同じ値段なら同じ出品とみなす
+function findRow(it){
+  return rows.find(r=>r.pid===it.pid)
+      || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold)
+      || null;
+}
 function memoGroups(){
   const q=readQueue(), g=new Map();
   for(const it of q){
-    const row=rows.find(r=>r.pid===it.pid) || null;
+    const row=findRow(it);
     const mall=(row && row.mall) || '';
     const key=it.shop+'\u0000'+mall;
-    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0});
+    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0});
     const e=g.get(key);
     e.items.push({...it, row});
     e.sum += it.price||0;
+    if(row) e.now += row.cr||0;      // いまの値段（カートに入る金額）
+    else e.gone++;                   // 一覧から消えた出品
   }
   return [...g.values()].sort((a,b)=>b.sum-a.sum);
 }
@@ -767,12 +776,17 @@ function memoDraw(){
     return '<div class="mg"><div class="mg-h"><b>'+name+'</b>'
       +'<span>'+g.items.length+'点</span>'
       +'<span class="mg-sum">'+yen(g.sum)+'</span>'
+      // ＋1したときと値段が変わっていたら、いまの値段も出す（カート側と合わせるため）
+      +(g.now!==g.sum ? '<div class="mg-ship">いまの値段だと '+yen(g.now)
+          +'（＋1したときは '+yen(g.sum)+'）</div>' : '')
+      +(g.gone ? '<div class="mg-ship"><em>'+g.gone+'点は一覧から消えています'
+          +'（売り切れ／値段変更）。カートには入りません</em></div>' : '')
       +(ship?'<div class="mg-ship">'+esc(ship)
         +(left?' ／ <em>送料無料まで あと'+yen(left)+'</em>'
               :(free?' ／ <em>送料無料に届いています</em>':''))+'</div>':'')
       +'</div>'
       + g.items.map((it,ii)=>'<div class="mg-it">'+esc(it.name)
-          +'<span>'+yen(it.price)+'</span>'
+          +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
           +'<button data-del="'+esc(it.pid)+'">取消</button></div>').join('')
       +'<div class="mg-b">'
       +'<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>'
