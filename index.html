@@ -85,6 +85,9 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans
 #btn-incsel{border-color:rgba(0,245,255,.35);color:var(--cyan);display:none}
 #btn-incsel:hover{background:rgba(0,245,255,.08)}
 #btn-incsel.show{display:block}
+#btn-favsel{border-color:rgba(255,213,74,.5);color:#ffd54a;display:none}
+#btn-favsel:hover{background:rgba(255,213,74,.12)}
+#btn-favsel.show{display:block}
 #btn-hidesel{border-color:rgba(255,165,0,.5);color:#ffa500;display:none}
 #btn-hidesel:hover{background:rgba(255,165,0,.1)}
 #btn-hidesel.show{display:block}
@@ -1146,6 +1149,33 @@ function loadDb(){return{cards:[],version:1};}
 function _doSave(){
   // IndexedDB に非同期保存（メインスレッドをブロックしない）
   _idbPut(db);
+  _writeFavIds();
+}
+// ★は買うために付ける印なので、手に入った（＋1した）時点で役目が終わる。
+// 外し忘れて買い得リストに出続けるのを防ぐため、＋1したら自動で外す
+function _dropFavEl(id){
+  const ci=document.querySelector(`.ci[data-id="${CSS.escape(id)}"]`);
+  if(!ci) return;
+  ci.classList.remove('fav');
+  const b=ci.querySelector('.cfav'); if(b) b.textContent='☆';
+}
+function _dropFav(c){
+  if(!c || !c.favorite) return false;
+  c.favorite=false;
+  _dropFavEl(c.id);
+  return true;
+}
+// ★を買い得リスト側でもすぐ使えるようにする。同じサイトなので localStorage で渡せる。
+// これが無いと、1時間ごとの同期とページの再公開を待つことになる
+const FAVIDS_KEY='pokecards_favids';
+function _writeFavIds(){
+  // 読み込み前に空の一覧を書くと、買い得リスト側の★を消してしまう
+  if(!db || !db.cards || !db.cards.length) return;
+  try{
+    const ids=[];
+    for(const c of db.cards) if(c.favorite) ids.push(c.id);
+    localStorage.setItem(FAVIDS_KEY, JSON.stringify({t:new Date().toISOString(), ids}));
+  }catch(e){}   // 容量オーバー等は無視。無ければ従来どおり差分から拾われる
 }
 // ── 編集の即時保存（ジャーナル） ─────────────────────────
 // 全体保存は13.5MBあり重いので400msのデバウンスをかけているが、その間に
@@ -2035,7 +2065,10 @@ document.getElementById('grid').addEventListener('click',e=>{
       renderStats();
       return;
     }
-    if(btn.dataset.act==='inc'){ c.owned=(c.owned||0)+1; c.ownedAt=new Date().toISOString(); } // ＋1した日時を記録
+    // ＋1した日時を記録。★は手に入った印なので外す
+    let _favGone=false;
+    if(btn.dataset.act==='inc'){ c.owned=(c.owned||0)+1; c.ownedAt=new Date().toISOString();
+                                 _favGone=_dropFav(c); }
     else c.owned=Math.max(0,(c.owned||0)-1);
     c.editedAt=new Date().toISOString();   // 増減どちらも記録。同期でどちらが新しいかの判断に使う
     // DB はメモリ更新 + デバウンス保存（全再描画しない）
@@ -2046,6 +2079,7 @@ document.getElementById('grid').addEventListener('click',e=>{
     patchOwnedEl(c);
     renderStats();
     _applyProgressStyles(); // 所持数が変わったのでレアリティ/タグの進捗色も更新
+    if(_favGone && fs.ownership==='fav') renderCards();   // ★で絞っているなら一覧から外す
     return;
   }
   const ci=e.target.closest('.ci');
@@ -2140,13 +2174,18 @@ document.getElementById('btn-selall').addEventListener('click',()=>{
 
 document.getElementById('btn-incsel').addEventListener('click',()=>{
   if(!selIds.size)return;
+  let favGone=false;
   db.cards.forEach((c,i)=>{
     if(!selIds.has(c.id))return;
-    db.cards[i]={...c,owned:(c.owned||0)+1};
+    if(c.favorite) favGone=true;
+    db.cards[i]={...c,owned:(c.owned||0)+1,favorite:false};   // ＋1したら★は外す
     patchOwnedEl(db.cards[i]);
+    _dropFavEl(c.id);
+    _markEdited(db.cards[i]);   // 途中で閉じても消えないよう控えに残す
   });
   saveDbDebounced();
   renderStats();
+  if(favGone && fs.ownership==='fav') renderCards();
 });
 
 // 選んだカードにまとめて★。もう一度押すと外す
@@ -5142,6 +5181,7 @@ function _showBuyQueue(){
         c.owned=(c.owned||0)+1;
         c.ownedAt=now;
         c.editedAt=now;
+        _dropFav(c);             // 買えたので★は外す
         _markEdited(c);          // 通常の＋1と同じ扱い（差分に載せて同期する）
         n++;
       }

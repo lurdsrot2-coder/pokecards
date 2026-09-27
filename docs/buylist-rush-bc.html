@@ -622,12 +622,32 @@ function show(d, ownedN){
 }
 // 相場と所持枚数を、アプリ側の delta.json（直近の変更ぶん）で上書きする。
 // 一覧そのものは定期更新のぶんでも、この2つは押した時点の値になる
+// アプリが同じ端末で持っている★を、その場で反映する。
+// アプリの★は数秒で delta.json に送られるが、ページが配信されるまで時間がかかる。
+// 同じサイトなので localStorage 経由で受け取れば、付けた瞬間から効く
+const FAVIDS_KEY='pokecards_favids';
+function overlayFavLocal(deltaAt){
+  try{
+    const o=JSON.parse(localStorage.getItem(FAVIDS_KEY)||'null');
+    if(!o || !Array.isArray(o.ids)) return 0;
+    // 差分のほうが新しいときはそちらを信じる（別の端末で付けた★を消さないため）
+    if(deltaAt && o.t && new Date(o.t) < new Date(deltaAt)) return 0;
+    const f=new Set(o.ids); let n=0;
+    for(const row of rows){
+      const v=f.has(row.id)?1:0;
+      if(v!==row.fav){ row.fav=v; n++; }
+    }
+    return n;
+  }catch(_){ return 0; }
+}
 async function overlayOwned(force){
+  let deltaAt='', ng=false, n=0;
   try{
     const r=await fetch(DELTA+'?t='+Date.now(), force?{cache:'reload'}:{});
     if(!r.ok) throw new Error(r.status);
-    const ops=(await r.json()).ops||{};
-    let n=0;
+    const j=await r.json();
+    const ops=j.ops||{};
+    deltaAt=j.updatedAt||'';
     for(const row of rows){
       if(!row.id || !(row.id in ops)) continue;
       const c=ops[row.id];
@@ -641,8 +661,9 @@ async function overlayOwned(force){
       if(f!==row.fav){ row.fav=f; hit=true; }
       if(hit) n++;
     }
-    return n;
-  }catch(e){ return -1; }
+  }catch(e){ ng=true; }
+  n += overlayFavLocal(deltaAt);
+  return ng ? -1 : n;
 }
 async function load(force){
   const b=document.getElementById('reload');
@@ -669,6 +690,8 @@ async function load(force){
 }
 // アプリ側で反映すると控えが空になる。戻ってきたときに印を合わせ直す
 addEventListener('focus', ()=>{
+  // アプリで★を付け外ししてから戻ってきた場合に合わせ直す
+  if(rows.length && overlayFavLocal('')>0){ favNews(); apply(); }
   const before=doneP1.size;
   syncDone();
   if(before===doneP1.size) return;
