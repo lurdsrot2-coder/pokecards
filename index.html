@@ -5923,6 +5923,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
   setTimeout(()=>{try{_applyIllustrators();}catch(e){}},2500);
+  setTimeout(()=>{try{_applyOwnedAdjust();}catch(e){}},3500);
 });
 </script>
 <script>
@@ -5956,6 +5957,59 @@ async function _applyIllustrators(){
     }
     try{ localStorage.setItem(ILLMAP_KEY, ver); }catch(e){}
   }catch(e){}
+}
+
+// ── 買い物と所持枚数を合わせる ────────────────────────
+// 買い得リストで＋1したあと「結局買わなかった」ぶんを戻すためのもの。
+// 所持枚数を減らすので、必ず確認を出す。1度当てたら（断られても）二度は聞かない。
+// 枚数は差分ではなく「この枚数にする」で持っているので、二重に当たっても増減しない
+const ADJ_URL='docs/adjust-owned.json', ADJ_KEY='pokecards_adjust_owned';
+async function _applyOwnedAdjust(){
+  if(!db || !db.cards || !db.cards.length) return;
+  let j;
+  try{
+    const r=await fetch(ADJ_URL+'?t='+Date.now());
+    if(!r.ok) return;
+    j=await r.json();
+  }catch(e){ return; }
+  const ver=j.updatedAt||'';
+  if(!ver || localStorage.getItem(ADJ_KEY)===ver) return;
+  const idx=new Map(db.cards.map(c=>[c.id,c]));
+  const todo=[];
+  for(const o of (j.ops||[])){
+    const c=idx.get(o.id);
+    if(!c) continue;
+    const to=Math.max(0, o.owned|0);
+    if((c.owned|0)===to) continue;
+    todo.push({c:c, to:to, from:c.owned|0});
+  }
+  if(!todo.length){ try{ localStorage.setItem(ADJ_KEY, ver); }catch(e){} return; }
+  const up=todo.filter(t=>t.to>t.from), dn=todo.filter(t=>t.to<t.from);
+  const NL='\n';
+  const list=dn.slice(0,12).map(t=>'  ・'+(t.c.name||t.c.id)+'  '+t.from+'→'+t.to).join(NL);
+  const msg=(j.note||'所持枚数を合わせます')+NL+NL
+    +'増やす: '+up.length+'件（+'+up.reduce((a,t)=>a+t.to-t.from,0)+'枚）'+NL
+    +'減らす: '+dn.length+'件（-'+dn.reduce((a,t)=>a+t.from-t.to,0)+'枚）'+NL+NL
+    +(dn.length ? '減らすもの:'+NL+list
+        +(dn.length>12 ? NL+'   …ほか'+(dn.length-12)+'件' : '')+NL+NL : '')
+    +'この内容で合わせますか？';
+  if(!confirm(msg)){
+    try{ localStorage.setItem(ADJ_KEY, ver); }catch(e){}
+    return;
+  }
+  const now=new Date().toISOString();
+  for(const t of todo){
+    t.c.owned=t.to;
+    t.c.editedAt=now;                     // 同期でどちらが新しいかの判断に使う
+    _pendingEdits[t.c.id]=t.c;            // 途中で閉じても消えないよう控えに残す
+    _unsentIds.add(t.c.id);
+  }
+  _idbPutPending(); _updateUnsentBadge();
+  saveDbDebounced();
+  renderAll();
+  try{ localStorage.setItem(ADJ_KEY, ver); }catch(e){}
+  alert('所持枚数を合わせました（増 '+up.length+'件 / 減 '+dn.length+'件）。'+NL
+       +'クラウドへの送信は自動で行われます。');
 }
 
 // ── PWA Manifest（動的生成） ──────────────────────────
