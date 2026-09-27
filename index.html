@@ -576,6 +576,7 @@ body.progging #grid{padding-bottom:64px}
         <select class="csel ser" id="sel-series"><option value="">全シリーズ</option></select><button class="fsnav" id="btn-ser-multi" title="シリーズの複数選択。押すと閉じない一覧が開き、続けて何個でも選べます（例: ADV と PCG）。PCはCtrl(⌘)を押しながら選んでも追加できます">＋</button>
         <span class="farr">›</span>
         <select class="csel ttl" id="sel-title"><option value="">全タイトル</option></select>
+        <select class="csel" id="sel-illust"><option value="">全イラストレーター</option></select>
       </div>
       <div class="frow">
         <div class="srch-wrap">
@@ -1266,20 +1267,21 @@ function deleteCards(ids){const s=new Set(ids);db.cards=db.cards.filter(c=>!s.ha
 let db=loadDb();
 
 // ── FILTER STATE ──────────────────────────────────────
-let fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+let fs={cardTypes:new Set(),series:new Set(),title:'',illust:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
 // 起動処理が終わるまでは「カードが登録されていません」ではなく読み込み中と出す
 let _booting=true;
 function isFilterActive(){
-  return !!(fs.cardTypes.size||fs.series.size||fs.title||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
+  return !!(fs.cardTypes.size||fs.series.size||fs.title||fs.illust||fs.search||fs.ownership!=='all'||fs.rarities.size>0||fs.quickTag||fs.importedIds||fs.showHidden);
 }
 function clearFilters(skipRender){
-  fs.cardTypes=new Set();fs.series=new Set();fs.title='';fs.search='';fs.ownership='all';
+  fs.cardTypes=new Set();fs.series=new Set();fs.title='';fs.illust='';fs.search='';fs.ownership='all';
   fs.rarities=new Set();fs.quickTag=null;fs.showHidden=false;fs.importedIds=null;
   // sync UI controls
   document.getElementById('srch').value='';_syncSrchX();
   document.getElementById('sel-type').value='';
   document.getElementById('sel-series').value='';
   document.getElementById('sel-title').value='';
+  document.getElementById('sel-illust').value='';
   document.querySelectorAll('.tbtn[data-ow]').forEach(b=>b.classList.toggle('on',b.dataset.ow==='all'));
   document.getElementById('btn-showhidden').classList.remove('on');
   const badge=document.getElementById('import-badge');if(badge)badge.style.display='none';
@@ -1329,6 +1331,7 @@ function filtered(){
     if(!_serMatch(c)) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
     else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.illust && (c.illustrator||'')!==fs.illust) return false;
     if(fs.search){
       const q=fs.search.toLowerCase();
       if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
@@ -1472,6 +1475,7 @@ function _filteredExcluding(exclude){
       if(fs.title===NONE_VAL){ if(c.setName) return false; }
       else if(fs.title && c.setName!==fs.title) return false;
     }
+    if(exclude!=='illust' && fs.illust && (c.illustrator||'')!==fs.illust) return false;
     if(fs.search){
       const q=fs.search.toLowerCase();
       if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
@@ -1509,6 +1513,7 @@ function renderDropdowns(){
   const poolType  =_filteredExcluding('cardType');
   const poolSeries=_filteredExcluding('series');
   const poolTitle =_filteredExcluding('title');
+  const poolIll   =_filteredExcluding('illust');
 
   // 種別は12個しかないので、いまの絞り込みに残っていないものも含めて全部出す。
   // 出さないと「超で見ていて、次に水」に切り替えられなくなる
@@ -1516,6 +1521,10 @@ function renderDropdowns(){
                                    .map(c=>c.cardType).filter(Boolean))].sort();
   const sers  =[...new Set(poolSeries.map(c=>c.series).filter(Boolean))].sort();
   const titles=[...new Set(poolTitle.map(c=>c.setName).filter(Boolean))].sort();
+  // イラストレーターは登録されているものが少ないので、種別と同じく常に全部出す。
+  // 出さないと「いまの絞り込みに無い人」に切り替えられなくなる
+  const ills  =[...new Set(db.cards.filter(c=>!c.hidden||fs.showHidden)
+                                   .map(c=>c.illustrator).filter(Boolean))].sort();
 
   const rebuild=(el,items,lbl,cur,hasNone,fmt,noneBar)=>{
     el.innerHTML=`<option value="">${lbl}</option>`;
@@ -1552,6 +1561,7 @@ function renderDropdowns(){
   const tyR=tally(poolType,  c=>c.cardType);
   const seR=tally(poolSeries,c=>c.series);
   const tiR=tally(poolTitle, c=>c.setName);
+  const ilR=tally(poolIll,   c=>c.illustrator);
   const withRate=(r)=>(v)=>v+bar(r.own[v]||0, r.tot[v]||0);
   // いまの絞り込みに1枚も無い種別は、そう分かるようにしておく
   const withRate0=(r)=>(v)=>r.tot[v] ? v+bar(r.own[v]||0, r.tot[v]) : v+'  （0件）';
@@ -1576,6 +1586,7 @@ function renderDropdowns(){
     [...serEl.options].forEach(o=>{ if(o.value&&fs.series.has(o.value)) o.textContent='✓ '+o.textContent; });
   }
   rebuild(document.getElementById('sel-title'),  titles,'全タイトル',  fs.title,   hasNoTitle, withCode, noneBar(poolTitle,c=>c.setName));
+  rebuild(document.getElementById('sel-illust'), ills,  '全イラストレーター', fs.illust, false, withRate0(ilR));
 }
 
 // ── RENDER: RARITY CHIPS ──────────────────────────────
@@ -1588,6 +1599,7 @@ function _filteredWithoutRarity(){
     if(!_serMatch(c)) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
     else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.illust && (c.illustrator||'')!==fs.illust) return false;
     if(fs.search){
       const q=fs.search.toLowerCase();
       if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
@@ -1609,6 +1621,7 @@ function _poolForProgress(skip){
     if(!_serMatch(c)) return false;
     if(fs.title===NONE_VAL){ if(c.setName) return false; }
     else if(fs.title && c.setName!==fs.title) return false;
+    if(fs.illust && (c.illustrator||'')!==fs.illust) return false;
     if(fs.search){
       const q=fs.search.toLowerCase();
       if(!(c.name||'').toLowerCase().includes(q)&&!(c.illustrator||'').toLowerCase().includes(q)&&!(c.setName||'').toLowerCase().includes(q)) return false;
@@ -2421,6 +2434,9 @@ const _serPanel=(()=>{
 document.getElementById('sel-title').addEventListener('change',e=>{
   fs.title=e.target.value;renderCards();
 });
+document.getElementById('sel-illust').addEventListener('change',e=>{
+  fs.illust=e.target.value;renderCards();
+});
 document.getElementById('sel-sort').addEventListener('change',e=>{
   fs.sort=e.target.value;renderCards();
 });
@@ -2835,7 +2851,7 @@ function doImportCards(){
     urlImportCards.forEach(c=>{if(!getCard(c.id)){db.cards.push(c);newIds.add(c.id);}});
     const added=newIds.size;
     saveDb();
-    fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+    fs={cardTypes:new Set(),series:new Set(),title:'',illust:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
     document.getElementById('url-ov').classList.remove('open');
     applyImportFilter(newIds);
     if(added>0) document.getElementById('url-prog').style.display='none';
@@ -5897,7 +5913,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   }
   const migrated=_migratePMCG(db);
   if(migrated>0){saveDb();console.log(`PMCG migration: ${migrated}件更新`);}
-  fs={cardTypes:new Set(),series:new Set(),title:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
+  fs={cardTypes:new Set(),series:new Set(),title:'',illust:'',search:'',ownership:'all',rarities:new Set(),quickTag:null,sort:'default',showHidden:false,importedIds:null};
   _booting=false;
   // fs を作り直した後でないと、せっかく絞ってもここで消えてしまうので当て直す。
   // 当て直せたときは中で描いているので、全件の描画はしない
@@ -5906,9 +5922,42 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   if(!_ok) renderAll();
   // 起動後にバックグラウンドで日次時価更新（購入記録ありカードのみ・UIはブロックしない）
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
+  setTimeout(()=>{try{_applyIllustrators();}catch(e){}},2500);
 });
 </script>
 <script>
+// ── イラストレーターの一括登録 ────────────────────────
+// 公式のカード検索から作った「カードid → イラストレーター」の表を当てる。
+// 手入力はさせない。すでに入っているものは触らない。1回当てたら終わり
+const ILLMAP_URL='docs/illustrators.json', ILLMAP_KEY='pokecards_illmap';
+async function _applyIllustrators(){
+  if(!db || !db.cards || !db.cards.length) return;
+  let ver='';
+  try{
+    const r=await fetch(ILLMAP_URL+'?t='+Date.now());
+    if(!r.ok) return;
+    const j=await r.json();
+    ver=j.updatedAt||'1';
+    if(localStorage.getItem(ILLMAP_KEY)===ver) return;   // 同じ表はもう当ててある
+    const m=j.map||{};
+    const hit=[];
+    for(const c of db.cards){
+      const v=m[c.id];
+      if(v && (c.illustrator||'').trim()!==v){ c.illustrator=v; hit.push(c); }
+    }
+    if(hit.length){
+      // _markEdited を1枚ずつ呼ぶと書き込みが数千回になるので、まとめて1回にする
+      for(const c of hit){ _pendingEdits[c.id]=c; _unsentIds.add(c.id); }
+      _idbPutPending(); _updateUnsentBadge();
+      saveDbDebounced();
+      renderDropdowns();
+      // 画面に出すものは増やさない。結果はイラストレーターの絞り込みに出る
+      console.log('イラストレーターを '+hit.length+'件に登録しました');
+    }
+    try{ localStorage.setItem(ILLMAP_KEY, ver); }catch(e){}
+  }catch(e){}
+}
+
 // ── PWA Manifest（動的生成） ──────────────────────────
 (()=>{
   const manifest = {

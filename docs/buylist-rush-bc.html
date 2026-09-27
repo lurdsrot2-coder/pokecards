@@ -244,6 +244,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="serbtn" id="f-ser">シリーズ ▾</button>
  <button class="serbtn" id="f-rar">レアリティ ▾</button>
  <button class="serbtn" id="f-mall">マイカの店 ▾</button>
+ <button class="serbtn" id="f-ill">イラストレーター ▾</button>
 
  <span class="rng"><span>価格</span>
   <input type="number" id="f-lo" placeholder="下限" min="0" inputmode="numeric">
@@ -314,7 +315,7 @@ function syncDone(){
 syncDone();
 let rows=[], view=[], shown=0,
     st={cheap:0,best:0,few:0,fav:0,p1:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
-        mall:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
+        mall:new Set(),ill:new Set(),lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
 // （window.open に noopener を付けると名前が無視されて新しいタブになるので付けない）
@@ -379,6 +380,7 @@ function toRows(d){
       soldAt:i.soldAt==null?'':a[i.soldAt],hr:hr,
       mall:i.mall==null?'':(a[i.mall]||''),
       fav:i.fav==null?0:(a[i.fav]||0),
+      ill:i.ill==null?'':(a[i.ill]||''),
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
@@ -471,6 +473,7 @@ function apply(){
     && (!st.rar.size || st.rar.has(r.rar))
     && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
     && (!st.mall.size || st.mall.has(r.mall))
+    && (!st.ill.size || st.ill.has(r.ill))
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
@@ -612,6 +615,7 @@ function show(d, ownedN){
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
   [...st.tag].forEach(v=>{ if(!rows.some(r=>r.tags.includes(v))) st.tag.delete(v); });
+  [...st.ill].forEach(v=>{ if(!rows.some(r=>r.ill===v)) st.ill.delete(v); });
   serSync();
   renderTags();
   favNews();
@@ -706,7 +710,7 @@ addEventListener('focus', ()=>{
 // ESCと、左上のタイトルから呼ぶ
 function resetAll(){
   st.cheap=0; st.best=0; st.few=0; st.fav=0; st.p1=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
-  st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear();
+  st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear(); st.ill.clear();
   st.lo=null; st.hi=null; st.min=0; st.q=''; st.sort='cr'; st.card='';
   backTo=null;
   for(const b of document.querySelectorAll('.tg')) b.classList.remove('on');
@@ -1023,6 +1027,7 @@ const PICKERS=[
   ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
   ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
   ['f-mall','マイカの店', ()=>st.mall, r=>r.mall?[r.mall]:[]],
+  ['f-ill','イラストレーター', ()=>st.ill, r=>r.ill?[r.ill]:[]],
 ];
 let pick=null;           // いま開いているもの
 function pickBtn(){ return pick? document.getElementById(pick[0]) : null; }
