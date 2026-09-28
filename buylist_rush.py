@@ -278,12 +278,15 @@ def tc_parse(p, settitle):
         vcond = mc.group(1) if mc else cond
         # variantが1つだけの商品（古い形）は、これまでと同じ番号のままにする
         pid = 'tc' + str(p.get('id')) + ('-' + str(v.get('id')) if len(vs) > 1 else '')
+        # 店が出した日。状態別に分かれている商品は variant のほうが実態に近い
+        listed = (v.get('created_at') or p.get('published_at')
+                  or p.get('created_at') or '')[:10]
         out.append({
             'shop': 'TC', 'pid': pid, 'cond': vcond, 'vid': str(v.get('id') or ''),
             'url': TC + '/products/' + (p.get('handle') or ''),
             'name': disp,
             'rarity': '', 'num': num, 'setcode': setcode,
-            'settitle': settitle, 'price': price,
+            'settitle': settitle, 'price': price, 'listed': listed,
             'stock': 0, 'soldout': not v.get('available')})
     return out or None
 
@@ -1670,7 +1673,8 @@ def match(items, cards):
                     'image': c.get('customImage') or c.get('image') or '',
                     'price': c.get('price') or 0, 'owned': c.get('owned') or 0,
                     'fav': 1 if c.get('favorite') else 0,
-                    'ill': c.get('illustrator') or ''})
+                    'ill': c.get('illustrator') or '',
+                    'lst': it.get('listed', '')})
     return out, stat
 
 
@@ -1680,7 +1684,8 @@ COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'shop', 'url', 'vid', 'sure', 'code', 'rar', 'tags', 'fst',
         'mall',       # マイカだけ。モールの中のどの店か（送料が店ごとにかかる）
         'fav',        # アプリで★を付けたカードか
-        'ill']        # イラストレーター（公式のカード検索から）
+        'ill',        # イラストレーター（公式のカード検索から）
+        'lst']        # 店が出品した日。取れるのはキャンプだけ（fstは「見つけた日」）
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -1720,6 +1725,20 @@ def shrink(row):
     return row
 KEEP_SOLD_DAYS = 14        # 売れたものを何日ぶん残して見せるか
 MAX_RATIO = 1.3            # 相場よりこれ以上高いものは買い得リストに載せない
+
+
+def watch_from(rowsout):
+    """店ごとの、いちばん古い「見つけた日」"""
+    i_s, i_f = COLS.index('shop'), COLS.index('fst')
+    out = {}
+    for a in rowsout:
+        sh = a[i_s] if i_s < len(a) else ''
+        fs = a[i_f] if i_f < len(a) else ''
+        if not sh or not fs:
+            continue
+        if sh not in out or fs < out[sh]:
+            out[sh] = fs
+    return out
 
 
 def build(rows, prev, ok_shops=None):
@@ -1820,6 +1839,7 @@ def build(rows, prev, ok_shops=None):
             r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
             first_seen.get(r['pid'], today_s if had_prev else ''),
             r.get('mall', ''), r.get('fav', 0), r.get('ill', ''),
+            r.get('lst', ''),
         ])
         shrink(rowsout[-1])
 
@@ -1858,6 +1878,9 @@ def build(rows, prev, ok_shops=None):
                      id='hareruya2-', cart=TC + '/cart/'),
         # マイカの店ごとの送料。店をまたぐと送料が別にかかるので、選ぶときの材料になる
         'ships': dict(MY_SHIP) or (prev.get('ships') or {}),
+        # 店ごとに、この一覧がいつから見ているか。
+        # fst がこの日と同じ行は「それ以前から出ていたかもしれない」と分かる
+        'watch': watch_from(rowsout),
         'th': th,
         'stats': {'listings': len(live), 'cards': len(items) + len(carried),
                   'sold': sold_now, 'added': len(fresh),
@@ -1960,7 +1983,7 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
-    for extra in ('code', 'rar', 'tags', 'fst', 'mall', 'fav', 'ill'):
+    for extra in ('code', 'rar', 'tags', 'fst', 'mall', 'fav', 'ill', 'lst'):
         if extra not in cols:
             cols.append(extra)
     data['cols'] = cols

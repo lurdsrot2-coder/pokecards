@@ -56,6 +56,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-it button{background:none;border:none;color:var(--rd);cursor:pointer;font-size:11px}
 .mg-b{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .mg-b button.rm{border-color:rgba(255,77,109,.5);color:var(--rd)}
+/* いつから売られているか。本当の出品日が取れた店は色を付けて区別する */
+.since{font-size:9px;color:var(--sub);white-space:nowrap}
+.since.real{color:#7fd4ff}
+.since.old{opacity:.75}
 .mg-b button{font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;
  background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.5);color:#fff}
 #memo-close{float:right;background:none;border:none;color:var(--sub);cursor:pointer;font-size:16px}
@@ -381,6 +385,7 @@ function toRows(d){
       mall:i.mall==null?'':(a[i.mall]||''),
       fav:i.fav==null?0:(a[i.fav]||0),
       ill:i.ill==null?'':(a[i.ill]||''),
+      lst:i.lst==null?'':(a[i.lst]||''),
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
@@ -390,6 +395,26 @@ function toRows(d){
           : (B[String(shop).toLowerCase()]||bt)+rawUrl,
       ratio:price?cr/price:0,save:price-cr};
   });
+}
+// 店が出した日（lst）が取れていればそれを出す。無ければ「見つけた日」(fst)。
+// 取り込みを始めた日に既にあった行は、それ以前から出ていたかもしれないので「以前」と出す
+let WATCH={};
+function sinceText(r){
+  const md=v=>(+v.slice(5,7))+'/'+(+v.slice(8,10));
+  const days=v=>Math.floor((Date.now()-Date.parse(v+'T00:00:00'))/86400000);
+  if(r.lst){
+    const d=days(r.lst);
+    return {cls:'real', txt:'出品 '+md(r.lst)+(d<=0?'（今日）':d===1?'（昨日）':''),
+            tip:'この店が出品した日（'+r.lst+'）'};
+  }
+  if(!r.fst) return null;
+  const w=WATCH[r.shop]||'';
+  if(w && r.fst<=w)
+    return {cls:'old', txt:md(r.fst)+'以前',
+            tip:'この一覧は'+w+'から'+(SHOP[r.shop]||r.shop)
+                +'を見ています。その時点で既に出ていたので、いつからかは分かりません'};
+  return {cls:'', txt:'発見 '+md(r.fst),
+          tip:'この一覧が最初に見つけた日（'+r.fst+'）。店が出した日そのものではありません'};
 }
 function tile(r){
   const pc=Math.round(r.ratio*100);
@@ -406,6 +431,8 @@ function tile(r){
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
       +'<span class="b '+r.cond+'">'+r.cond+'</span>'
       +(r.isnew?'<span class="b new">NEW</span>':'')
+      +(()=>{ const t=sinceText(r); return t
+          ? '<span class="since '+t.cls+'" title="'+esc(t.tip)+'">'+t.txt+'</span>' : ''; })()
       +(r.sold?'<span class="b sold">売切</span>':'')+'</div>'
     +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
     +'</div>'
@@ -482,9 +509,10 @@ function apply(){
   const k=st.sort.replace(/-$/,'');
   const dir=(k==='save'||k==='fst'||st.sort==='price-'||st.sort==='cr-')?-1:1;
   view.sort((a,b)=>{
-    const x=a[k],y=b[k];
+    // 新着順は、店の出品日が取れていればそちらで並べる（見つけた日より実態に近い）
+    const x=k==='fst'?(a.lst||a.fst||''):a[k], y=k==='fst'?(b.lst||b.fst||''):b[k];
     const c=(typeof x==='number'?x-y:String(x).localeCompare(String(y),'ja'))*dir;
-    // 新着順は同じ日のものが多いので、その中では差額の大きい順に見せる
+    // 同じ日のものが多いので、その中では差額の大きい順に見せる
     return (k==='fst' && c===0) ? b.save-a.save : c;});
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
@@ -611,6 +639,7 @@ function show(d, ownedN){
   document.getElementById('thline').innerHTML =
     '<summary>割安とみなす線（'+line.length+'店）</summary>'
     +'相場に対する実勢の中央値 → 割安とみなす線<br>'+line.join('<br>');
+  WATCH=d.watch||{};
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
