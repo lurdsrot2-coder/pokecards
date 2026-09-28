@@ -57,7 +57,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-b{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .mg-b button.rm{border-color:rgba(255,77,109,.5);color:var(--rd)}
 /* いつから売られているか。本当の出品日が取れた店は色を付けて区別する */
-.since{font-size:9px;color:var(--sub);white-space:nowrap}
+.since{font-size:9px;color:var(--sub);white-space:nowrap;margin-left:auto}
 .since.real{color:#7fd4ff}
 .since.old{opacity:.75}
 .mg-b button{font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;
@@ -186,7 +186,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 #toast.on{display:block}
 .lk a.h{color:var(--gd);border-color:rgba(255,230,0,.4)}
 .lk a.h:hover{background:rgba(255,230,0,.15)}
-.stk{font-size:9px;color:var(--sub);margin-top:3px}
+.stk{font-size:9px;color:var(--sub);margin-top:3px;display:flex;align-items:baseline;gap:6px}
 .stk.gone{color:var(--rd);font-weight:700}
 
 /* シリーズの複数選択。selectだと1つしか選べないので自前のパネルを出す */
@@ -400,12 +400,17 @@ function toRows(d){
 // 取り込みを始めた日に既にあった行は、それ以前から出ていたかもしれないので「以前」と出す
 let WATCH={};
 function sinceText(r){
-  const md=v=>(+v.slice(5,7))+'/'+(+v.slice(8,10));
+  const yr=new Date().getFullYear();
+  // 年が違うものを「12/11」と出すと今年に見えるので、そのときは年を付ける
+  const md=v=>(+v.slice(0,4)===yr ? (+v.slice(5,7))+'/'+(+v.slice(8,10))
+                                  : v.slice(0,4)+'/'+(+v.slice(5,7))+'/'+(+v.slice(8,10)));
   const days=v=>Math.floor((Date.now()-Date.parse(v+'T00:00:00'))/86400000);
+  const howlong=d=>d<30?d+'日前':d<365?Math.round(d/30)+'か月前':(d/365).toFixed(1)+'年前';
   if(r.lst){
     const d=days(r.lst);
-    return {cls:'real', txt:'出品 '+md(r.lst)+(d<=0?'（今日）':d===1?'（昨日）':''),
-            tip:'この店が出品した日（'+r.lst+'）'};
+    // 出たばかりのものを目で拾えるように、2週間以内は日数で出す
+    return {cls:'real', txt:'出品 '+(d<=0?'今日':d===1?'昨日':d<=13?d+'日前':md(r.lst)),
+            tip:'この店が出品した日（'+r.lst+'・'+howlong(d)+'）'};
   }
   if(!r.fst) return null;
   const w=WATCH[r.shop]||'';
@@ -431,8 +436,6 @@ function tile(r){
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
       +'<span class="b '+r.cond+'">'+r.cond+'</span>'
       +(r.isnew?'<span class="b new">NEW</span>':'')
-      +(()=>{ const t=sinceText(r); return t
-          ? '<span class="since '+t.cls+'" title="'+esc(t.tip)+'">'+t.txt+'</span>' : ''; })()
       +(r.sold?'<span class="b sold">売切</span>':'')+'</div>'
     +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
     +'</div>'
@@ -448,7 +451,11 @@ function tile(r){
     +'<div class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'
     +'<div class="ref">相場 <s>'+yen(r.price)+'</s> <em>-'+yen(r.save)+'</em></div>'
     +'<div class="stk'+(r.sold?' gone':'')+'">'
-      +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))+'</div>'
+      +(r.sold?'売切 '+esc((r.soldAt||'').slice(5)):(r.stock?'在庫 '+r.stock+'枚':'在庫 —'))
+      // いつから売られているか。在庫と並べて読めるようにする
+      +(()=>{ const t=sinceText(r); return t
+          ? '<span class="since '+t.cls+'" title="'+esc(t.tip)+'">'+t.txt+'</span>' : ''; })()
+      +'</div>'
     // 旧裏は番号が無く名前で当てているので、1ED・マークなしの版までは分からない。
     // 相場との差が版違いのせいであることが多いので、旧裏は差に関係なく必ず出す
     +((!r.sure && (r.ratio<0.35 || r.num==='旧裏'))
