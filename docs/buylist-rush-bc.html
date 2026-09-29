@@ -54,6 +54,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-it{display:flex;gap:8px;font-size:11px;padding:2px 0;color:var(--sub)}
 .mg-it span{margin-left:auto}
 .mg-it button{background:none;border:none;color:var(--rd);cursor:pointer;font-size:11px}
+.mg-it button.put{color:var(--cy);border:1px solid rgba(0,229,255,.35);border-radius:4px;padding:1px 6px}
+.mg-it button.put.on{color:var(--gr);border-color:rgba(0,229,149,.45)}
+.mg-it.done{opacity:.5}
+.mg-b button[disabled]{opacity:.5;cursor:default}
 .mg-b{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .mg-b button.rm{border-color:rgba(255,77,109,.5);color:var(--rd)}
 /* いつから売られているか。本当の出品日が取れた店は色を付けて区別する */
@@ -823,15 +827,43 @@ function memoGroups(){
     const row=findRow(it);
     const mall=(row && row.mall) || '';
     const key=it.shop+'\u0000'+mall;
-    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0});
+    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0});
     const e=g.get(key);
     e.items.push({...it, row});
     e.sum += it.price||0;
     if(row) e.now += row.cr||0;      // いまの値段（カートに入る金額）
     else e.gone++;                   // 一覧から消えた出品
+    if(cartDone.has(it.pid)) e.done++;
   }
   return [...g.values()].sort((a,b)=>b.sum-a.sum);
 }
+// カートに入れたものの印。メモを閉じても残るので、あとから1枚＋1したときに
+// 「残り1点」だけ入れ直せる
+const CDKEY='pokecards_cartdone';
+let cartDone=new Set();
+try{ cartDone=new Set(JSON.parse(localStorage.getItem(CDKEY)||'[]')); }catch(_){}
+function saveCartDone(){
+  try{ localStorage.setItem(CDKEY, JSON.stringify([...cartDone])); }catch(_){}
+}
+// メモから消えたものの印は残さない（次に同じ出品を＋1したとき入らなくなるため）
+function pruneCartDone(){
+  const live=new Set(readQueue().map(x=>x&&x.pid));
+  let cut=false;
+  for(const p of [...cartDone]) if(!live.has(p)){ cartDone.delete(p); cut=true; }
+  if(cut) saveCartDone();
+}
+// 1件だけカートに入れる（キャンプ）／店のページを開く（ほかの店）
+function putOne(it, shop){
+  const row=it.row;
+  if(shop==='TC'){
+    if(!(row && row.vid && tcCart([row.vid]))) return false;
+  }else{
+    openShop((row&&row.url)||'#', shop);
+  }
+  cartDone.add(it.pid); saveCartDone();
+  return true;
+}
+
 // まとめて取り消す。買い終わった店のぶんを300回押させないため
 function dropPids(pids){
   const s=new Set(pids.filter(Boolean));
@@ -844,10 +876,13 @@ function dropPids(pids){
       if(b.dataset.p1===pid){ b.classList.remove('done'); b.textContent='＋1'; }
     }
   }
+  for(const pid of s) cartDone.delete(pid);
+  saveCartDone();
   memoCount(); memoDraw();
   if(st.p1) apply();        // ＋1しぼり中なら一覧側も消す
 }
 function memoDraw(){
+  pruneCartDone();
   const box=document.getElementById('memo-body');
   const gs=memoGroups();
   if(!gs.length){ box.innerHTML='<div style="color:var(--sub);font-size:12px">'
@@ -860,7 +895,7 @@ function memoDraw(){
     const free=freeLine(ship);
     const left=free && g.sum<free ? free-g.sum : 0;
     return '<div class="mg"><div class="mg-h"><b>'+name+'</b>'
-      +'<span>'+g.items.length+'点</span>'
+      +'<span>'+g.items.length+'点'+(g.done?'（入れた '+g.done+'）':'')+'</span>'
       +'<span class="mg-sum">'+yen(g.sum)+'</span>'
       // ＋1したときと値段が変わっていたら、いまの値段も出す（カート側と合わせるため）
       +(g.now!==g.sum ? '<div class="mg-ship">いまの値段だと '+yen(g.now)
@@ -871,16 +906,33 @@ function memoDraw(){
         +(left?' ／ <em>送料無料まで あと'+yen(left)+'</em>'
               :(free?' ／ <em>送料無料に届いています</em>':''))+'</div>':'')
       +'</div>'
-      + g.items.map((it,ii)=>'<div class="mg-it">'+esc(it.name)
-          +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
-          +'<button data-del="'+esc(it.pid)+'">取消</button></div>').join('')
+      + g.items.map((it,ii)=>{
+          const done=cartDone.has(it.pid);
+          const can=it.row && (g.shop!=='TC' || it.row.vid);
+          return '<div class="mg-it'+(done?' done':'')+'">'+esc(it.name)
+            +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
+            +(can
+               ? '<button class="put'+(done?' on':'')+'" data-put="'+esc(it.pid)+'" title="'
+                 +(done?'入れた印を外します':(g.shop==='TC'?'この1件だけカートに入れます'
+                                                           :'この1件だけ店を開きます'))
+                 +'">'+(done?'✓ 入れた':(g.shop==='TC'?'入れる':'開く'))+'</button>'
+               : '')
+            +'<button data-del="'+esc(it.pid)+'">取消</button></div>';
+        }).join('')
       +'<div class="mg-b">'
       // キャンプはまとめてカートに入るので、実際に送れる点数を先に出す
-      +(g.shop==='TC'
-        ? '<button data-open="'+gi+'">カートへ（'
-            +g.items.filter(x=>x.row&&x.row.vid).length+'点）</button>'
-        : '<button data-open="'+gi+'">店を開く（1/'+g.items.length+'）</button>')
+      +(()=>{
+          // 入れ終わったものは飛ばす。あとから1枚＋1したときに、そこだけ押せばよくなる
+          const rest=g.items.filter(x=>!cartDone.has(x.pid)
+                                       && x.row && (g.shop!=='TC' || x.row.vid));
+          if(!rest.length) return '<button data-open="'+gi+'" disabled>全部入れました</button>';
+          return g.shop==='TC'
+            ? '<button data-open="'+gi+'">カートへ（残り '+rest.length+'点）</button>'
+            : '<button data-open="'+gi+'">店を開く（残り '+rest.length+'件）</button>';
+        })()
       +(g.shop==='TC'?'<button class="rm" data-clear="1">店のカートを空にする</button>':'')
+      +(g.done?'<button data-undone="'+gi+'" title="もう一度はじめから入れ直すとき">'
+          +'入れた印を消す（'+g.done+'）</button>':'')
       +'<button class="rm" data-delshop="'+gi+'">この店のぶんを消す（'+g.items.length+'）</button>'
       +(g.gone?'<button class="rm" data-delgone="'+gi+'">一覧に無いぶんを消す（'+g.gone+'）</button>':'')
       +'</div></div>';
@@ -937,22 +989,48 @@ document.getElementById('memo').onclick=e=>{
       dropPids(q.map(x=>x&&x.pid));
     return;
   }
+  // 1件だけ入れる／入れた印を外す
+  const pu=e.target.closest('[data-put]');
+  if(pu){
+    const pid=pu.dataset.put;
+    const gs=window.__memoGroups||[];
+    let hit=null, shop='';
+    for(const g of gs) for(const x of g.items) if(x.pid===pid){ hit=x; shop=g.shop; }
+    if(!hit) return;
+    if(cartDone.has(pid)){ cartDone.delete(pid); saveCartDone(); memoDraw(); return; }
+    if(putOne(hit, shop)){
+      memoDraw();
+      toast(shop==='TC' ? hit.name+' をカートに入れました' : hit.name+' の店を開きました');
+    }
+    return;
+  }
+  const un=e.target.closest('[data-undone]');
+  if(un){
+    const g=(window.__memoGroups||[])[+un.dataset.undone]; if(!g) return;
+    for(const x of g.items) cartDone.delete(x.pid);
+    saveCartDone(); memoDraw();
+    return;
+  }
   const op=e.target.closest('[data-open]');
   if(op){
     const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
-    // キャンプ(Shopify)はまとめて1つのカートに入れられる
+    // まだ入れていないものだけ相手にする
+    const rest=g.items.filter(x=>!cartDone.has(x.pid)
+                                 && x.row && (g.shop!=='TC' || x.row.vid));
+    if(!rest.length) return;
+    // キャンプ(Shopify)はまとめて1つのカートに足せる
     if(g.shop==='TC'){
-      const vids=g.items.map(x=>x.row&&x.row.vid).filter(Boolean);
-      if(tcCart(vids)){ op.textContent='カートに入れました（'+vids.length+'点）'; return; }
+      const vids=rest.map(x=>x.row.vid);
+      if(tcCart(vids)){
+        for(const x of rest) cartDone.add(x.pid);
+        saveCartDone(); memoDraw();
+        toast('カートに入れました（'+vids.length+'点）');
+        return;
+      }
     }
     // ほかの店は1件ずつ。まとめて開くとブラウザに止められる
-    const i=+(op.dataset.i||0);
-    const it=g.items[i]; if(!it) return;
-    openShop((it.row&&it.row.url)||'#', g.shop);
-    const next=i+1;
-    op.dataset.i=next;
-    op.textContent = next>=g.items.length ? '全部開きました'
-                                          : '店を開く（'+(next+1)+'/'+g.items.length+'）';
+    putOne(rest[0], g.shop);
+    memoDraw();
     return;
   }
 };
