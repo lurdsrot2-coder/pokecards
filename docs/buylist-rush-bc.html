@@ -62,6 +62,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-b button.rm{border-color:rgba(255,77,109,.5);color:var(--rd)}
 /* いつから売られているか。本当の出品日が取れた店は色を付けて区別する */
 .since{font-size:9px;color:var(--sub);white-space:nowrap;margin-left:auto}
+/* 店ボタンの件数。どの店に多いかを押さずに見分けるため */
+.tg[data-s] i{font-style:normal;font-size:9px;opacity:.75;margin-left:5px;font-weight:700}
+.tg[data-s].zero{opacity:.35}
 .since.real{color:#7fd4ff}
 .since.old{opacity:.75}
 .mg-b button{font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;
@@ -425,6 +428,15 @@ function sinceText(r){
   return {cls:'', txt:'発見 '+md(r.fst),
           tip:'この一覧が最初に見つけた日（'+r.fst+'）。店が出した日そのものではありません'};
 }
+// 店ボタンに、いまの絞り込みでの件数を出す。0件の店は薄くする
+function shopCounts(cnt){
+  for(const b of document.querySelectorAll('.tg[data-s]')){
+    if(!b.dataset.label) b.dataset.label=b.textContent.trim();
+    const n=cnt[b.dataset.s]||0;
+    b.innerHTML=esc(b.dataset.label)+'<i>'+(n?n.toLocaleString():'0')+'</i>';
+    b.classList.toggle('zero', n===0);
+  }
+}
 function tile(r){
   const pc=Math.round(r.ratio*100);
   const shopName=SHOP[r.shop]||'ラッシュ';
@@ -491,13 +503,19 @@ function apply(){
   if(st.card){
     // 同じカードの他店の値段を見るためのモード。ほかの条件は全部外す
     view=rows.filter(r=>r.id===st.card);
+    shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
     // 今買えるものを先に。売り切れは値段が過去のものなので後ろへ
     view.sort((a,b)=>(a.sold-b.sold)||(a.cr-b.cr));
     grid.innerHTML=''; shown=0; draw();
     document.getElementById('hit').textContent=view.length+'件';
     return;
   }
-  view=rows.filter(r=>
+  // 店以外の条件を通った行を、店ごとに数えながら絞る。
+  // こうすると店ボタンの数字が「その店を押したときの件数」と一致する
+  const cnt={};
+  view=[];
+  for(const r of rows){
+    if(!(
        (!st.cheap || r.cheap)
     && (!st.best || isBest(r))
     && (!st.few || (r.stock>0 && r.stock<=st.few))
@@ -505,7 +523,6 @@ function apply(){
     && (!st.p1 || doneP1.has(r.pid))
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
-    && (!st.shop  || r.shop===st.shop)
     && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
     && (!st.ser.size || st.ser.has(r.ser))
     && (!st.rar.size || st.rar.has(r.rar))
@@ -515,7 +532,12 @@ function apply(){
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
-    && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q)));
+    && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q))
+    )) continue;
+    cnt[r.shop]=(cnt[r.shop]||0)+1;
+    if(!st.shop || r.shop===st.shop) view.push(r);
+  }
+  shopCounts(cnt);
   // 差額・相場は大きい順、比率・ラッシュ価格・名前は小さい順が既定
   const k=st.sort.replace(/-$/,'');
   const dir=(k==='save'||k==='fst'||st.sort==='price-'||st.sort==='cr-')?-1:1;
