@@ -59,6 +59,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-it.done{opacity:.5}
 .mg-it .mc{display:inline-block;min-width:14px;text-align:center;margin-right:5px;
   border:1px solid rgba(255,255,255,.25);border-radius:3px;font-size:9px;color:var(--tx)}
+.mg-it .mo{margin-left:5px;font-size:9px;color:var(--gd)}
 .mg-mix{font-size:10px;color:#ffb74d;background:rgba(255,183,77,.1);
   border:1px solid rgba(255,183,77,.35);border-radius:5px;padding:5px 7px;margin-top:5px;line-height:1.5}
 .mg-b button[disabled]{opacity:.5;cursor:default}
@@ -856,13 +857,14 @@ function memoGroups(){
     const row=findRow(it);
     const mall=(row && row.mall) || '';
     const key=it.shop+'\u0000'+mall;
-    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0});
+    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0, owned:0});
     const e=g.get(key);
     e.items.push({...it, row});
     e.sum += it.price||0;
     if(row) e.now += row.cr||0;      // いまの値段（カートに入る金額）
     else e.gone++;                   // 一覧から消えた出品
     if(cartDone.has(it.pid)) e.done++;
+    if(row && row.owned>0) e.owned++;
   }
   // 同じカードで状態が違うものが混ざっていないか。
   // 「Bを入れたつもりがAも入った」を防ぐため、はっきり出す
@@ -943,6 +945,9 @@ function memoDraw(){
           +'（＋1したときは '+yen(g.sum)+'）</div>' : '')
       +(g.gone ? '<div class="mg-ship"><em>'+g.gone+'点は一覧から消えています'
           +'（売り切れ／値段変更）。カートには入りません</em></div>' : '')
+      // アプリは状態で分けないので、持っているカードの2枚目は種類が増えない
+      +(g.owned ? '<div class="mg-mix">◆ '+g.owned+'点はすでに持っているカードです'
+          +'（枚数は増えますが、集まった種類は増えません）</div>' : '')
       // 同じカードの状態違いが混ざっていると、両方カートに入って両方買うことになる
       +(g.mixed && g.mixed.length
         ? '<div class="mg-mix">⚠ 同じカードで状態が違うものが '+g.mixed.length
@@ -959,6 +964,8 @@ function memoDraw(){
           const can=it.row && (g.shop!=='TC' || it.row.vid);
           return '<div class="mg-it'+(done?' done':'')+'">'
             +(it.cond?'<span class="mc">'+esc(it.cond)+'</span>':'')+esc(it.name)
+            +(it.row && it.row.owned>0
+               ? '<span class="mo" title="すでに持っているカードです">持'+it.row.owned+'</span>' : '')
             +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
             +(can
                ? '<button class="put'+(done?' on':'')+'" data-put="'+esc(it.pid)+'" title="'
@@ -987,6 +994,8 @@ function memoDraw(){
       +(g.mixed && g.mixed.length
         ? '<button class="rm" data-mix="'+gi+'">状態違いを外して安い方だけ残す（'
           +g.mixed.reduce((n,v)=>n+v.length-1,0)+'）</button>' : '')
+      +(g.owned ? '<button class="rm" data-owned="'+gi+'">持っているぶんを外す（'
+          +g.owned+'）</button>' : '')
       +'</div></div>';
   }).join('') + (()=>{ const t=memoTotals();
       const off = t.mkt ? Math.round((1-t.sum/t.mkt)*100) : 0;
@@ -1067,6 +1076,15 @@ document.getElementById('memo').onclick=e=>{
     if(!drop.length) return;
     if(confirm('同じカードの状態違い '+drop.length+'点をメモから外します。'
                +'安いほうだけ残します。よろしいですか？')) dropPids(drop);
+    return;
+  }
+  const ow=e.target.closest('[data-owned]');
+  if(ow){
+    const g=(window.__memoGroups||[])[+ow.dataset.owned]; if(!g) return;
+    const drop=g.items.filter(x=>x.row && x.row.owned>0).map(x=>x.pid);
+    if(!drop.length) return;
+    if(confirm('すでに持っているカード '+drop.length+'点をメモから外します。よろしいですか？'))
+      dropPids(drop);
     return;
   }
   const un=e.target.closest('[data-undone]');
@@ -1152,7 +1170,9 @@ grid.addEventListener('click',e=>{
     toast(other.length
       ? '⚠ '+r.name+'：状態'+other.map(x=>x.cond||'?').join('・')
         +'もメモにあります。このままだと両方カートに入ります'
-      : r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
+      : r.owned>0
+        ? '◆ '+r.name+' はすでに'+r.owned+'枚持っています（計'+q.length+'件）'
+        : r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
     return;
   }
 });
