@@ -398,6 +398,8 @@ function toRows(d){
       fav:i.fav==null?0:(a[i.fav]||0),
       ill:i.ill==null?'':(a[i.ill]||''),
       lst:i.lst==null?'':(a[i.lst]||''),
+      // 店の表記そのままの状態。無い店は頭文字のまま
+      cnd:(i.cnd==null?'':(a[i.cnd]||''))||(i.cond==null?'':a[i.cond]),
       id:rawId || (hr?bd+hr:''),
       shop:shop,
       vid:i.vid==null?'':(a[i.vid]||''),
@@ -455,7 +457,7 @@ function tile(r){
     +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'<div class="ni">画像なし</div>')
     +'</a>'
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
-      +'<span class="b '+r.cond+'">'+r.cond+'</span>'
+      +'<span class="b '+r.cond+'" title="店の表記: 状態'+esc(r.cnd)+'">'+esc(r.cnd)+'</span>'
       +(r.isnew?'<span class="b new">NEW</span>':'')
       +(r.sold?'<span class="b sold">売切</span>':'')+'</div>'
     +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
@@ -848,7 +850,7 @@ function findRow(it){
   // カートに入れてしまう（同じ値段で状態が違う出品が実際にある）
   return rows.find(r=>r.pid===it.pid)
       || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold
-                      && (!it.cond || r.cond===it.cond))
+                      && (!(it.cnd||it.cond) || r.cnd===(it.cnd||it.cond)))
       || null;
 }
 function memoGroups(){
@@ -876,7 +878,7 @@ function memoGroups(){
       byCardId.get(it.id).push(it);
     }
     e.mixed=[...byCardId.values()].filter(v=>
-      v.length>1 && new Set(v.map(x=>x.cond||'')).size>1);
+      v.length>1 && new Set(v.map(x=>x.cnd||x.cond||'')).size>1);
   }
   return [...g.values()].sort((a,b)=>b.sum-a.sum);
 }
@@ -953,7 +955,7 @@ function memoDraw(){
         ? '<div class="mg-mix">⚠ 同じカードで状態が違うものが '+g.mixed.length
           +'組あります。このままだと両方カートに入ります<br>'
           + g.mixed.map(v=>'　'+esc(v[0].name)+'： '
-              +v.map(x=>(x.cond||'?')+' '+yen(x.price)).join(' ／ ')).join('<br>')
+              +v.map(x=>(x.cnd||x.cond||'?')+' '+yen(x.price)).join(' ／ ')).join('<br>')
           +'</div>' : '')
       +(ship?'<div class="mg-ship">'+esc(ship)
         +(left?' ／ <em>送料無料まで あと'+yen(left)+'</em>'
@@ -963,7 +965,8 @@ function memoDraw(){
           const done=cartDone.has(it.pid);
           const can=it.row && (g.shop!=='TC' || it.row.vid);
           return '<div class="mg-it'+(done?' done':'')+'">'
-            +(it.cond?'<span class="mc">'+esc(it.cond)+'</span>':'')+esc(it.name)
+            +(it.cnd||it.cond
+               ? '<span class="mc">'+esc(it.cnd||it.cond)+'</span>' : '')+esc(it.name)
             +(it.row && it.row.owned>0
                ? '<span class="mo" title="すでに持っているカードです">持'+it.row.owned+'</span>' : '')
             +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
@@ -1154,21 +1157,21 @@ grid.addEventListener('click',e=>{
       return;
     }
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
-            cond:r.cond,
+            cond:r.cond, cnd:r.cnd,
             at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
     doneP1.add(r.pid);
     // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう
     const other=q.filter(x=>x && x.pid!==r.pid && x.id===r.id && x.shop===r.shop
-                            && (x.cond||'')!==r.cond);
+                            && (x.cnd||x.cond||'')!==r.cnd);
     pb.classList.add('done'); pb.textContent='＋1 済';
     pb.title='もう一度押すと取り消します';
     memoCount();
     // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう。
     // あとから気づくと買ったあとなので、その場で知らせる
     toast(other.length
-      ? '⚠ '+r.name+'：状態'+other.map(x=>x.cond||'?').join('・')
+      ? '⚠ '+r.name+'：状態'+other.map(x=>x.cnd||x.cond||'?').join('・')
         +'もメモにあります。このままだと両方カートに入ります'
       : r.owned>0
         ? '◆ '+r.name+' はすでに'+r.owned+'枚持っています（計'+q.length+'件）'

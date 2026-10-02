@@ -258,9 +258,8 @@ def tc_parse(p, settitle):
     cond = 'A'
     for nt in notes:
         if nt.startswith('状態') and len(nt) > 2:
-            # 状態A-・B+ などは頭文字に丸める（A/B/C/Dの4段だけ扱う）
-            cond = nt[2]
-    if cond not in ('A', 'B', 'C', 'D'):
+            cond = nt[2:].strip()          # 「A-」「B+」まで含めて持つ
+    if not cond or cond[0] not in ('A', 'B', 'C', 'D'):
         cond = 'A'
     disp = name + (' (' + '/'.join(n for n in notes if not n.startswith('状態')) + ')' if
                    [n for n in notes if not n.startswith('状態')] else '')
@@ -273,9 +272,11 @@ def tc_parse(p, settitle):
             price = 0
         if not price:
             continue
-        # 状態ごとにvariantが分かれている商品は、variant名から状態を取る
-        mc = re.search(r'状態\s*([A-D])', v.get('title') or '')
-        vcond = mc.group(1) if mc else cond
+        # 状態ごとにvariantが分かれている商品は、variant名から状態を取る。
+        # 店は A / A- / B+ / B / B- / C / D の7段階なので、そのまま拾う
+        mc = re.search(r'状態\s*([A-D][+\-]?)', v.get('title') or '')
+        vfull = mc.group(1) if mc else cond
+        vcond = vfull[0]
         # variantが1つだけの商品（古い形）は、これまでと同じ番号のままにする
         pid = 'tc' + str(p.get('id')) + ('-' + str(v.get('id')) if len(vs) > 1 else '')
         # 店が出した日。状態別に分かれている商品は variant のほうが実態に近い
@@ -287,6 +288,7 @@ def tc_parse(p, settitle):
             'name': disp,
             'rarity': '', 'num': num, 'setcode': setcode,
             'settitle': settitle, 'price': price, 'listed': listed,
+            'cnd': vfull,
             'stock': 0, 'soldout': not v.get('available')})
     return out or None
 
@@ -1674,7 +1676,8 @@ def match(items, cards):
                     'price': c.get('price') or 0, 'owned': c.get('owned') or 0,
                     'fav': 1 if c.get('favorite') else 0,
                     'ill': c.get('illustrator') or '',
-                    'lst': it.get('listed', '')})
+                    'lst': it.get('listed', ''),
+                    'cnd': it.get('cnd', '')})
     return out, stat
 
 
@@ -1685,7 +1688,8 @@ COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'mall',       # マイカだけ。モールの中のどの店か（送料が店ごとにかかる）
         'fav',        # アプリで★を付けたカードか
         'ill',        # イラストレーター（公式のカード検索から）
-        'lst']        # 店が出品した日。取れるのはキャンプだけ（fstは「見つけた日」）
+        'lst',        # 店が出品した日。取れるのはキャンプだけ（fstは「見つけた日」）
+        'cnd']        # 店の表記そのままの状態（A- / B+ など）。取れるのはキャンプだけ
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'
@@ -1773,7 +1777,9 @@ def build(rows, prev, ok_shops=None):
     for r in live:
         if r['crPrice'] > r['price'] * MAX_RATIO:
             continue
-        k = (r['id'], r['shop'], r['cond'])
+        # 段まで分けて残す。これをしないと B+ / B / B- のうち1件しか出ず、
+        # どの状態を買っているのか選べない
+        k = (r['id'], r['shop'], r.get('cnd') or r['cond'])
         if k not in best or r['crPrice'] < best[k]['crPrice']:
             best[k] = r
     items = sorted(best.values(), key=lambda r: -(r['price'] - r['crPrice']))
@@ -1839,7 +1845,7 @@ def build(rows, prev, ok_shops=None):
             r.get('code', ''), r.get('rar', ''), r.get('tags', ''),
             first_seen.get(r['pid'], today_s if had_prev else ''),
             r.get('mall', ''), r.get('fav', 0), r.get('ill', ''),
-            r.get('lst', ''),
+            r.get('lst', ''), r.get('cnd', ''),
         ])
         shrink(rowsout[-1])
 
@@ -1983,7 +1989,7 @@ def sync_only():
         return 1
     data = json.load(io.open(OUT, encoding='utf-8'))
     cols = data.get('cols') or []
-    for extra in ('code', 'rar', 'tags', 'fst', 'mall', 'fav', 'ill', 'lst'):
+    for extra in ('code', 'rar', 'tags', 'fst', 'mall', 'fav', 'ill', 'lst', 'cnd'):
         if extra not in cols:
             cols.append(extra)
     data['cols'] = cols
