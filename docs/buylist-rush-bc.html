@@ -57,6 +57,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mg-it button.put{color:var(--cy);border:1px solid rgba(0,229,255,.35);border-radius:4px;padding:1px 6px}
 .mg-it button.put.on{color:var(--gr);border-color:rgba(0,229,149,.45)}
 .mg-it.done{opacity:.5}
+.mg-it .mc{display:inline-block;min-width:14px;text-align:center;margin-right:5px;
+  border:1px solid rgba(255,255,255,.25);border-radius:3px;font-size:9px;color:var(--tx)}
+.mg-mix{font-size:10px;color:#ffb74d;background:rgba(255,183,77,.1);
+  border:1px solid rgba(255,183,77,.35);border-radius:5px;padding:5px 7px;margin-top:5px;line-height:1.5}
 .mg-b button[disabled]{opacity:.5;cursor:default}
 .mg-b{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .mg-b button.rm{border-color:rgba(255,77,109,.5);color:var(--rd)}
@@ -839,8 +843,11 @@ function memoCount(){
 // ＋1したときの出品を、いまの一覧から探し直す。
 // 取り直しで番号が変わることがあるので、同じカード・同じ店・同じ値段なら同じ出品とみなす
 function findRow(it){
+  // 出品番号が変わっていても拾い直すが、状態まで合っていないと別物を
+  // カートに入れてしまう（同じ値段で状態が違う出品が実際にある）
   return rows.find(r=>r.pid===it.pid)
-      || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold)
+      || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold
+                      && (!it.cond || r.cond===it.cond))
       || null;
 }
 function memoGroups(){
@@ -856,6 +863,18 @@ function memoGroups(){
     if(row) e.now += row.cr||0;      // いまの値段（カートに入る金額）
     else e.gone++;                   // 一覧から消えた出品
     if(cartDone.has(it.pid)) e.done++;
+  }
+  // 同じカードで状態が違うものが混ざっていないか。
+  // 「Bを入れたつもりがAも入った」を防ぐため、はっきり出す
+  for(const e of g.values()){
+    const byCardId=new Map();
+    for(const it of e.items){
+      if(!it.id) continue;
+      if(!byCardId.has(it.id)) byCardId.set(it.id,[]);
+      byCardId.get(it.id).push(it);
+    }
+    e.mixed=[...byCardId.values()].filter(v=>
+      v.length>1 && new Set(v.map(x=>x.cond||'')).size>1);
   }
   return [...g.values()].sort((a,b)=>b.sum-a.sum);
 }
@@ -924,6 +943,13 @@ function memoDraw(){
           +'（＋1したときは '+yen(g.sum)+'）</div>' : '')
       +(g.gone ? '<div class="mg-ship"><em>'+g.gone+'点は一覧から消えています'
           +'（売り切れ／値段変更）。カートには入りません</em></div>' : '')
+      // 同じカードの状態違いが混ざっていると、両方カートに入って両方買うことになる
+      +(g.mixed && g.mixed.length
+        ? '<div class="mg-mix">⚠ 同じカードで状態が違うものが '+g.mixed.length
+          +'組あります。このままだと両方カートに入ります<br>'
+          + g.mixed.map(v=>'　'+esc(v[0].name)+'： '
+              +v.map(x=>(x.cond||'?')+' '+yen(x.price)).join(' ／ ')).join('<br>')
+          +'</div>' : '')
       +(ship?'<div class="mg-ship">'+esc(ship)
         +(left?' ／ <em>送料無料まで あと'+yen(left)+'</em>'
               :(free?' ／ <em>送料無料に届いています</em>':''))+'</div>':'')
@@ -931,7 +957,8 @@ function memoDraw(){
       + g.items.map((it,ii)=>{
           const done=cartDone.has(it.pid);
           const can=it.row && (g.shop!=='TC' || it.row.vid);
-          return '<div class="mg-it'+(done?' done':'')+'">'+esc(it.name)
+          return '<div class="mg-it'+(done?' done':'')+'">'
+            +(it.cond?'<span class="mc">'+esc(it.cond)+'</span>':'')+esc(it.name)
             +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
             +(can
                ? '<button class="put'+(done?' on':'')+'" data-put="'+esc(it.pid)+'" title="'
@@ -957,6 +984,9 @@ function memoDraw(){
           +'入れた印を消す（'+g.done+'）</button>':'')
       +'<button class="rm" data-delshop="'+gi+'">この店のぶんを消す（'+g.items.length+'）</button>'
       +(g.gone?'<button class="rm" data-delgone="'+gi+'">一覧に無いぶんを消す（'+g.gone+'）</button>':'')
+      +(g.mixed && g.mixed.length
+        ? '<button class="rm" data-mix="'+gi+'">状態違いを外して安い方だけ残す（'
+          +g.mixed.reduce((n,v)=>n+v.length-1,0)+'）</button>' : '')
       +'</div></div>';
   }).join('') + (()=>{ const t=memoTotals();
       const off = t.mkt ? Math.round((1-t.sum/t.mkt)*100) : 0;
@@ -1026,6 +1056,19 @@ document.getElementById('memo').onclick=e=>{
     }
     return;
   }
+  const mx=e.target.closest('[data-mix]');
+  if(mx){
+    const g=(window.__memoGroups||[])[+mx.dataset.mix]; if(!g) return;
+    const drop=[];
+    for(const v of g.mixed){
+      const keep=v.reduce((a,b)=>(b.price||0)<(a.price||0)?b:a);
+      for(const x of v) if(x!==keep) drop.push(x.pid);
+    }
+    if(!drop.length) return;
+    if(confirm('同じカードの状態違い '+drop.length+'点をメモから外します。'
+               +'安いほうだけ残します。よろしいですか？')) dropPids(drop);
+    return;
+  }
   const un=e.target.closest('[data-undone]');
   if(un){
     const g=(window.__memoGroups||[])[+un.dataset.undone]; if(!g) return;
@@ -1093,14 +1136,23 @@ grid.addEventListener('click',e=>{
       return;
     }
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
+            cond:r.cond,
             at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
     doneP1.add(r.pid);
+    // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう
+    const other=q.filter(x=>x && x.pid!==r.pid && x.id===r.id && x.shop===r.shop
+                            && (x.cond||'')!==r.cond);
     pb.classList.add('done'); pb.textContent='＋1 済';
     pb.title='もう一度押すと取り消します';
     memoCount();
-    toast(r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
+    // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう。
+    // あとから気づくと買ったあとなので、その場で知らせる
+    toast(other.length
+      ? '⚠ '+r.name+'：状態'+other.map(x=>x.cond||'?').join('・')
+        +'もメモにあります。このままだと両方カートに入ります'
+      : r.name+' を＋1（アプリを開くと反映できます／計'+q.length+'件）');
     return;
   }
 });
