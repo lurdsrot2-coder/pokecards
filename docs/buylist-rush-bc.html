@@ -35,6 +35,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.few{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .tg.on.fav{background:rgba(255,214,0,.28);border-color:#ffd600;color:#fff}
 .tg.on.p1{background:rgba(255,0,255,.22);border-color:var(--pk);color:#fff}
+.tg.p1all{border-color:rgba(255,0,255,.5);color:var(--pk)}
 /* 上に出す合計金額 */
 #memo-open.on{background:rgba(0,229,149,.22);border-color:var(--gr);color:#fff}
 /* ★に出品が出たときの知らせ */
@@ -248,6 +249,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）">＋1したもの</button>
+ <button class="tg p1all" id="f-p1all" title="いま出ているものを、まとめて＋1します">まとめて＋1</button>
  <button class="tg" id="f-new">新着</button>
  <button class="tg sold" id="f-sold">売れた</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
@@ -1253,6 +1255,36 @@ document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
 document.getElementById('f-p1').onclick=function(){
   st.p1=st.p1?0:1; this.classList.toggle('on',!!st.p1); apply();};
+// いま出ているものをまとめて＋1する。
+// 絞り込んでから1枚ずつ押すのが大変なので、1回で済ませる
+document.getElementById('f-p1all').onclick=function(){
+  const yet=view.filter(r=>r.id && !r.sold && !doneP1.has(r.pid));
+  if(!yet.length){ toast(view.length?'もう全部＋1しています':'出ているものがありません'); return; }
+  if(yet.length>500){
+    alert('いま'+yet.length+'件も出ています。多すぎるので、もう少し絞ってから押してください。');
+    return;
+  }
+  const sum=yet.reduce((a,r)=>a+(r.cr||0),0);
+  if(!confirm('いま出ている '+yet.length+'件（'+yen(sum)+'）をまとめて＋1します。'
+              +'よろしいですか？')) return;
+  const q=readQueue(), now=new Date().toISOString();
+  for(const r of yet){
+    q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
+            cond:r.cond, cnd:r.cnd, at:now});
+    doneP1.add(r.pid);
+  }
+  try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
+  catch(_){ toast('保存できませんでした'); return; }
+  // 出ているタイルの印を更新する（描き直さずに済ませる）
+  for(const b of document.querySelectorAll('[data-p1]')){
+    if(doneP1.has(b.dataset.p1)){
+      b.classList.add('done'); b.textContent='＋1 済';
+      b.title='もう一度押すと取り消します';
+    }
+  }
+  memoCount();
+  toast(yet.length+'件を＋1しました（'+yen(sum)+'）');
+};
 document.getElementById('f-fav').onclick=function(){
   st.fav=st.fav?0:1; this.classList.toggle('on',!!st.fav); apply();};
 document.getElementById('f-few').onclick=function(){
