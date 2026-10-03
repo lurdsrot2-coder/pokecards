@@ -1381,7 +1381,8 @@ def scrape():
                             ('BW', bw_scrape, 300), ('YY', yy_scrape, 300),
                             ('TR', tr_scrape, 300), ('PB', pb_scrape, 200),
                             ('OL', ol_scrape, 200), ('MY', my_scrape, 300),
-                            ('SG', sg_scrape, 150)):     # 駿河屋は在庫のある物が少ない
+                            ('SG', sg_scrape, 150),     # 駿河屋は在庫のある物が少ない
+                            ('BE', be_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -1705,7 +1706,11 @@ OL_PROD = OL + '/pokemon/product/detail/'
 SG_PROD = SG + '/product/detail/'
 MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
 # 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
+BE = 'https://www.bee-honpo.com'
+BE_PROD = BE + '/view/item/'
+
 PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
+             ('be', BE_PROD),
              ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
              ('my', MY_PROD), ('sg', SG_PROD)]
 
@@ -1743,6 +1748,108 @@ def watch_from(rowsout):
         if sh not in out or fs < out[sh]:
             out[sh] = fs
     return out
+
+
+# ── Bee本舗 ────────────────────────────────────────
+# シングル／高額シングル／特価。鑑定品・海外・未開封・サプライのカテゴリは見ない
+BE_CATS = ('ct105', 'ct2407', 'ct1236')
+BE_LI = re.compile(r'<li>(.*?)</li>', re.S)
+BE_ID = re.compile(r'/view/item/(\d+)')
+BE_NAME = re.compile(r'<span class="value">([^<]{2,200})</span>')
+BE_PRICE = re.compile(r'tax-included.*?<span class="price">.*?([\d,]+)\s*<span class="tax', re.S)
+BE_STOCK = re.compile(r'在庫数</span>\s*<span>\s*(\d+)\s*</span>', re.S)
+# 「(SV3-113/108)」「(021/052)」の両方。弾の記号に - が入る（SM-P など）ので
+# 番号の直前の - で切る
+BE_CODE = re.compile(r'[(（]\s*(?:(.+)-)?(\d{1,3}[A-Za-z]?/[0-9A-Za-z\-]{1,8})\s*[)）]\s*$')
+BE_RAR = re.compile(r'\[([^\]]*)\]\s*[(（][^)）]*[)）]\s*$')
+BE_COND = re.compile(r'【状態\s*([A-D])')
+# 鑑定品と海外は集める対象ではない
+BE_SKIP = ('PSA', 'BGS', 'ARS', '英語', '中国語', '韓国語', '海外',
+           '未開封', 'BOX', 'パック', 'サプライ', 'スリーブ', 'デッキケース')
+
+
+def be_parse(seg):
+    """商品1件ぶんのHTMLをほどく"""
+    mi = BE_ID.search(seg)
+    mn = BE_NAME.search(seg)
+    if not mi or not mn:
+        return None
+    title = re.sub(r'\s+', ' ', mn.group(1)).strip()
+    if any(w in title for w in BE_SKIP):
+        return None
+    mc = BE_CODE.search(title)
+    if not mc:
+        return None                     # 番号が書かれていないものは当てられない
+    setcode = (mc.group(1) or '').strip()
+    num = mc.group(2).strip().upper()
+    mr = BE_RAR.search(title)
+    rar = (mr.group(1) or '').strip() if mr else ''
+    md = BE_COND.search(title)
+    cond = md.group(1) if md else 'A'
+    # 名前は、前の【】《》と、後ろの[レアリティ](番号) を落とした残り
+    name = BE_CODE.sub('', title)
+    name = BE_RAR.sub('', name) if mr else name
+    name = re.sub(r'\[[^\]]*\]\s*$', '', name)
+    name = re.sub(r'^(?:【[^】]*】|《[^》]*》|\s)+', '', name)
+    name = re.sub(r'《[^》]*》', '', name).strip()
+    if not name:
+        return None
+    mp = BE_PRICE.search(seg)
+    if not mp:
+        return None
+    price = int(mp.group(1).replace(',', ''))
+    ms = BE_STOCK.search(seg)
+    stock = int(ms.group(1)) if ms else 0
+    pid = mi.group(1)
+    return {'shop': 'BE', 'pid': 'be' + pid, 'cond': cond,
+            'url': BE_PROD + pid,
+            'name': name, 'rarity': rar, 'num': num,
+            'setcode': setcode, 'settitle': '',
+            'price': price, 'stock': stock, 'soldout': stock <= 0}
+
+
+def be_scrape():
+    """Bee本舗。カテゴリごとに1ページ50件。最後のページまで進める"""
+    items, miss = {}, 0
+    for cat in BE_CATS:
+        page, got, dry = 1, 0, 0
+        while page <= 600:
+            h = fetch('%s/view/category/%s?page=%d' % (BE, cat, page))
+            if not h:
+                miss += 1
+                if miss >= 3:
+                    log('  Bee本舗に繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
+            segs = BE_LI.findall(h)
+            n = live = 0
+            for seg in segs:
+                if '/view/item/' not in seg:
+                    continue
+                n += 1
+                it = be_parse(seg)
+                if it and not it['soldout']:
+                    live += 1
+                    items.setdefault(it['pid'], it)
+            if not n:
+                break                   # 商品が1つも無い＝最後まで来た
+            # 在庫ありが先に並び、売り切れが後ろに何百ページも続く。
+            # 在庫が尽きたら、そこから先を見ても買えるものは無い
+            dry = 0 if live else dry + 1
+            if dry >= 2:
+                log('  Bee本舗 %s は%dページで在庫が尽きました' % (cat, page))
+                break
+            got += n
+            page += 1
+            if page % 50 == 0:
+                log('  Bee本舗 %s %dページ 累計%d件' % (cat, page, len(items)))
+            if over_budget():
+                log('  Bee本舗 時間切れでここまで（%s %dページ）' % (cat, page))
+                break
+        log('  Bee本舗 %s %dページ・%d件' % (cat, page - 1, got))
+    log('  Bee本舗 %d件' % len(items))
+    return list(items.values())
 
 
 def build(rows, prev, ok_shops=None):
@@ -1898,7 +2005,7 @@ def build(rows, prev, ok_shops=None):
 
 
 # 扱っている店。どれかが0件のファイルは、作りかけか事故なので公開しない
-ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG')
+ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG', 'BE')
 
 
 def missing_shops(data):
