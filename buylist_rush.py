@@ -1388,7 +1388,8 @@ def scrape():
                             ('SG', sg_scrape, 150),     # 駿河屋は在庫のある物が少ない
                             ('BE', be_scrape, 300),
                             ('FA', fa_scrape, 300),
-                            ('HB', hb_scrape, 300)):
+                            ('HB', hb_scrape, 300),
+                            ('CL', cl_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -1738,6 +1739,8 @@ OL_PROD = OL + '/pokemon/product/detail/'
 SG_PROD = SG + '/product/detail/'
 MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
 # 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
+CL = 'https://www.c-labo-online.jp'
+CL_PROD = CL + '/product/'
 HB = 'https://www.hobbystation-single.jp'
 HB_PROD = HB + '/pk/product/detail/'
 FA = 'https://pokemon-card-fullahead.com'
@@ -1746,7 +1749,7 @@ BE = 'https://www.bee-honpo.com'
 BE_PROD = BE + '/view/item/'
 
 PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
-             ('be', BE_PROD), ('fa', FA_PROD), ('hb', HB_PROD),
+             ('be', BE_PROD), ('fa', FA_PROD), ('hb', HB_PROD), ('cl', CL_PROD),
              ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
              ('my', MY_PROD), ('sg', SG_PROD)]
 
@@ -1784,6 +1787,90 @@ def watch_from(rowsout):
         if sh not in out or fs < out[sh]:
             out[sh] = fs
     return out
+
+
+# ── カードラボ ────────────────────────────────────
+CL_LI = re.compile(r'list_item_cell[^>]*list_item_(\d+)">(.*?)</li>', re.S)
+CL_NAME = re.compile(r'<span class="goods_name">(.*?)</span>\s*</p>', re.S)
+CL_PRICE = re.compile(r'class="selling_price">.*?([\d,]+)<span class="currency_label', re.S)
+CL_STOCK = re.compile(r'class="stock">在庫数(\d+)')
+# 「【ポケカ】ガイ【ミラー】MF 036/040」
+CL_PARSE = re.compile(r'^【ポケカ】(.+?)【([^】]*)】\s*([0-9A-Za-z\-]+)\s+'
+                      r'([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})$')
+CL_SKIP = ('オリパ', 'くじ', 'BOX', '未開封', 'PSA', 'BGS', 'サプライ', 'スリーブ',
+           'デッキケース', '詰め合わせ', '福袋')
+
+
+def cl_parse(pid, seg):
+    mn = CL_NAME.search(seg)
+    mp = CL_PRICE.search(seg)
+    if not (mn and mp):
+        return None
+    title = re.sub(r'<[^>]+>', '', mn.group(1))
+    title = re.sub(r'\s+', ' ', title).strip()
+    if any(w in title for w in CL_SKIP):
+        return None
+    # 末尾の（EX）などは付録なので落としてから形を見る
+    body = re.sub(r'[（(][^）)]{1,6}[）)]\s*$', '', title).strip()
+    m = CL_PARSE.match(body)
+    if not m:
+        return None
+    name, var, setcode, num = (m.group(1).strip(), m.group(2).strip(),
+                               m.group(3).strip(), m.group(4).strip().upper())
+    if not name:
+        return None
+    # ミラーは別のカードとして登録されているので、名前に付けて見分けさせる
+    if var and var != '-':
+        name = '%s（%s）' % (name, var)
+    # 「PROMO」は弾の記号ではなく、番号のほうに本当の弾が入っている
+    if setcode.upper() in ('PROMO', 'PR'):
+        setcode = ''
+    ms = CL_STOCK.search(seg)
+    stock = int(ms.group(1)) if ms else 0
+    return {'shop': 'CL', 'pid': 'cl' + pid, 'cond': 'A',
+            'url': CL_PROD + pid,
+            'name': name, 'rarity': '', 'num': num,
+            'setcode': setcode, 'settitle': '',
+            'price': int(mp.group(1).replace(',', '')),
+            'stock': stock, 'soldout': stock <= 0}
+
+
+def cl_scrape():
+    """カードラボ。カテゴリを辿れないのでキーワード検索から。1ページ120件"""
+    items, miss, first = {}, 0, None
+    page = 1
+    while page <= 200:
+        h = fetch('%s/product-list?keyword=%s&available=1&num=120&page=%d'
+                  % (CL, urllib.parse.quote('ポケカ'), page))
+        if not h:
+            miss += 1
+            if miss >= 3:
+                log('  カードラボに繋がらないので今回は見送ります')
+                return []
+            page += 1
+            continue
+        miss = 0
+        segs = CL_LI.findall(h)
+        if not segs:
+            break
+        # 最後まで来ると1ページ目を返してくるので、それで打ち切る
+        if page > 1 and segs[0][0] == first:
+            log('  カードラボ %dページで一巡しました' % (page - 1))
+            break
+        if page == 1:
+            first = segs[0][0]
+        for pid, seg in segs:
+            it = cl_parse(pid, seg)
+            if it and not it['soldout']:
+                items.setdefault(it['pid'], it)
+        page += 1
+        if page % 20 == 0:
+            log('  カードラボ %dページ 累計%d件' % (page, len(items)))
+        if over_budget():
+            log('  カードラボ 時間切れでここまで（%dページ）' % page)
+            break
+    log('  カードラボ %d件' % len(items))
+    return list(items.values())
 
 
 # ── ホビーステーション ────────────────────────────
@@ -2221,7 +2308,7 @@ def build(rows, prev, ok_shops=None):
 
 # 扱っている店。どれかが0件のファイルは、作りかけか事故なので公開しない
 ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG',
-             'BE', 'FA', 'HB')
+             'BE', 'FA', 'HB', 'CL')
 
 
 def missing_shops(data):
