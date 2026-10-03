@@ -285,7 +285,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
 <div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
- <button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
+ <button type="button" id="sp-all">全選択</button><button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
 <div id="toast"></div>
@@ -848,9 +848,12 @@ function memoCount(){
 function findRow(it){
   // 出品番号が変わっていても拾い直すが、状態まで合っていないと別物を
   // カートに入れてしまう（同じ値段で状態が違う出品が実際にある）
-  return rows.find(r=>r.pid===it.pid)
+  return rows.find(r=>r.pid===it.pid && !r.sold)
       || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold
                       && (!(it.cnd||it.cond) || r.cnd===(it.cnd||it.cond)))
+      // 生きている出品が無いときだけ、売り切れた行を返す。
+      // 「いつ売れたか」を出したいので、見つけたことは伝える
+      || rows.find(r=>r.pid===it.pid)
       || null;
 }
 function memoGroups(){
@@ -859,11 +862,13 @@ function memoGroups(){
     const row=findRow(it);
     const mall=(row && row.mall) || '';
     const key=it.shop+'\u0000'+mall;
-    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0, owned:0});
+    if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0,
+                               owned:0, soldout:0});
     const e=g.get(key);
     e.items.push({...it, row});
     e.sum += it.price||0;
-    if(row) e.now += row.cr||0;      // いまの値段（カートに入る金額）
+    if(row && row.sold) e.soldout++; // ＋1したあとに売れてしまった出品
+    else if(row) e.now += row.cr||0; // いまの値段（カートに入る金額）
     else e.gone++;                   // 一覧から消えた出品
     if(cartDone.has(it.pid)) e.done++;
     if(row && row.owned>0) e.owned++;
@@ -946,7 +951,11 @@ function memoDraw(){
       +(g.now!==g.sum ? '<div class="mg-ship">いまの値段だと '+yen(g.now)
           +'（＋1したときは '+yen(g.sum)+'）</div>' : '')
       +(g.gone ? '<div class="mg-ship"><em>'+g.gone+'点は一覧から消えています'
-          +'（売り切れ／値段変更）。カートには入りません</em></div>' : '')
+          +'（値段変更など）。カートには入りません</em></div>' : '')
+      // 売り切れを混ぜて送ると、店が422で断る。
+      // キャンプはまとめて送るので、1点売れているだけで全部入らなくなる
+      +(g.soldout ? '<div class="mg-mix">✖ '+g.soldout+'点は＋1したあとに売り切れました。'
+          +'店が「既に売り切れました」と断るのでカートには送りません</div>' : '')
       // アプリは状態で分けないので、持っているカードの2枚目は種類が増えない
       +(g.owned ? '<div class="mg-mix">◆ '+g.owned+'点はすでに持っているカードです'
           +'（枚数は増えますが、集まった種類は増えません）</div>' : '')
@@ -963,13 +972,16 @@ function memoDraw(){
       +'</div>'
       + g.items.map((it,ii)=>{
           const done=cartDone.has(it.pid);
-          const can=it.row && (g.shop!=='TC' || it.row.vid);
+          const can=it.row && !it.row.sold && (g.shop!=='TC' || it.row.vid);
           return '<div class="mg-it'+(done?' done':'')+'">'
             +(it.cnd||it.cond
                ? '<span class="mc">'+esc(it.cnd||it.cond)+'</span>' : '')+esc(it.name)
             +(it.row && it.row.owned>0
                ? '<span class="mo" title="すでに持っているカードです">持'+it.row.owned+'</span>' : '')
-            +'<span>'+yen(it.price)+(it.row?'':' <em style="color:var(--rd)">一覧に無し</em>')+'</span>'
+            +'<span>'+yen(it.price)
+              +(!it.row ? ' <em style="color:var(--rd)">一覧に無し</em>'
+                 : it.row.sold ? ' <em style="color:var(--rd)">売切'
+                     +esc((it.row.soldAt||'').slice(5))+'</em>' : '')+'</span>'
             +(can
                ? '<button class="put'+(done?' on':'')+'" data-put="'+esc(it.pid)+'" title="'
                  +(done?'入れた印を外します':(g.shop==='TC'?'この1件だけカートに入れます'
@@ -983,8 +995,9 @@ function memoDraw(){
       +(()=>{
           // 入れ終わったものは飛ばす。あとから1枚＋1したときに、そこだけ押せばよくなる
           const rest=g.items.filter(x=>!cartDone.has(x.pid)
-                                       && x.row && (g.shop!=='TC' || x.row.vid));
-          const all=g.items.filter(x=>x.row && (g.shop!=='TC' || x.row.vid));
+                                       && x.row && !x.row.sold
+                                       && (g.shop!=='TC' || x.row.vid));
+          const all=g.items.filter(x=>x.row && !x.row.sold && (g.shop!=='TC' || x.row.vid));
           // 全部入れ終わっていても行き止まりにしない。
           // 「入れる→直す→店のカートを空にする→もう一度入れる」をやるため
           if(!rest.length) return '<button data-open="'+gi+'" data-again="1" '
@@ -1005,6 +1018,8 @@ function memoDraw(){
           +g.mixed.reduce((n,v)=>n+v.length-1,0)+'）</button>' : '')
       +(g.owned ? '<button class="rm" data-owned="'+gi+'">持っているぶんを外す（'
           +g.owned+'）</button>' : '')
+      +(g.soldout ? '<button class="rm" data-sold="'+gi+'">売り切れを外す（'
+          +g.soldout+'）</button>' : '')
       +'</div></div>';
   }).join('') + (()=>{ const t=memoTotals();
       const off = t.mkt ? Math.round((1-t.sum/t.mkt)*100) : 0;
@@ -1095,6 +1110,16 @@ document.getElementById('memo').onclick=e=>{
                +'安いほうだけ残します。よろしいですか？')) dropPids(drop);
     return;
   }
+  const so=e.target.closest('[data-sold]');
+  if(so){
+    const g=(window.__memoGroups||[])[+so.dataset.sold]; if(!g) return;
+    const drop=g.items.filter(x=>x.row && x.row.sold).map(x=>x.pid);
+    if(!drop.length) return;
+    if(confirm('売り切れた '+drop.length+'点をメモから外します。'
+               +'買えないので、アプリへの＋1も取り消されます。よろしいですか？'))
+      dropPids(drop);
+    return;
+  }
   const ow=e.target.closest('[data-owned]');
   if(ow){
     const g=(window.__memoGroups||[])[+ow.dataset.owned]; if(!g) return;
@@ -1121,7 +1146,8 @@ document.getElementById('memo').onclick=e=>{
     }
     // まだ入れていないものだけ相手にする
     const rest=g.items.filter(x=>!cartDone.has(x.pid)
-                                 && x.row && (g.shop!=='TC' || x.row.vid));
+                                 && x.row && !x.row.sold
+                                 && (g.shop!=='TC' || x.row.vid));
     if(!rest.length) return;
     // キャンプ(Shopify)はまとめて1つのカートに足せる
     if(g.shop==='TC'){
@@ -1321,6 +1347,15 @@ serPanel.onclick=e=>{
   e.stopPropagation();
   if(e.target.id==='sp-cls'){serShow(null);return;}
   if(e.target.id==='sp-clr'){ if(pick){pick[2]().clear();serSync();apply();} return; }
+  // 全選択。いま一覧にあるものだけ入れる（0件のものを選んでも意味がない）
+  if(e.target.id==='sp-all'){
+    if(pick){
+      const sel=pick[2](), valsOf=pick[3];
+      for(const r of rows) for(const v of valsOf(r)) if(v) sel.add(v);
+      serSync(); apply();
+    }
+    return;
+  }
   const it=e.target.closest('.sp-it'); if(!it||!pick)return;
   const v=it.dataset.v, sel=pick[2]();
   sel.has(v)?sel.delete(v):sel.add(v);
