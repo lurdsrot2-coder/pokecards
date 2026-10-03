@@ -1799,6 +1799,9 @@ CL_PARSE = re.compile(r'^【ポケカ】(.+?)【([^】]*)】\s*([0-9A-Za-z\-]+)\
                       r'([0-9A-Za-z]{1,4}/[0-9A-Za-z\-]{1,8})$')
 CL_SKIP = ('オリパ', 'くじ', 'BOX', '未開封', 'PSA', 'BGS', 'サプライ', 'スリーブ',
            'デッキケース', '詰め合わせ', '福袋')
+# 「※プレイ用特価品※」「※キズ大※」のような印。状態として読む
+CL_MARK = re.compile(r'※([^※]{1,12})※')
+CL_COND = (('キズ大', 'C'), ('キズ', 'B'), ('特価', 'B'), ('プレイ用', 'B'))
 
 
 def cl_parse(pid, seg):
@@ -1810,8 +1813,19 @@ def cl_parse(pid, seg):
     title = re.sub(r'\s+', ' ', title).strip()
     if any(w in title for w in CL_SKIP):
         return None
+    # 「(ゲッコウガマーク)」のような押し印つきは別物なので扱わない
+    if re.search(r'[（(][^）)]*マーク[）)]\s*$', title):
+        return None
     # 末尾の（EX）などは付録なので落としてから形を見る
     body = re.sub(r'[（(][^）)]{1,6}[）)]\s*$', '', title).strip()
+    # 「※プレイ用特価品※」は状態の話。名前からは外して状態に回す
+    cond = 'A'
+    for mk in CL_MARK.findall(body):
+        for w, c in CL_COND:
+            if w in mk:
+                cond = c
+                break
+    body = CL_MARK.sub('', body).strip()
     m = CL_PARSE.match(body)
     if not m:
         return None
@@ -1819,17 +1833,22 @@ def cl_parse(pid, seg):
                                m.group(3).strip(), m.group(4).strip().upper())
     if not name:
         return None
-    # ミラーは別のカードとして登録されているので、名前に付けて見分けさせる
-    if var and var != '-':
+    # 2つ目の【】は「ミラー」のこともレアリティ（U/RR など）のこともある。
+    # ミラーは別のカードとして登録されているので名前に付けて見分けさせ、
+    # それ以外はレアリティとして扱う
+    rar = ''
+    if 'ミラー' in var:
         name = '%s（%s）' % (name, var)
+    elif var and var != '-':
+        rar = var
     # 「PROMO」は弾の記号ではなく、番号のほうに本当の弾が入っている
     if setcode.upper() in ('PROMO', 'PR'):
         setcode = ''
     ms = CL_STOCK.search(seg)
     stock = int(ms.group(1)) if ms else 0
-    return {'shop': 'CL', 'pid': 'cl' + pid, 'cond': 'A',
+    return {'shop': 'CL', 'pid': 'cl' + pid, 'cond': cond,
             'url': CL_PROD + pid,
-            'name': name, 'rarity': '', 'num': num,
+            'name': name, 'rarity': rar, 'num': num,
             'setcode': setcode, 'settitle': '',
             'price': int(mp.group(1).replace(',', '')),
             'stock': stock, 'soldout': stock <= 0}
@@ -1970,12 +1989,25 @@ FA_SMALL = re.compile(r'残りあと(\d+)個')
 FA_SOLD = re.compile(r'売り切れ|SOLD\s*OUT', re.I)
 FA_RAR = re.compile(r'\s+([A-Z]{1,4}|★)$')
 FA_SKIP = ('PSA', 'BGS', 'ARS', '未開封', 'BOX', 'パック', 'サプライ', 'スリーブ')
+# 頭に付く【キズ格安】などの印。状態として読む
+FA_MARK = re.compile(r'^(?:【([^】]*)】\s*)+')
+FA_COND = (('キズ大', 'C'), ('キズ', 'C'), ('傷', 'C'), ('格安', 'C'), ('プレイ用', 'B'))
 
 
 def fa_parse(url, seg, title):
     title = re.sub(r'\s+', ' ', title).strip()
     if any(w in title for w in FA_SKIP):
         return None
+    # 「【キズ格安】PK-…」のように頭に印が付くことがある。外して状態に回す
+    cond = 'A'
+    mk = FA_MARK.match(title)
+    if mk:
+        head = title[:mk.end()]
+        for w, c in FA_COND:
+            if w in head:
+                cond = c
+                break
+        title = title[mk.end():].strip()
     m = FA_NAME.match(title)
     if not m:
         return None
@@ -1990,7 +2022,7 @@ def fa_parse(url, seg, title):
         return None
     ms = FA_SMALL.search(seg)
     pid = re.search(r'/shopdetail/(\d+)', url).group(1)
-    return {'shop': 'FA', 'pid': 'fa' + pid, 'cond': 'A',
+    return {'shop': 'FA', 'pid': 'fa' + pid, 'cond': cond,
             'url': FA_PROD + pid + '/',
             'name': name, 'rarity': rar, 'num': num.upper(),
             'setcode': setcode, 'settitle': '',
