@@ -80,6 +80,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 #favnews b{color:#fff}
 .tg.on.sold{background:rgba(255,68,68,.22);border-color:var(--rd)}
 .tg.on.BE{background:rgba(255,145,0,.25);border-color:#ff9100;color:#fff}
+.tg.on.FA{background:rgba(124,77,255,.28);border-color:#7c4dff;color:#fff}
 .tg.on.CR{background:rgba(0,229,149,.25);border-color:var(--gr);color:#fff}
 .tg.on.TC{background:rgba(90,160,255,.28);border-color:#5aa0ff;color:#fff}
 .tg.on.TT{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
@@ -131,6 +132,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .b.D{background:rgba(170,60,220,.92);color:#fff}
 .b.own{background:rgba(255,0,255,.88);color:#fff}
 .b.BE{background:rgba(255,145,0,.9);color:#2a1500}
+.b.FA{background:rgba(124,77,255,.9);color:#fff}
 .b.CR{background:rgba(0,229,149,.9);color:#032317}
 .b.TC{background:rgba(90,160,255,.92);color:#04122b}
 .b.TT{background:rgba(255,170,60,.92);color:#2b1600}
@@ -256,6 +258,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg MY" data-s="MY">マイカ</button>
  <button class="tg SG" data-s="SG">駿河屋</button>
  <button class="tg BE" data-s="BE">Bee本舗</button>
+ <button class="tg FA" data-s="FA">フルアヘッド</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -319,7 +322,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
 const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
             YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',
-            SG:'駿河屋',BE:'Bee本舗'};
+            SG:'駿河屋',BE:'Bee本舗',FA:'フルアヘッド'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map(), SHIPS={};
 let bestCr=new Map();       // カードid → いちばん安い値段

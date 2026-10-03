@@ -83,12 +83,13 @@ def _trim_log():
 
 
 # ── 1. 収集 ───────────────────────────────────────────
-def fetch(url, tries=4):
+def fetch(url, tries=4, enc='utf-8'):
+    """enc: 文字コード。makeshopの店は EUC-JP で返すものがある"""
     for i in range(tries):
         try:
             r = urllib.request.Request(url, headers={
                 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.8'})
-            return urllib.request.urlopen(r, timeout=90).read().decode('utf-8', 'replace')
+            return urllib.request.urlopen(r, timeout=90).read().decode(enc, 'replace')
         except Exception as e:
             log('  retry %d: %s' % (i + 1, e))
             _backoff(e, i)
@@ -1382,7 +1383,8 @@ def scrape():
                             ('TR', tr_scrape, 300), ('PB', pb_scrape, 200),
                             ('OL', ol_scrape, 200), ('MY', my_scrape, 300),
                             ('SG', sg_scrape, 150),     # 駿河屋は在庫のある物が少ない
-                            ('BE', be_scrape, 300)):
+                            ('BE', be_scrape, 300),
+                            ('FA', fa_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -1562,6 +1564,15 @@ def match(items, cards):
         if sid:
             by_set[(sid, norm((c.get('name') or '').split(':')[0]))].append(c)
 
+    # 「113」のように総数が付かない番号で出す店がある（フルアヘッド）。
+    # 同じ弾で「113/…」が1枚しか無ければ、その番号のことだと分かる
+    by_left = collections.defaultdict(list)
+    for c in cards.values():
+        n = (c.get('cardNumber') or '').strip().upper()
+        sid = (c.get('setId') or '').lower().split('-')[0]
+        if '/' in n and sid:
+            by_left[(sid, n.split('/')[0])].append(c)
+
     out, stat = [], collections.Counter()
     for it in items:
         raw, num = it['name'], it['num']
@@ -1578,6 +1589,18 @@ def match(items, cards):
                 stat['番号なし'] += 1
                 continue
         elif num != '旧裏':
+            if '/' not in num:
+                # 総数が付かない番号を、弾と名前からDBの番号に直す
+                mo0 = (it.get('setcode') or '').strip().lower().split('-')[0]
+                h = by_left.get((mo0, num), [])
+                if len(h) > 1:
+                    h = [c for c in h
+                         if norm((c.get('name') or '').split(':')[0]) == base] or h
+                if len(h) == 1:
+                    num = (h[0].get('cardNumber') or '').strip().upper()
+                else:
+                    stat['番号を直せない'] += 1
+                    continue
             cand = by_num.get(num, [])
             # セット記号（S8b 等）で絞る。DBのsetIdは s8b / s8b-m のように派生を持つ
             mo = (it.get('setcode') or '').strip().lower()
@@ -1706,11 +1729,13 @@ OL_PROD = OL + '/pokemon/product/detail/'
 SG_PROD = SG + '/product/detail/'
 MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
 # 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
+FA = 'https://pokemon-card-fullahead.com'
+FA_PROD = FA + '/shopdetail/'
 BE = 'https://www.bee-honpo.com'
 BE_PROD = BE + '/view/item/'
 
 PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
-             ('be', BE_PROD),
+             ('be', BE_PROD), ('fa', FA_PROD),
              ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
              ('my', MY_PROD), ('sg', SG_PROD)]
 
@@ -1748,6 +1773,100 @@ def watch_from(rowsout):
         if sh not in out or fs < out[sh]:
             out[sh] = fs
     return out
+
+
+# ── フルアヘッド ──────────────────────────────────
+# 「PK-M6-113 メガレックウザex MUR」。弾の記号に - が入る（SV-P など）ので
+# 番号の直前の - で切る
+FA_NAME = re.compile(r'^PK-(.+)-(\d{1,4}[A-Za-z]?)\s+(.+)$')
+FA_BLOCK = re.compile(r'<a href="(/shopdetail/\d+/[^"]*)">(.*?)</span>\s*</a>(.*?)'
+                      r'(?=<a href="/shopdetail/|$)', re.S)
+FA_ITEMNAME = re.compile(r'class="itemName">([^<]+)')
+FA_PRICE = re.compile(r'class="itemPrice">\s*<strong>([\d,]+)円')
+FA_SMALL = re.compile(r'残りあと(\d+)個')
+FA_SOLD = re.compile(r'売り切れ|SOLD\s*OUT', re.I)
+FA_RAR = re.compile(r'\s+([A-Z]{1,4}|★)$')
+FA_SKIP = ('PSA', 'BGS', 'ARS', '未開封', 'BOX', 'パック', 'サプライ', 'スリーブ')
+
+
+def fa_parse(url, seg, title):
+    title = re.sub(r'\s+', ' ', title).strip()
+    if any(w in title for w in FA_SKIP):
+        return None
+    m = FA_NAME.match(title)
+    if not m:
+        return None
+    setcode, num, rest = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+    mr = FA_RAR.search(rest)
+    rar = mr.group(1) if mr else ''
+    name = FA_RAR.sub('', rest).strip()
+    if not name:
+        return None
+    mp = FA_PRICE.search(seg)
+    if not mp:
+        return None
+    ms = FA_SMALL.search(seg)
+    pid = re.search(r'/shopdetail/(\d+)', url).group(1)
+    return {'shop': 'FA', 'pid': 'fa' + pid, 'cond': 'A',
+            'url': FA_PROD + pid + '/',
+            'name': name, 'rarity': rar, 'num': num.upper(),
+            'setcode': setcode, 'settitle': '',
+            'price': int(mp.group(1).replace(',', '')),
+            'stock': int(ms.group(1)) if ms else 0,
+            'soldout': bool(FA_SOLD.search(seg))}
+
+
+def fa_cats():
+    """弾ごとのカテゴリ（/shopbrand/m06/ など）"""
+    h = fetch(FA + '/', enc='euc-jp')
+    if not h:
+        return []
+    cats = set(re.findall(r'href="(/shopbrand/[0-9a-z\-]+/)"', h))
+    # rarity-/kind-/type- は弾別と同じ商品を別の切り口で並べ直しただけ。
+    # 全部見ると同じものを何度も取りに行くことになる
+    return sorted(c for c in cats
+                  if not re.match(r'/shopbrand/(rarity|kind|type)-', c))
+
+
+def fa_scrape():
+    """フルアヘッド。弾ごとのカテゴリを1つずつ、ページ送りで最後まで"""
+    cats = fa_cats()
+    if not cats:
+        log('  フルアヘッドに繋がりません')
+        return []
+    log('  フルアヘッド カテゴリ %d件' % len(cats))
+    items, miss = {}, 0
+    for i, cat in enumerate(cats, 1):
+        page = 1
+        while page <= 60:
+            u = '%s%spage%d/' % (FA, cat, page) if page > 1 else FA + cat
+            h = fetch(u, enc='euc-jp')
+            if not h:
+                miss += 1
+                if miss >= 5:
+                    log('  フルアヘッドに繋がらないので今回は見送ります')
+                    return []
+                break
+            miss = 0
+            n = 0
+            for url, head, seg in FA_BLOCK.findall(h):
+                mt = FA_ITEMNAME.search(head) or FA_ITEMNAME.search(seg)
+                if not mt:
+                    continue
+                n += 1
+                it = fa_parse(url, seg, mt.group(1))
+                if it and not it['soldout']:
+                    items.setdefault(it['pid'], it)
+            if not n:
+                break
+            page += 1
+        if i % 40 == 0:
+            log('  フルアヘッド %d/%dカテゴリ 累計%d件' % (i, len(cats), len(items)))
+        if over_budget():
+            log('  フルアヘッド 時間切れでここまで（%d/%dカテゴリ）' % (i, len(cats)))
+            break
+    log('  フルアヘッド %d件' % len(items))
+    return list(items.values())
 
 
 # ── Bee本舗 ────────────────────────────────────────
@@ -2005,7 +2124,8 @@ def build(rows, prev, ok_shops=None):
 
 
 # 扱っている店。どれかが0件のファイルは、作りかけか事故なので公開しない
-ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG', 'BE')
+ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG',
+             'BE', 'FA')
 
 
 def missing_shops(data):
