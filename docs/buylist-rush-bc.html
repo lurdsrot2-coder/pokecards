@@ -146,7 +146,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .cs .ccode{background:rgba(0,245,255,.14);border:1px solid rgba(0,245,255,.3);color:var(--cy);
  border-radius:3px;padding:0 4px;font-weight:700;flex-shrink:0}
 .cs .cnum{color:#8f8fb5;overflow:hidden;text-overflow:ellipsis}
-.cs .crar{margin-left:auto;color:var(--gd);font-weight:700;flex-shrink:0}
+.cs .crar{margin-left:auto;color:var(--gd);font-weight:700;flex-shrink:0;
+  text-decoration:none;border-bottom:1px dotted rgba(255,230,0,.5)}
+.cs a.crar:hover{color:#fff;border-bottom-color:#fff}
 .pr{display:flex;align-items:baseline;gap:5px;margin-top:3px}
 .pr .cr{font-size:15px;font-weight:900;color:var(--gr);font-variant-numeric:tabular-nums}
 .pr .pc{font-size:10px;font-weight:700;color:var(--gd)}
@@ -466,7 +468,14 @@ function tile(r){
     +'<div class="nm">'+esc(r.name)+'</div>'
     +'<div class="cs">'+(r.code?'<span class="ccode">'+esc(r.code)+'</span>':'')
       +'<span class="cnum">'+esc(r.num)+'</span>'
-      +(r.rar?'<span class="crar">'+esc(r.rar)+'</span>':'')+'</div>'
+      // レアリティを押すと、アプリで同じシリーズの同じレアリティを開く
+      +(r.rar
+        ? '<a class="crar" target="_blank" rel="noopener"'
+          +' href="../index.html?ser='+encodeURIComponent(r.ser==='—'?'':r.ser)
+          +'&rar='+encodeURIComponent(r.rar)+'"'
+          +' title="カードマネージャーで「'+esc(r.ser)+'」の '+esc(r.rar)+' を見る">'
+          +esc(r.rar)+'</a>'
+        : '')+'</div>'
     +'<div class="st">'+esc(r.set)+'</div>'
     +(r.mall?'<div class="mall" title="'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
         +(SHIPS[r.mall]?'（'+esc(SHIPS[r.mall].slice(0,18))+'）':'')+'</div>':'')

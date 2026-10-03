@@ -5227,10 +5227,16 @@ function _buyQueueReady(){
 // ?card=<カードid> が付いていたら、そのカードだけを出す
 let _focusId='';
 try{ _focusId=new URLSearchParams(location.search).get('card')||''; }catch(e){}
+// 買い得リストから「このシリーズのこのレアリティ」を見に来たとき
+let _urlSer='', _urlRar='';
+try{
+  const u=new URLSearchParams(location.search);
+  _urlSer=u.get('ser')||''; _urlRar=u.get('rar')||'';
+}catch(e){}
 // last:true ＝ 起動処理の最後の呼び出し。見つからなかったと言っていいのはこの時だけ。
 // 手元のデータを読み終える前に「無い」と言うと、ただの読み込み待ちで警告が出てしまう
 function _focusCardFromUrl(opt){
-  if(!_focusId) return false;
+  if(!_focusId) return _filterFromUrl(opt);
   const c=(db&&db.cards)?db.cards.find(x=>x.id===_focusId):null;
   if(!c){
     if(opt&&opt.last) alert('このカードは手元のデータに見つかりませんでした。\n' + _focusId);
@@ -5241,6 +5247,30 @@ function _focusCardFromUrl(opt){
   const badge=document.getElementById('import-badge');
   const txt=document.getElementById('import-badge-txt');
   if(txt) txt.textContent=`買い得リストから 「${c.name}」`;
+  if(badge) badge.style.display='';
+  renderAll();
+  scrollTo(0,0);
+  return true;
+}
+// 「シリーズ＋レアリティ」で絞った状態で開く。
+// 買い得リストのレアリティを押すと、ここに飛んでくる
+function _filterFromUrl(opt){
+  if(!_urlSer && !_urlRar) return false;
+  if(!db || !db.cards || !db.cards.length) return false;
+  clearFilters(true);
+  let n=0;
+  if(_urlSer && db.cards.some(c=>c.series===_urlSer)){ fs.series=new Set([_urlSer]); n++; }
+  if(_urlRar && db.cards.some(c=>c.rarityLabel===_urlRar)){ fs.rarities=new Set([_urlRar]); n++; }
+  if(!n){
+    if(opt && opt.last)
+      alert('この条件は手元のデータに見つかりませんでした。\n'
+            +[_urlSer,_urlRar].filter(Boolean).join(' / '));
+    return false;
+  }
+  const badge=document.getElementById('import-badge');
+  const txt=document.getElementById('import-badge-txt');
+  if(txt) txt.textContent='買い得リストから 「'
+      +[_urlSer,_urlRar].filter(Boolean).join(' / ')+'」';
   if(badge) badge.style.display='';
   renderAll();
   scrollTo(0,0);
