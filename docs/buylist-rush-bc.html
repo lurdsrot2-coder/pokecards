@@ -984,7 +984,13 @@ function memoDraw(){
           // 入れ終わったものは飛ばす。あとから1枚＋1したときに、そこだけ押せばよくなる
           const rest=g.items.filter(x=>!cartDone.has(x.pid)
                                        && x.row && (g.shop!=='TC' || x.row.vid));
-          if(!rest.length) return '<button data-open="'+gi+'" disabled>全部入れました</button>';
+          const all=g.items.filter(x=>x.row && (g.shop!=='TC' || x.row.vid));
+          // 全部入れ終わっていても行き止まりにしない。
+          // 「入れる→直す→店のカートを空にする→もう一度入れる」をやるため
+          if(!rest.length) return '<button data-open="'+gi+'" data-again="1" '
+            +'title="印を消してから、はじめからもう一度入れます">'
+            +(g.shop==='TC' ? 'もう一度入れる（'+all.length+'点）'
+                            : 'もう一度開く（'+all.length+'件）')+'</button>';
           return g.shop==='TC'
             ? '<button data-open="'+gi+'">カートへ（残り '+rest.length+'点）</button>'
             : '<button data-open="'+gi+'">店を開く（残り '+rest.length+'件）</button>';
@@ -1029,7 +1035,15 @@ document.getElementById('memo').onclick=e=>{
   if(cl){
     if(confirm('キャンプのカートを空にします。'
       +'このメモは消えません。よろしいですか？')){
-      tcClear(); cl.textContent='空にしました';
+      tcClear();
+      // カートが空になったので「入れた印」も外す。
+      // これが残っていると、入れ直すのに一度印を消す手間がいる
+      let n=0;
+      for(const g of (window.__memoGroups||[])) if(g.shop==='TC')
+        for(const x of g.items) if(cartDone.delete(x.pid)) n++;
+      saveCartDone();
+      memoDraw();
+      toast(n ? 'カートを空にして、入れた印も外しました（'+n+'点）' : 'カートを空にしました');
     }
     return;
   }
@@ -1100,6 +1114,11 @@ document.getElementById('memo').onclick=e=>{
   const op=e.target.closest('[data-open]');
   if(op){
     const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
+    // 「もう一度」は印を外してから、はじめからやり直す
+    if(op.dataset.again){
+      for(const x of g.items) cartDone.delete(x.pid);
+      saveCartDone();
+    }
     // まだ入れていないものだけ相手にする
     const rest=g.items.filter(x=>!cartDone.has(x.pid)
                                  && x.row && (g.shop!=='TC' || x.row.vid));
