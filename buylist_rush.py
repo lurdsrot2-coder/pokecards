@@ -83,12 +83,15 @@ def _trim_log():
 
 
 # ── 1. 収集 ───────────────────────────────────────────
-def fetch(url, tries=4, enc='utf-8'):
-    """enc: 文字コード。makeshopの店は EUC-JP で返すものがある"""
+def fetch(url, tries=4, enc='utf-8', cookie=''):
+    """enc: 文字コード。makeshopの店は EUC-JP で返すものがある
+    cookie: 門番ページを通すために付ける（ホビーステーション）"""
     for i in range(tries):
         try:
-            r = urllib.request.Request(url, headers={
-                'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.8'})
+            hd = {'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.8'}
+            if cookie:
+                hd['Cookie'] = cookie
+            r = urllib.request.Request(url, headers=hd)
             return urllib.request.urlopen(r, timeout=90).read().decode(enc, 'replace')
         except Exception as e:
             log('  retry %d: %s' % (i + 1, e))
@@ -1384,7 +1387,8 @@ def scrape():
                             ('OL', ol_scrape, 200), ('MY', my_scrape, 300),
                             ('SG', sg_scrape, 150),     # 駿河屋は在庫のある物が少ない
                             ('BE', be_scrape, 300),
-                            ('FA', fa_scrape, 300)):
+                            ('FA', fa_scrape, 300),
+                            ('HB', hb_scrape, 300)):
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
@@ -1578,7 +1582,13 @@ def match(items, cards):
         raw, num = it['name'], it['num']
         if num == '/':
             num = ''
-        base = norm(LV.sub('', PAREN.sub('', raw)))
+        # 一覧で名前を途中で切る店がある（「メガレックウザ…」）。
+        # そのときは前方一致で見ないと、番号が合っていても捨ててしまう
+        trunc = bool(re.search(r'(?:…|\.\.\.)\s*$', raw))
+        base = norm(LV.sub('', PAREN.sub('', re.sub(r'(?:…|\.\.\.)\s*$', '', raw))))
+        def _same(c):
+            n = norm((c.get('name') or '').split(':')[0])
+            return n.startswith(base) if trunc else n == base
         cand = []
         if not num:
             # 番号が書かれていない商品。収録記号（DP4 等）と名前が両方合う
@@ -1594,8 +1604,7 @@ def match(items, cards):
                 mo0 = (it.get('setcode') or '').strip().lower().split('-')[0]
                 h = by_left.get((mo0, num), [])
                 if len(h) > 1:
-                    h = [c for c in h
-                         if norm((c.get('name') or '').split(':')[0]) == base] or h
+                    h = [c for c in h if _same(c)] or h
                 if len(h) == 1:
                     num = (h[0].get('cardNumber') or '').strip().upper()
                 else:
@@ -1609,7 +1618,7 @@ def match(items, cards):
                        or (c.get('setId') or '').lower().startswith(mo + '-')]
                 if nar:
                     cand = nar
-            cand = [c for c in cand if norm((c.get('name') or '').split(':')[0]) == base]
+            cand = [c for c in cand if _same(c)]
             # 店が弾を名乗っているのに、DB側がまるで別の弾しか持っていないときは捨てる。
             # 番号と名前だけで当てると、同じ番号を使う別の弾のカードに化ける
             # （エンテイ PRE2 002/009 が「ポケパーク」の5万円に化けるたぐい）
@@ -1729,13 +1738,15 @@ OL_PROD = OL + '/pokemon/product/detail/'
 SG_PROD = SG + '/product/detail/'
 MY_PROD = MY + '/pokemon-trading-card-game/items/single-card/'
 # 店ごとの「商品URLの頭」。行からはこの部分を削って、ページ側で戻す
+HB = 'https://www.hobbystation-single.jp'
+HB_PROD = HB + '/pk/product/detail/'
 FA = 'https://pokemon-card-fullahead.com'
 FA_PROD = FA + '/shopdetail/'
 BE = 'https://www.bee-honpo.com'
 BE_PROD = BE + '/view/item/'
 
 PROD_BASE = [('tc', TC_PROD), ('tt', TT_PROD), ('ff', FF_PROD), ('bw', BW_PROD),
-             ('be', BE_PROD), ('fa', FA_PROD),
+             ('be', BE_PROD), ('fa', FA_PROD), ('hb', HB_PROD),
              ('yy', YY_PROD), ('tr', TR_PROD), ('pb', PB_PROD), ('ol', OL_PROD),
              ('my', MY_PROD), ('sg', SG_PROD)]
 
@@ -1773,6 +1784,91 @@ def watch_from(rowsout):
         if sh not in out or fs < out[sh]:
             out[sh] = fs
     return out
+
+
+# ── ホビーステーション ────────────────────────────
+# 門番ページのJavaScriptが入れているCookie。これが無いと一覧を返さない
+HB_COOKIE = 'eccube_bot_check=v3rified_hbst_key'
+HB_LI = re.compile(r'<li>(.*?)</li>', re.S)
+HB_CODE = re.compile(r'background-color: lightcyan;">\s*([^<\s]+)\s*</div>')
+HB_ID = re.compile(r'/pk/product/detail/(\d+)')
+HB_NAME = re.compile(r'list_product_Name_sp">.*?alt=""/>\s*([^<]+)</a>', re.S)
+HB_PRICE = re.compile(r'class="packageDetail">\s*([\d,]+)円')
+# 「PK-SM-P-397P」「PK-XY2-023SR」「PK-SM1M066SR」（区切りが無い型もある）。
+# 番号の後ろはレアリティの記号
+HB_PARSE = re.compile(r'^(.*?)-?(\d{3,4})([A-Za-z]*)$')
+# 「0TK-」「0TKB-」で始まるのはキズあり特価
+HB_DMG = re.compile(r'^0TKB?-')
+HB_SKIP = ('PSA', 'BGS', '未開封', 'BOX', 'サプライ')
+
+
+def hb_parse(seg):
+    mc = HB_CODE.search(seg)
+    mi = HB_ID.search(seg)
+    mn = HB_NAME.search(seg)
+    mp = HB_PRICE.search(seg)
+    if not (mc and mi and mn and mp):
+        return None
+    if 'icon_soldout' in seg:
+        return None
+    code = mc.group(1).strip()
+    name = re.sub(r'\s+', ' ', mn.group(1)).strip()
+    if any(w in name + code for w in HB_SKIP):
+        return None
+    body = re.sub(r'^PK-', '', code).rstrip('-')
+    cond = 'A'
+    if HB_DMG.match(body):              # キズあり特価は状態Bとして扱う
+        cond = 'B'
+        body = HB_DMG.sub('', body)
+    m = HB_PARSE.match(body)
+    if not m or not m.group(1):
+        return None                     # 番号が読めないもの（記念カード等）は当てられない
+    # 名前の頭にある【キズあり特価】などを落とす
+    name = re.sub(r'^(?:【[^】]*】|\s)+', '', name)
+    if not name:
+        return None
+    pid = mi.group(1)
+    return {'shop': 'HB', 'pid': 'hb' + pid, 'cond': cond,
+            'url': HB_PROD + pid,
+            'name': name, 'rarity': m.group(3).upper(),
+            'num': m.group(2), 'setcode': m.group(1).strip(),
+            'settitle': '', 'price': int(mp.group(1).replace(',', '')),
+            'stock': 0, 'soldout': False}
+
+
+def hb_scrape():
+    """ホビーステーション。在庫ありだけに絞って1ページ60件"""
+    items, miss = {}, 0
+    page = 1
+    while page <= 400:
+        h = fetch('%s/pk/product/list?pageno=%d&stock_available=1' % (HB, page),
+                  cookie=HB_COOKIE)
+        if not h:
+            miss += 1
+            if miss >= 3:
+                log('  ホビーステーションに繋がらないので今回は見送ります')
+                return []
+            page += 1
+            continue
+        miss = 0
+        n = 0
+        for seg in HB_LI.findall(h):
+            if '/pk/product/detail/' not in seg:
+                continue
+            n += 1
+            it = hb_parse(seg)
+            if it:
+                items.setdefault(it['pid'], it)
+        if not n:
+            break                       # 商品が無くなったら終わり
+        page += 1
+        if page % 40 == 0:
+            log('  ホビーステーション %dページ 累計%d件' % (page, len(items)))
+        if over_budget():
+            log('  ホビーステーション 時間切れでここまで（%dページ）' % page)
+            break
+    log('  ホビーステーション %d件' % len(items))
+    return list(items.values())
 
 
 # ── フルアヘッド ──────────────────────────────────
@@ -2125,7 +2221,7 @@ def build(rows, prev, ok_shops=None):
 
 # 扱っている店。どれかが0件のファイルは、作りかけか事故なので公開しない
 ALL_SHOPS = ('CR', 'TC', 'TT', 'FF', 'BW', 'YY', 'TR', 'PB', 'OL', 'MY', 'SG',
-             'BE', 'FA')
+             'BE', 'FA', 'HB')
 
 
 def missing_shops(data):
