@@ -17,7 +17,7 @@
            python buylist_rush.py --no-push      （pushせず手元だけ更新）
 """
 import urllib.request, urllib.parse, re, io, json, sys, os, time, subprocess
-import unicodedata, statistics, datetime, collections, base64
+import unicodedata, statistics, datetime, collections, base64, math
 import concurrent.futures as futures
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
@@ -1578,6 +1578,15 @@ def match(items, cards):
         if '/' in n and sid:
             by_left[(sid, n.split('/')[0])].append(c)
 
+    # 「スイクン」と「スイクンプレミアムファイル3」のように、同じ名前で始まる
+    # 別の旧裏カード。どちらか分からないときの判断に使う
+    old_longer = collections.defaultdict(list)
+    _old_names = list(by_old.keys())
+    for nm in _old_names:
+        for nm2 in _old_names:
+            if nm2 != nm and nm2.startswith(nm):
+                old_longer[nm] += by_old[nm2]
+
     out, stat = [], collections.Counter()
     for it in items:
         raw, num = it['name'], it['num']
@@ -1697,6 +1706,21 @@ def match(items, cards):
         # 値段が桁違いに見えるのはたいていこれなので、確実でない印を付けておく
         if old_hit:
             sure = 0
+            # 名前だけで当てているので、手元に無いカードを売られると
+            # 同じ名前の高いカードに化ける。値段で見て無理があるものは捨てる
+            ref = c.get('price') or 0
+            if ref:
+                ratio = it['price'] / ref
+                if ratio < OLD_FLOOR.get(it['cond'], 0.40):
+                    stat['旧裏で値段が合わない'] += 1
+                    continue
+                # 同じ名前で始まる別のカードのほうが値段的に近いなら、
+                # どちらか分からないので出さない
+                near = [x.get('price') or 0 for x in old_longer.get(base, [])]
+                if any(q and abs(math.log(it['price'] / q)) < abs(math.log(ratio))
+                       for q in near):
+                    stat['旧裏で別の版かもしれない'] += 1
+                    continue
         out.append({'shop': it['shop'], 'pid': it['pid'], 'url': it['url'], 'sure': sure,
                     'vid': it.get('vid', ''), 'mall': it.get('mall', ''),
                     'cond': it['cond'], 'crPrice': it['price'],
@@ -1773,6 +1797,9 @@ def shrink(row):
     return row
 KEEP_SOLD_DAYS = 14        # 売れたものを何日ぶん残して見せるか
 MAX_RATIO = 1.3            # 相場よりこれ以上高いものは買い得リストに載せない
+# 旧裏を名前だけで当てたとき、状態に対してこれより安いものは別カードとみなす。
+# 傷んでいても相場のこれ以下にはならない、という線
+OLD_FLOOR = {'A': 0.40, 'B': 0.30, 'C': 0.20, 'D': 0.15}
 
 
 def watch_from(rowsout):
@@ -2246,6 +2273,8 @@ def build(rows, prev, ok_shops=None):
     today_s = datetime.date.today().isoformat()
 
     live_pids = {r['pid'] for r in live}
+    # 新着の印を残してよい期限（これより前に見つけたものは外す）
+    new_limit = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
     # 取得できなかった店のぶんは、前回の行をそのまま残す。
     # ここで落とすと「まとめて売り切れた」ように見えてしまう
     carried = []
@@ -2254,7 +2283,11 @@ def build(rows, prev, ok_shops=None):
         if shop not in ok_shops:
             row = [pget(a, c, 0 if c in ('price', 'cr', 'stock', 'owned', 'cheap', 'new', 'sold')
                         else '') for c in COLS]
-            row[COLS.index('new')] = 0
+            # 取り直していない店の新着印は、消さずにそのまま残す。
+            # ここで0にすると、1店だけ取り直したときに他店の新着が全部消える。
+            # ただし古い印が居座らないよう、見つけてから2日以内のものだけ
+            if row[COLS.index('new')] and pget(a, 'fst', '') < new_limit:
+                row[COLS.index('new')] = 0
             row[COLS.index('shop')] = shop
             carried.append(row)
             live_pids.add(pid)
