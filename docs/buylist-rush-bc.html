@@ -248,7 +248,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
- <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）">＋1したもの</button>
+ <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
  <button class="tg p1all" id="f-p1all" title="いま出ているものを、まとめて＋1します">まとめて＋1</button>
  <button class="tg" id="f-new">新着</button>
  <button class="tg sold" id="f-sold">売れた</button>
@@ -550,7 +550,7 @@ function apply(){
     && (!st.best || isBest(r))
     && (!st.few || (r.stock>0 && r.stock<=st.few))
     && (!st.fav || r.fav)
-    && (!st.p1 || doneP1.has(r.pid))
+    && (!st.p1 || (st.p1 === 1 ? doneP1.has(r.pid) : !doneP1.has(r.pid)))
     && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
     && (!st.cond  || r.cond===st.cond)
     && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
@@ -811,6 +811,9 @@ function resetAll(){
   const fb=document.getElementById('f-best');
   fb.textContent='最安値'; fb.title='同じカードで一番安い出品だけ出します';
   document.getElementById('f-few').textContent='残り2枚以下';
+  const fp=document.getElementById('f-p1');
+  fp.textContent='＋1したもの';
+  fp.title='＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります';
   document.getElementById('f-sort').value=st.sort;
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
@@ -1254,7 +1257,13 @@ new IntersectionObserver(es=>{ if(es[0].isIntersecting) draw(); },{rootMargin:'8
 document.getElementById('reload').onclick=()=>load(true);
 document.getElementById('f-cheap').onclick=function(){st.cheap=st.cheap?0:1;this.classList.toggle('on',!!st.cheap);apply();};
 document.getElementById('f-p1').onclick=function(){
-  st.p1=st.p1?0:1; this.classList.toggle('on',!!st.p1); apply();};
+  // 押すたび ＋1したもの → ＋1してない → 解除
+  st.p1=(st.p1+1)%3;
+  this.classList.toggle('on',!!st.p1);
+  this.textContent = st.p1===2 ? '＋1してない' : '＋1したもの';
+  this.title = st.p1===2 ? 'まだ＋1していないものだけ出します（買い残しを探すとき）'
+                         : '＋1したものだけ出します（買うものの調整用）';
+  apply();};
 // いま出ているものをまとめて＋1する。
 // 絞り込んでから1枚ずつ押すのが大変なので、1回で済ませる
 document.getElementById('f-p1all').onclick=function(){
