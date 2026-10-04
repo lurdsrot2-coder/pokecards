@@ -6018,6 +6018,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   setTimeout(()=>{try{dailyAutoRefresh();}catch(e){}},1800);
   setTimeout(()=>{try{_applyIllustrators();}catch(e){}},2500);
   setTimeout(()=>{try{_applyOwnedAdjust();}catch(e){}},3500);
+  setTimeout(()=>{try{_applyCostBackfill();}catch(e){}},4500);
 });
 </script>
 <script>
@@ -6104,6 +6105,55 @@ async function _applyOwnedAdjust(){
   try{ localStorage.setItem(ADJ_KEY, ver); }catch(e){}
   alert('所持枚数を合わせました（増 '+up.length+'件 / 減 '+dn.length+'件）。'+NL
        +'クラウドへの送信は自動で行われます。');
+}
+
+// ── 過去の購入金額をまとめて入れる ────────────────────
+// 買い得リストの履歴から「＋1した時点でいくらで出ていたか」を割り出したもの。
+// 実際の注文と突き合わせた範囲では支払額と一致したが、推定には違いない。
+// すでに購入記録があるカードには触らない（二重に積まないため）
+const COST_URL='docs/fix-cost.json', COST_KEY='pokecards_fix_cost';
+async function _applyCostBackfill(){
+  if(!db || !db.cards || !db.cards.length) return;
+  let j;
+  try{
+    const r=await fetch(COST_URL+'?t='+Date.now());
+    if(!r.ok) return;
+    j=await r.json();
+  }catch(e){ return; }
+  const ver=j.updatedAt||'';
+  if(!ver || localStorage.getItem(COST_KEY)===ver) return;
+  const idx=new Map(db.cards.map(c=>[c.id,c]));
+  const todo=[];
+  for(const id in (j.map||{})){
+    const c=idx.get(id);
+    if(!c) continue;
+    if(c.buyLots && c.buyLots.length) continue;   // すでに記録があるものは触らない
+    const o=j.map[id];
+    if(!o || !o.p) continue;
+    todo.push({c:c, o:o});
+  }
+  if(!todo.length){ try{ localStorage.setItem(COST_KEY, ver); }catch(e){} return; }
+  const sum=todo.reduce((a,t)=>a+t.o.p*(t.o.q||1),0);
+  if(!confirm('買い得リストの履歴から、過去の購入金額を割り出しました。\n\n'
+      +todo.length+'種・合計 '+fmtYen(sum)+' を購入記録に入れます。\n'
+      +'＋1した時点でそのカードが出ていた最安値なので「推定」です。\n'
+      +'すでに購入記録があるカードには触りません。\n\n入れてよろしいですか？')){
+    try{ localStorage.setItem(COST_KEY, ver); }catch(e){}
+    return;
+  }
+  const now=new Date().toISOString();
+  for(const t of todo){
+    t.c.buyLots=[{d:t.o.d||now.slice(0,10), q:t.o.q||1, p:t.o.p,
+                  memo:'推定'+(t.o.shop?'／'+(BUYQ_SHOP[t.o.shop]||t.o.shop):'')}];
+    t.c.editedAt=now;
+    _pendingEdits[t.c.id]=t.c; _unsentIds.add(t.c.id);
+  }
+  _idbPutPending(); _updateUnsentBadge();
+  saveDbDebounced();
+  renderAll();
+  try{ localStorage.setItem(COST_KEY, ver); }catch(e){}
+  alert(todo.length+'種に購入記録を入れました（合計 '+fmtYen(sum)+'）。\n'
+       +'「推定」と付いているので、違うものは詳細画面の✕で消せます。');
 }
 
 // ── PWA Manifest（動的生成） ──────────────────────────
