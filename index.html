@@ -5206,7 +5206,7 @@ function _showBuyQueue(){
   const apply=(list)=>{
     const now=new Date().toISOString();
     const day=now.slice(0,10);
-    let n=0, yen=0;
+    let n=0, yen=0, lots=0;
     for(const x of list){
       const i=db.cards.findIndex(c=>c.id===x.id);
       if(i<0) continue;
@@ -5219,8 +5219,8 @@ function _showBuyQueue(){
       const p=+x.price||0;
       if(p>0){
         c.buyLots=c.buyLots||[];
-        c.buyLots.push({d:day, q:1, p:p, memo:'買い得リスト'+(x.shop?'／'+(BUYQ_SHOP[x.shop]||x.shop):'')});
-        yen+=p;
+        c.buyLots.push({d:day, q:1, p:p, memo:(BUYQ_SHOP[x.shop]||x.shop||'買い得リスト')});
+        yen+=p; lots++;
       }
       _dropFav(c);             // 買えたので★は外す
       _markEdited(c);          // 通常の＋1と同じ扱い（差分に載せて同期する）
@@ -5228,7 +5228,7 @@ function _showBuyQueue(){
     }
     saveDbDebounced();
     renderAllKeepView();
-    return {n:n, yen:yen};
+    return {n:n, yen:yen, lots:lots};
   };
   // 控えから、反映したぶんだけ消す
   const drop=(list)=>{
@@ -5247,22 +5247,27 @@ function _showBuyQueue(){
       const list=byShop.get(b.dataset.shop)||[];
       const nm=BUYQ_SHOP[b.dataset.shop]||b.dataset.shop||'店不明';
       const sum=list.reduce((a,x)=>a+(+x.price||0),0);
-      if(!confirm(nm+' の '+list.length+'件に＋1します（購入金額 '+fmtYen(sum)+' も'
-                  +'購入記録に残します）。ほかの店のぶんは残します。よろしいですか？')) return;
+      if(!confirm(nm+' の '+list.length+'件に＋1します。\n'
+                  +'カード1枚ずつ、それぞれの値段で購入ロットに記録します'
+                  +'（合計 '+fmtYen(sum)+'）。\n'
+                  +'ほかの店のぶんは残します。よろしいですか？')) return;
       const r=apply(list);
       const left=drop(list);
       el.remove();
       if(left) _showBuyQueue();      // 残りをもう一度出す
-      alert(nm+' の '+r.n+'件に＋1し、'+fmtYen(r.yen)+' を購入記録に残しました。'
-            +(left?'残り '+left+'件あります。':''));
+      alert(nm+' の '+r.n+'件に＋1しました。\n'
+            +'購入ロットを '+r.lots+'枚ぶん（合計 '+fmtYen(r.yen)+'）記録しました。'
+            +(left?'\n残り '+left+'件あります。':''));
       return;
     }
     if(b.dataset.a==='ok'){
       const sum=known.reduce((a,x)=>a+(+x.price||0),0);
-      if(!confirm(known.length+'件に＋1します（購入金額 '+fmtYen(sum)+' も'
-                  +'購入記録に残します）。よろしいですか？')) return;
+      if(!confirm(known.length+'件に＋1します。\n'
+                  +'カード1枚ずつ、それぞれの値段で購入ロットに記録します'
+                  +'（合計 '+fmtYen(sum)+'）。よろしいですか？')) return;
       const r=apply(known);
-      alert(r.n+'件に＋1し、'+fmtYen(r.yen)+' を購入記録に残しました。');
+      alert(r.n+'件に＋1しました。\n'
+            +'購入ロットを '+r.lots+'枚ぶん（合計 '+fmtYen(r.yen)+'）記録しました。');
     }
     try{ localStorage.removeItem(BUYQ_KEY); }catch(_){}
     el.remove();
@@ -5510,7 +5515,7 @@ function renderAssetSection(id){
     ? `<button class="bsec" style="padding:2px 8px;font-size:10px" onclick="refreshOne('${id}')">🔄 時価取得</button>`
     : `<span style="color:var(--sub);font-size:9px">※自動取得不可</span>`;
   const rowHtml=(arr,kind)=>(arr.length?arr.map((l,i)=>`<div style="display:flex;gap:4px;align-items:center;font-size:10px;margin:2px 0">
-     <span style="flex:1">${esc(l.d||'')}</span><span style="width:42px;text-align:right">${_num(l.q)}枚</span>
+     <span style="flex:1">${esc(l.d||'')}${l.memo?`<span style="color:var(--sub);font-size:9px"> ${esc(l.memo)}</span>`:''}</span><span style="width:42px;text-align:right">${_num(l.q)}枚</span>
      <span style="width:70px;text-align:right">${fmtYen(l.p)}</span>
      <button onclick="del${kind}('${id}',${i})" style="background:none;border:none;color:#ff5d6c;cursor:pointer;font-size:11px">✕</button>
    </div>`).join(''):`<div style="color:var(--sub);font-size:10px">記録なし</div>`);
