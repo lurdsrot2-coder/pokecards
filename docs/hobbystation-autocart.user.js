@@ -170,9 +170,13 @@
     if(!c) return '画面が出ず／在庫なし';
     await sleep(600);
     const plus=[...c.querySelectorAll('button.cart-button')].find(b=>b.innerText.trim()==='add');
-    const put=c.querySelector('button.add-to-cart-button-temp');
-    if(!plus || !put || plus.disabled) return '在庫なし';
-    plus.click(); await sleep(400);
+    if(!plus || plus.disabled) return '在庫なし';
+    plus.click();
+    // 数量を変えるとボタンが描き換わるので、押したあとで探し直す
+    const put=await waitFor(()=>[...c.querySelectorAll('button')].find(b=>
+      /カートに(追加|入れる)/.test(b.innerText) && !b.disabled), 5000);
+    if(!put) return '追加ボタンなし';
+    await sleep(300);
     put.click(); await sleep(1500);
     let items=[]; try{ items=JSON.parse(sessionStorage.getItem('cartItems')||'[]'); }catch(_){}
     return items.some(x=>String(x.id)===id) ? true : 'カートに入らず';
