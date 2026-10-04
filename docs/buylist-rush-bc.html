@@ -126,6 +126,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .ph a{display:block}
 .ph img{width:100%;aspect-ratio:63/88;object-fit:contain;display:block;border-radius:3px}
 .ph .ni{width:100%;aspect-ratio:63/88;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:0 6px;line-height:1.4;overflow:hidden;
  color:#2c2c44;font-size:10px}
 .bdg{position:absolute;top:8px;display:flex;gap:3px;align-items:center}
 .bdg.l{left:8px}.bdg.r{right:8px}
@@ -476,7 +477,11 @@ function tile(r){
     // 画像はアプリ側（そのカードだけを出した状態）へ。店へは下のボタンから
     +'<div class="ph"><a href="'+(r.id?'../index.html?card='+encodeURIComponent(r.id):cru)
       +'" target="_blank" rel="noopener" title="'+(r.id?'カードマネージャーでこのカードを見る':'商品ページ')+'">'
-    +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="">':'<div class="ni">画像なし</div>')
+    // 読めなかったらカード名を出す。真っ黒のままだと何のカードか分からない
+    +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="" '
+            +'onerror="this.parentNode.innerHTML=\'<div class=&quot;ni&quot;>'
+            +esc(r.name).replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'</div>\'">'
+          :'<div class="ni">画像なし</div>')
     +'</a>'
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
       +'<span class="b '+r.cond+'" title="店の表記: 状態'+esc(r.cnd)+'">'+esc(r.cnd)+'</span>'

@@ -5205,7 +5205,8 @@ function _showBuyQueue(){
   // 指定したぶんだけ＋1して、控えから外す
   const apply=(list)=>{
     const now=new Date().toISOString();
-    let n=0;
+    const day=now.slice(0,10);
+    let n=0, yen=0;
     for(const x of list){
       const i=db.cards.findIndex(c=>c.id===x.id);
       if(i<0) continue;
@@ -5213,13 +5214,21 @@ function _showBuyQueue(){
       c.owned=(c.owned||0)+1;
       c.ownedAt=now;
       c.editedAt=now;
+      // 買った値段を購入記録に残す。原価が入っていないのが最大の欠落なので、
+      // ＋1と同時に積んでおく（メモには＋1した時点の店の値段が入っている）
+      const p=+x.price||0;
+      if(p>0){
+        c.buyLots=c.buyLots||[];
+        c.buyLots.push({d:day, q:1, p:p, memo:'買い得リスト'+(x.shop?'／'+(BUYQ_SHOP[x.shop]||x.shop):'')});
+        yen+=p;
+      }
       _dropFav(c);             // 買えたので★は外す
       _markEdited(c);          // 通常の＋1と同じ扱い（差分に載せて同期する）
       n++;
     }
     saveDbDebounced();
     renderAllKeepView();
-    return n;
+    return {n:n, yen:yen};
   };
   // 控えから、反映したぶんだけ消す
   const drop=(list)=>{
@@ -5237,18 +5246,23 @@ function _showBuyQueue(){
     if(b.dataset.shop!==undefined){
       const list=byShop.get(b.dataset.shop)||[];
       const nm=BUYQ_SHOP[b.dataset.shop]||b.dataset.shop||'店不明';
-      if(!confirm(nm+' の '+list.length+'件に＋1します。'
-                  +'ほかの店のぶんは残します。よろしいですか？')) return;
-      const n=apply(list);
+      const sum=list.reduce((a,x)=>a+(+x.price||0),0);
+      if(!confirm(nm+' の '+list.length+'件に＋1します（購入金額 '+fmtYen(sum)+' も'
+                  +'購入記録に残します）。ほかの店のぶんは残します。よろしいですか？')) return;
+      const r=apply(list);
       const left=drop(list);
       el.remove();
       if(left) _showBuyQueue();      // 残りをもう一度出す
-      alert(nm+' の '+n+'件に＋1しました。'+(left?'残り '+left+'件あります。':''));
+      alert(nm+' の '+r.n+'件に＋1し、'+fmtYen(r.yen)+' を購入記録に残しました。'
+            +(left?'残り '+left+'件あります。':''));
       return;
     }
     if(b.dataset.a==='ok'){
-      const n=apply(known);
-      alert(n+'件に＋1しました。');
+      const sum=known.reduce((a,x)=>a+(+x.price||0),0);
+      if(!confirm(known.length+'件に＋1します（購入金額 '+fmtYen(sum)+' も'
+                  +'購入記録に残します）。よろしいですか？')) return;
+      const r=apply(known);
+      alert(r.n+'件に＋1し、'+fmtYen(r.yen)+' を購入記録に残しました。');
     }
     try{ localStorage.removeItem(BUYQ_KEY); }catch(_){}
     el.remove();
