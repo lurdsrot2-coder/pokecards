@@ -177,9 +177,11 @@
       /カートに(追加|入れる)/.test(b.innerText) && !b.disabled), 5000);
     if(!put) return '追加ボタンなし';
     await sleep(300);
-    put.click(); await sleep(1500);
-    let items=[]; try{ items=JSON.parse(sessionStorage.getItem('cartItems')||'[]'); }catch(_){}
-    return items.some(x=>String(x.id)===id) ? true : 'カートに入らず';
+    put.click();
+    // 反映が遅いことがあるので、カートに載るのを最大6秒待つ
+    const inCart=()=>{ try{ return JSON.parse(sessionStorage.getItem('cartItems')||'[]')
+                                        .some(x=>String(x.id)===id); }catch(_){ return false; } };
+    return (await waitFor(inCart, 6000)) ? true : 'カートに入らず';
   }
   // 押すとカート画面に移動する店。移動できたら、次の画面でこの続きをやる
   async function nav(){
