@@ -1,9 +1,17 @@
 // ==UserScript==
-// @name         ポケカ買い得リスト：ホビステまとめてカート
+// @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      1.0
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、ホビステの商品を1件ずつ自動でカートに入れる
+// @version      2.0
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
+// @match        https://pokemon-card-fullahead.com/shopdetail/*
+// @match        https://pokemon-card-fullahead.com/shop/basket.html*
+// @match        https://www.c-labo-online.jp/product/*
+// @match        https://www.c-labo-online.jp/cart*
+// @match        https://www.toretoku.jp/item/details/*
+// @match        https://www.bigweb.co.jp/ja/products/pokemon/cardViewer/*
+// @match        https://pokemon.fukufukutoreka.com/products/detail/*
+// @match        https://myca.dmm.com/pokemon-trading-card-game/items/single-card/*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
@@ -12,92 +20,188 @@
 (function(){
   'use strict';
   const KEY='pcAutoCart';
-  const BASE='https://www.hobbystation-single.jp/pk/product/detail/';
-  const here=(location.pathname.match(/detail\/(\d+)/)||[])[1];
+  const SHOPS={'www.hobbystation-single.jp':'HB','pokemon-card-fullahead.com':'FA',
+    'www.c-labo-online.jp':'CL','www.toretoku.jp':'TT','www.bigweb.co.jp':'BW',
+    'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY'};
+  const shop=SHOPS[location.hostname];
+  if(!shop) return;
+  // フルアヘッドとカードラボは、押すとカート画面に移動する店
+  const NAV = shop==='FA' || shop==='CL';
+
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const norm=u=>String(u).replace(/[?#].*$/,'').replace(/\/+$/,'');
   const load=()=>{ try{ return JSON.parse(sessionStorage.getItem(KEY)||'null'); }catch(_){ return null; } };
   const save=s=>sessionStorage.setItem(KEY, JSON.stringify(s));
+  async function waitFor(fn, ms){
+    const t0=Date.now();
+    for(;;){
+      let v=null; try{ v=fn(); }catch(_){}
+      if(v) return v;
+      if(Date.now()-t0>ms) return null;
+      await sleep(250);
+    }
+  }
+  const waitText=(re,ms)=>waitFor(()=>re.test(document.body.innerText),ms)
+                          .then(v=>v?true:'カートに入らず');
 
-  // 買い得リストからは #pcq=今のID,次のID,... で来る。
-  // 2件目からはこのタブの sessionStorage だけで続ける
-  let st;
-  const m=location.hash.match(/pcq=([\d,]+)/);
+  // 買い得リストからは #pcq=<JSON> で来る。2件目からはこのタブの sessionStorage で続ける
+  let st=null;
+  const m=location.hash.match(/pcq=([^&]+)/);
   if(m){
-    const q=m[1].split(',').filter(Boolean);
-    st={q, total:q.length, ok:0, ng:[]};
-    save(st);
-    history.replaceState(null,'',location.pathname+location.search);
+    try{
+      const j=JSON.parse(decodeURIComponent(m[1]));
+      if(j && Array.isArray(j.q) && j.q.length)
+        st={shop:j.shop||shop, q:j.q, total:j.q.length, ok:0, ng:[], wait:0};
+    }catch(_){}
+    if(st){ save(st); history.replaceState(null,'',location.pathname+location.search); }
   }else{
     st=load();
   }
-  // 普通に商品ページを見ているときは何もしない
-  if(!st || !st.q.length || st.q[0]!==here) return;
+  // 普通に見ているときは何もしない（別の店のキューが残っていても動かさない）
+  if(!st || !st.q.length || st.shop!==shop) return;
 
+  const cur=st.q[0];
+  const onProduct = norm(location.pathname)===norm(cur.u);
+  if(!onProduct && !(NAV && st.wait)) return;
+
+  // ---- 画面上部の帯 ----
   const bar=document.createElement('div');
-  bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;padding:10px 14px;'
+  bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 14px;'
     +'background:#1b1f3b;color:#fff;font:bold 15px sans-serif;display:flex;gap:12px;align-items:center';
   const msg=document.createElement('span');
   const stop=document.createElement('button');
   stop.textContent='止める';
   stop.style.cssText='margin-left:auto;padding:4px 12px;font:bold 13px sans-serif;cursor:pointer';
-  stop.onclick=()=>{ sessionStorage.removeItem(KEY); finish(true); };
   bar.append(msg, stop);
   document.body.appendChild(bar);
-  const no=st.total-st.q.length+1;
-  msg.textContent='自動でカートに入れています '+no+' / '+st.total
-    +'（入れた '+st.ok+'・飛ばした '+st.ng.length+'）';
-
-  const name=(document.title.split('/').pop()||'').trim();
-  const visible=()=>{ const md=document.querySelector('.ec-modal');
-                      return md && getComputedStyle(md).display!=='none'; };
-
-  function next(res){
-    if(stopped) return;
-    if(res===true) st.ok++; else st.ng.push({id:here, name, why:res});
-    st.q.shift();
-    if(!st.q.length){ sessionStorage.removeItem(KEY); finish(false); return; }
-    save(st);
-    // 店に負担をかけないよう少し間をあける
-    setTimeout(()=>{ location.href=BASE+st.q[0]; }, 800);
-  }
-
   let stopped=false;
+  stop.onclick=()=>{ stopped=true; sessionStorage.removeItem(KEY); finish(true); };
+  const show=()=>{
+    const no=Math.min(st.total, st.total-st.q.length+1);
+    msg.textContent='自動でカートに入れています '+no+' / '+st.total
+      +'（入れた '+st.ok+'・飛ばした '+st.ng.length+'）';
+  };
+  show();
+
   function finish(byUser){
-    stopped=true;
     stop.remove();
     msg.innerHTML='';
     msg.append((byUser?'止めました。':'終わりました。')
       +'入れた '+st.ok+'件 ／ 飛ばした '+st.ng.length+'件 ');
-    const a=document.createElement('a');
-    a.href='/cart'; a.textContent='カートを見る';
-    a.style.cssText='color:#7df;margin-left:8px';
-    msg.append(a);
+    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart'}[shop];
+    if(cartUrl){
+      const a=document.createElement('a');
+      a.href=cartUrl; a.textContent='カートを見る';
+      a.style.cssText='color:#7df;margin-left:8px';
+      msg.append(a);
+    }else{
+      // BIGWEBのカートはこのタブの中にある。閉じずに、右上のカートから買う
+      msg.append('（カートはこのタブの右上。このタブを閉じないでください）');
+    }
     if(st.ng.length){
       const d=document.createElement('div');
-      d.style.cssText='position:fixed;left:0;right:0;top:44px;z-index:99999;padding:8px 14px;'
+      d.style.cssText='position:fixed;left:0;right:0;top:44px;z-index:2147483647;padding:8px 14px;'
         +'background:#3b1b24;color:#fff;font:13px sans-serif;max-height:40vh;overflow:auto';
       d.innerHTML='飛ばしたもの（買い得リストの「入れた印」を外しました）<br>'
-        + st.ng.map(x=>'・'+x.name.replace(/</g,'&lt;')+'（'+x.why+'）').join('<br>');
+        + st.ng.map(x=>'・'+String(x.name).replace(/</g,'&lt;')+'（'+String(x.why).replace(/</g,'&lt;')+'）').join('<br>');
       document.body.appendChild(d);
     }
-    // 買い得リストに、入らなかったものを知らせて印を外してもらう
-    try{ if(window.opener) window.opener.postMessage({pcAutoCart:{ng:st.ng.map(x=>x.id)}}, '*'); }catch(_){}
+    // 入らなかったものを買い得リストに知らせて、印を外してもらう
+    try{ if(window.opener) window.opener.postMessage({pcAutoCart:{shop, ng:st.ng.map(x=>x.u)}}, '*'); }catch(_){}
   }
 
-  const btn=document.querySelector('button.add-cart');
-  if(!btn || btn.disabled || btn.offsetParent===null){ next('在庫なし'); return; }
-  const qty=document.querySelector('input[name=quantity]');
-  if(qty) qty.value='1';
-  btn.click();
-  // 追加できたかはモーダルの見出しで判断する（失敗すると理由に置き換わる）
-  const t0=Date.now();
-  const iv=setInterval(()=>{
-    if(visible()){
-      clearInterval(iv);
-      const h=(document.getElementById('ec-modal-header')||{}).textContent||'';
-      next(/カートに追加しました/.test(h) ? true : (h.trim().slice(0,40)||'追加できず'));
-    }else if(Date.now()-t0>15000){
-      clearInterval(iv);
-      next('応答なし');
-    }
-  }, 250);
+  function advance(){
+    if(stopped) return;
+    if(!st.q.length){ sessionStorage.removeItem(KEY); finish(false); return; }
+    save(st); show();
+    // 店に負担をかけないよう少し間をあける
+    setTimeout(()=>{ if(!stopped) location.href=location.origin+st.q[0].u; }, 800);
+  }
+  function next(res, name){
+    if(stopped) return;
+    if(res===true) st.ok++; else st.ng.push({u:cur.u, name:name, why:res});
+    st.q.shift(); st.wait=0;
+    advance();
+  }
+
+  // ---- 店ごとの「カートに入れる」----
+  async function hb(){
+    const b=document.querySelector('button.add-cart');
+    if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
+    const q=document.querySelector('input[name=quantity]'); if(q) q.value='1';
+    b.click();
+    return waitText(/カートに追加しました/,15000);
+  }
+  async function ff(){
+    const b=document.querySelector('button.add-cart');
+    if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
+    b.click();
+    return waitText(/カートに追加しました/,15000);
+  }
+  async function my(){
+    // 店を取り違えないよう、ボタンの近くに店名が出ているものだけ押す
+    const b=await waitFor(()=>[...document.querySelectorAll('button')].find(e=>{
+      if(!/カートに追加/.test(e.innerText) || e.offsetParent===null || e.disabled) return false;
+      if(!cur.m) return true;
+      let p=e; for(let i=0;i<8&&p;i++,p=p.parentElement) if(p.innerText && p.innerText.includes(cur.m)) return true;
+      return false;
+    }), 10000);
+    if(!b) return '在庫なし／店違い';
+    b.click();
+    return waitText(/カートに追加しました/,15000);
+  }
+  async function tt(){
+    // 状態（A／B）ごとに枚数を選ぶ。リストの状態と同じ欄で1枚にする
+    const a=await waitFor(()=>[...document.querySelectorAll('.priceArea')].find(x=>
+      x.querySelector('select') && x.innerText.split('\n')[0].trim()===cur.c), 8000);
+    if(!a) return '状態'+cur.c+'の在庫なし';
+    const sel=a.querySelector('select');
+    if(sel.options.length<2) return '在庫なし';
+    sel.value='1'; sel.dispatchEvent(new Event('change',{bubbles:true}));
+    const b=document.querySelector('.js_inCartBtn'); if(!b) return 'ボタンなし';
+    b.click();
+    return waitText(/カートに追加しました/,15000);
+  }
+  async function bw(){
+    // BIGWEBのカートはこのタブの sessionStorage にある。必ず同じタブで続けること
+    const id=(location.pathname.match(/cardViewer\/(\d+)/)||[])[1];
+    const c=await waitFor(()=>{ const x=document.querySelector('.one-image-item-container');
+      return x && x.querySelector('button.cart-button') && x; }, 15000);
+    if(!c) return '画面が出ず／在庫なし';
+    await sleep(600);
+    const plus=[...c.querySelectorAll('button.cart-button')].find(b=>b.innerText.trim()==='add');
+    const put=c.querySelector('button.add-to-cart-button-temp');
+    if(!plus || !put || plus.disabled) return '在庫なし';
+    plus.click(); await sleep(400);
+    put.click(); await sleep(1500);
+    let items=[]; try{ items=JSON.parse(sessionStorage.getItem('cartItems')||'[]'); }catch(_){}
+    return items.some(x=>String(x.id)===id) ? true : 'カートに入らず';
+  }
+  // 押すとカート画面に移動する店。移動できたら、次の画面でこの続きをやる
+  async function nav(){
+    const b = shop==='FA' ? document.querySelector('a.add_cart')
+                          : document.getElementById('submit_cart_input_btn');
+    if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
+    st.wait=1; save(st);
+    b.click();
+    await sleep(15000);               // ここまで残っていたら移動できていない
+    return 'カートに入らず';
+  }
+
+  const name=(document.title.split('/').pop()||document.title||'').trim().slice(0,40);
+
+  // カート画面に着いた（直前の1件が入った）
+  if(!onProduct){
+    st.ok++; st.q.shift(); st.wait=0;
+    advance();
+    return;
+  }
+  // 商品ページ
+  if(NAV) st.wait=0;
+  const run={HB:hb,FA:nav,CL:nav,TT:tt,BW:bw,FF:ff,MY:my}[shop];
+  (async()=>{
+    let res;
+    try{ res=await run(); }catch(e){ res='エラー '+(e&&e.message||e); }
+    next(res, name);
+  })();
 })();
