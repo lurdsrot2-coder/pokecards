@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.1
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ）
+// @version      2.2
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
 // @match        https://pokemon-card-fullahead.com/shop/basket.html*
@@ -13,6 +13,7 @@
 // @match        https://pokemon.fukufukutoreka.com/products/detail/*
 // @match        https://myca.dmm.com/pokemon-trading-card-game/items/single-card/*
 // @match        https://www.torecolo.jp/shop/g/*
+// @match        https://olta-tcg.com/pokemon/product/detail/*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
@@ -23,7 +24,7 @@
   const KEY='pcAutoCart';
   const SHOPS={'www.hobbystation-single.jp':'HB','pokemon-card-fullahead.com':'FA',
     'www.c-labo-online.jp':'CL','www.toretoku.jp':'TT','www.bigweb.co.jp':'BW',
-    'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY','www.torecolo.jp':'TR'};
+    'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY','www.torecolo.jp':'TR','olta-tcg.com':'OL'};
   const shop=SHOPS[location.hostname];
   if(!shop) return;
   // フルアヘッドとカードラボは、押すとカート画面に移動する店
@@ -89,7 +90,7 @@
     msg.innerHTML='';
     msg.append((byUser?'止めました。':'終わりました。')
       +'入れた '+st.ok+'件 ／ 飛ばした '+st.ng.length+'件 ');
-    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx'}[shop];
+    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx',OL:'/cart'}[shop];
     if(cartUrl){
       const a=document.createElement('a');
       a.href=cartUrl; a.textContent='カートを見る';
@@ -144,6 +145,23 @@
     if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
     b.click();
     return waitText(/カゴに入れました/,15000);
+  }
+  async function ol(){
+    // 状態ごとに行が分かれている。リストの状態と価格が同じ行だけ押す
+    // （状態違いの行や、価格が変わった行を取り違えないため）
+    const btns=()=>[...document.querySelectorAll('button')].filter(b=>b.innerText.trim()==='カートに追加');
+    if(!await waitFor(()=>btns().length, 10000)) return '在庫なし';
+    const rowOf=b=>{ let p=b;
+      while(p.parentElement && btns().filter(x=>p.parentElement.contains(x)).length<2) p=p.parentElement;
+      return p; };
+    const want='¥'+Number(cur.p).toLocaleString('en-US');
+    const rows=btns().map(b=>({b, t:rowOf(b).innerText.trim()}))
+                     .filter(r=>r.t.includes(want) && (!cur.c || r.t.startsWith(cur.c)));
+    if(!rows.length) return '価格が変わっています（'+want+'の行なし）';
+    const hit=rows.find(r=>!r.b.disabled);
+    if(!hit) return '在庫なし';
+    hit.b.click();
+    return waitText(/カートに追加しました/,15000);
   }
   async function my(){
     // 店を取り違えないよう、ボタンの近くに店名が出ているものだけ押す
@@ -211,7 +229,7 @@
   }
   // 商品ページ
   if(NAV) st.wait=0;
-  const run={HB:hb,FA:nav,CL:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr}[shop];
+  const run={HB:hb,FA:nav,CL:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr,OL:ol}[shop];
   (async()=>{
     let res;
     try{ res=await run(); }catch(e){ res='エラー '+(e&&e.message||e); }
