@@ -5177,7 +5177,8 @@ function _readBuyQueue(){
 }
 // 買い得リストの店の名前。控えには記号(TC/CR…)しか入っていない
 const BUYQ_SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
-  YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',SG:'駿河屋'};
+  YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',SG:'駿河屋',
+  BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ'};
 function _showBuyQueue(){
   const q=_readBuyQueue();
   const old=document.getElementById('buyq');
@@ -6140,7 +6141,8 @@ async function _applyCostBackfill(){
   if(!confirm('＋1した履歴と買い得リストの履歴から、過去の購入金額を割り出しました。\n\n'
       +todo.length+'種・'+pcs+'枚・合計 '+fmtYen(sum)+' を購入記録に入れます。\n'
       +'カード1枚ずつ、買った日と値段で分けて入ります。\n'
-      +'＋1した時点でそのカードが出ていた最安値なので「推定」です。\n'
+      +'＋1した時刻の買い得リストから、その店に出ていた値段を当てたものなので\n'
+      +'「推定」です。\n'
       +'すでに購入記録があるカードには触りません。\n\n入れてよろしいですか？')){
     try{ localStorage.setItem(COST_KEY, ver); }catch(e){}
     return;
