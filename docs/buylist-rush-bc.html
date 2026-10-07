@@ -934,6 +934,20 @@ try{ cartDone=new Set(JSON.parse(localStorage.getItem(CDKEY)||'[]')); }catch(_){
 function saveCartDone(){
   try{ localStorage.setItem(CDKEY, JSON.stringify([...cartDone])); }catch(_){}
 }
+// 「まとめてカートへ」で送り出したが、まだ入ったと確認できていないもの。
+// 押した時点で「入れた」にすると、スクリプトが動かなかったときに印だけ残るので、
+// 店のスクリプトから「入った」と届いてから cartDone に入れる。
+// 確認待ちのあいだは二重に送らない（30分で期限切れ）
+const PNKEY='pokecards_cartpending', PN_MS=30*60*1000;
+function readPending(){
+  let o={}; try{ o=JSON.parse(localStorage.getItem(PNKEY)||'{}')||{}; }catch(_){}
+  const now=Date.now(), live={};
+  for(const k in o) if(now-o[k]<PN_MS) live[k]=o[k];
+  return live;
+}
+function writePending(o){
+  try{ localStorage.setItem(PNKEY, JSON.stringify(o)); }catch(_){}
+}
 // メモから消えたものの印は残さない（次に同じ出品を＋1したとき入らなくなるため）
 function pruneCartDone(){
   const live=new Set(readQueue().map(x=>x&&x.pid));
@@ -1047,9 +1061,17 @@ function memoDraw(){
             ? '<button data-open="'+gi+'">カートへ（残り '+rest.length+'点）</button>'
             : '<button data-open="'+gi+'">店を開く（残り '+rest.length+'件）</button>'
               // ホビステはユーザースクリプトが1つのタブで順に入れていく
-              +(AUTO_SHOPS.has(g.shop) ? '<button data-auto="'+gi+'" title="ユーザースクリプト'
-                  +'（hobbystation-autocart.user.js）が入っていると、1つのタブで順にカートへ入れます">'
-                  +'まとめてカートへ（'+Math.min(AUTO_N, rest.length)+'件）</button>' : '');
+              +(AUTO_SHOPS.has(g.shop) ? (()=>{
+                  const pn=readPending();
+                  const wait=rest.filter(x=>pn[x.pid]).length;
+                  const go=rest.length-wait;
+                  return '<button data-auto="'+gi+'" title="ユーザースクリプト'
+                    +'（hobbystation-autocart.user.js）が入っていると、1つのタブで順にカートへ入れます。'
+                    +'「入った」と確認できたものだけ入れた印が付きます">'
+                    +'まとめてカートへ（'+Math.min(AUTO_N, go)+'件）</button>'
+                    +(wait ? '<span style="font-size:11px;color:var(--sub);margin-left:6px">'
+                        +'確認待ち '+wait+'件</span>' : '');
+                })() : '');
         })()
       +(g.shop==='TC'?'<button class="rm" data-clear="1">店のカートを空にする</button>':'')
       +(g.done?'<button data-undone="'+gi+'" title="もう一度はじめから入れ直すとき">'
@@ -1182,18 +1204,23 @@ document.getElementById('memo').onclick=e=>{
   const au=e.target.closest('[data-auto]');
   if(au){
     const g=(window.__memoGroups||[])[+au.dataset.auto]; if(!g) return;
-    const take=g.items.filter(x=>!cartDone.has(x.pid) && x.row && !x.row.sold
+    const pn=readPending();
+    const take=g.items.filter(x=>!cartDone.has(x.pid) && !pn[x.pid] && x.row && !x.row.sold
                                  && /^https?:\/\//.test(x.row.url||'')).slice(0, AUTO_N);
     if(!take.length) return;
     const base=take[0].row.url.match(/^https?:\/\/[^/]+/)[0];
     const q=take.map(x=>({u:x.row.url.replace(/#.*$/,'').slice(base.length),
                           c:x.row.cond||'', m:g.mall||'', p:x.price||x.row.cr||0}));
     // 開くのは1回だけ。2件目からはスクリプトが同じタブで進む。
-    // BIGWEBはカートがタブごとなので、いつもの名前のタブで開く
+    // BIGWEBはカートがタブごとなので、いつもの名前のタブで開く。
+    // ほかの店は毎回新しい名前で開く（前の画面のタブを使い回すと、
+    // 「入った」の知らせが、閉じたあとの古い画面に届いてしまう）
     open(base+q[0].u+'#pcq='+encodeURIComponent(JSON.stringify({shop:g.shop,q})),
-         TAB[g.shop]||'pcauto_'+g.shop);
-    for(const x of take) cartDone.add(x.pid);
-    saveCartDone(); memoDraw();
+         TAB[g.shop]||'pcauto_'+g.shop+'_'+Date.now());
+    // まだ「入れた」にはしない。入ったと知らせが届いたものから印が付く
+    const now=Date.now();
+    for(const x of take) pn[x.pid]=now;
+    writePending(pn); memoDraw();
     toast((SHOP[g.shop]||g.shop)+'で '+take.length+'件を順にカートへ入れています');
     return;
   }
@@ -1226,17 +1253,28 @@ document.getElementById('memo').onclick=e=>{
     return;
   }
 };
-// 店のスクリプトから「入らなかったもの」が届いたら、入れた印を外す
+// 店のスクリプトから「入った／入らなかった」が1件ごとに届く。
+// 入ったものだけ「入れた」にして、入らなかったものは確認待ちを外す（もう一度押せる）
 addEventListener('message', e=>{
   const d=e.data && e.data.pcAutoCart;
-  if(!d || !AUTO_SHOPS.has(d.shop) || !Array.isArray(d.ng) || !d.ng.length) return;
+  if(!d || !AUTO_SHOPS.has(d.shop)) return;
   const pathOf=u=>String(u||'').replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
-  const want=new Set(d.ng.map(pathOf));
-  let n=0;
+  const okSet=new Set((Array.isArray(d.ok)?d.ok:[]).map(pathOf));
+  const ngSet=new Set((Array.isArray(d.ng)?d.ng:[]).map(pathOf));
+  if(!okSet.size && !ngSet.size) return;
+  const pn=readPending();
+  let nOk=0, nNg=0;
   for(const g of (window.__memoGroups||[])) if(g.shop===d.shop)
-    for(const x of g.items)
-      if(x.row && want.has(pathOf(x.row.url)) && cartDone.delete(x.pid)) n++;
-  if(n){ saveCartDone(); memoDraw(); toast('入らなかった '+n+'件の印を外しました'); }
+    for(const x of g.items){
+      const p=x.row && pathOf(x.row.url); if(!p) continue;
+      // 同じ商品ページに状態違いが2件あるときも、確認待ちのものを1件ずつ消化する
+      if(okSet.has(p) && pn[x.pid]){ delete pn[x.pid]; cartDone.add(x.pid); nOk++; okSet.delete(p); }
+      else if(ngSet.has(p) && pn[x.pid]){ delete pn[x.pid]; cartDone.delete(x.pid); nNg++; ngSet.delete(p); }
+    }
+  if(nOk||nNg){
+    writePending(pn); saveCartDone(); memoDraw();
+    if(nNg) toast('入らなかった '+nNg+'件があります（もう一度押せます）');
+  }
 });
 function toast(msg){
   const t=document.getElementById('toast');

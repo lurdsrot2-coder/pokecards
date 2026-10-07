@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.2
+// @version      2.3
 // @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
@@ -104,12 +104,10 @@
       const d=document.createElement('div');
       d.style.cssText='position:fixed;left:0;right:0;top:44px;z-index:2147483647;padding:8px 14px;'
         +'background:#3b1b24;color:#fff;font:13px sans-serif;max-height:40vh;overflow:auto';
-      d.innerHTML='飛ばしたもの（買い得リストの「入れた印」を外しました）<br>'
+      d.innerHTML='飛ばしたもの（買い得リストでは「入れた」になっていません）<br>'
         + st.ng.map(x=>'・'+String(x.name).replace(/</g,'&lt;')+'（'+String(x.why).replace(/</g,'&lt;')+'）').join('<br>');
       document.body.appendChild(d);
     }
-    // 入らなかったものを買い得リストに知らせて、印を外してもらう
-    try{ if(window.opener) window.opener.postMessage({pcAutoCart:{shop, ng:st.ng.map(x=>x.u)}}, '*'); }catch(_){}
   }
 
   function advance(){
@@ -119,8 +117,13 @@
     // 店に負担をかけないよう少し間をあける
     setTimeout(()=>{ if(!stopped) location.href=location.origin+st.q[0].u; }, 800);
   }
+  // 買い得リストへ1件ごとに知らせる。「入った」と届いたものだけ、リスト側で「入れた」になる
+  function tell(msg){
+    try{ if(window.opener) window.opener.postMessage({pcAutoCart:Object.assign({shop:shop}, msg)}, '*'); }catch(_){}
+  }
   function next(res, name){
     if(stopped) return;
+    tell(res===true ? {ok:[cur.u]} : {ng:[cur.u]});
     if(res===true) st.ok++; else st.ng.push({u:cur.u, name:name, why:res});
     st.q.shift(); st.wait=0;
     advance();
@@ -223,6 +226,7 @@
 
   // カート画面に着いた（直前の1件が入った）
   if(!onProduct){
+    tell({ok:[cur.u]});
     st.ok++; st.q.shift(); st.wait=0;
     advance();
     return;
