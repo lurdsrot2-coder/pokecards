@@ -5594,14 +5594,20 @@ async function _runPool(items,worker,conc){
 async function dailyAutoRefresh(){
   try{
     const last=+localStorage.getItem('pc_autoReprice')||0;
+    const tried=+localStorage.getItem('pc_autoRepriceTry')||0;
     if(Date.now()-last<20*3600*1000)return;
+    // 20時間の間隔は「最後までやれた」ときだけ置く。
+    // 以前は始めた時点で印を付けていたので、途中でタブを閉じるとそこから
+    // 20時間止まり、時価が9/15や9/27のまま何日も残っていた。
+    // 失敗が続くときに叩き続けないよう、試した印は別に1時間だけ置く
+    if(Date.now()-tried<3600*1000)return;
+    localStorage.setItem('pc_autoRepriceTry',String(Date.now()));
     const today=_today();
-    // 所持しているカードを古い順に。全部を毎日は取れないので1日ぶんだけ進める
+    // 所持しているカードから。全部を毎日は取れないので1日ぶんだけ進める
     // （以前は購入記録のあるカードだけで、実質ほとんど更新されていなかった）
     const tracked=_repriceOrder(db.cards.filter(c=>
       (c.owned||0)>0 && c.id.startsWith('hareruya2-') && c.priceUpdatedAt!==today)).slice(0,3000);
-    localStorage.setItem('pc_autoReprice',String(Date.now()));
-    if(!tracked.length)return;
+    if(!tracked.length){localStorage.setItem('pc_autoReprice',String(Date.now()));return;}
     let done=0,changed=0;
     _setSyncStatus('syncing',`時価更新中 0/${tracked.length}`);
     await _runPool(tracked,async c=>{const ok=await refreshCardPrice(c);if(ok)changed++;done++;
@@ -5610,6 +5616,7 @@ async function dailyAutoRefresh(){
       // その間に押した＋1が送信エラーになっていた
       if(done%20===0){_setSyncStatus('syncing',`時価更新中 ${done}/${tracked.length}`);_saveLocalOnly();}},3);
     if(changed){saveDb();renderStats();renderCards({keepSet:true});}   // クラウドへは最後に1回
+    localStorage.setItem('pc_autoReprice',String(Date.now()));          // ここまで来たら完了
     _setSyncStatus('synced',`時価更新 ${changed}件`);
   }catch(e){console.warn('autoReprice',e);}
 }
@@ -5755,11 +5762,19 @@ async function _drainFixQ(){
 }
 // 古い順に並べる。所持しているカードを先に直す（見ている数字がまず正しくなるように）
 function _repriceOrder(list){
-  return list.slice().sort((a,b)=>{
-    const ao=(a.owned||0)>0?0:1, bo=(b.owned||0)>0?0:1;
-    if(ao!==bo)return ao-bo;
-    return String(a.priceUpdatedAt||'').localeCompare(String(b.priceUpdatedAt||''));
-  });
+  // 所持しているものが先。そのなかは「古さ×金額」の大きい順。
+  // 全部を一度には取れないので、総額のずれがいちばん大きいところから埋める
+  // （上位500種で資産の2/3を占めるので、安いカードより先に高いカードを直す）
+  const t=Date.now(), key=new Map();
+  for(const c of list){
+    const s=c.priceUpdatedAt||'';
+    const d=s?Date.parse(s+'T00:00:00'):NaN;
+    // 日付が無いものを無限に古い扱いにすると、安いカードが高額カードを
+    // 追い越してしまうので1年で頭打ちにする
+    const days=Math.min(365,isNaN(d)?365:Math.max(1,(t-d)/86400000));
+    key.set(c, ((c.owned||0)>0?0:1e15) - days*Math.max(_num(c.price)||0,100));
+  }
+  return list.slice().sort((a,b)=>key.get(a)-key.get(b));
 }
 async function refreshAllOwned(){
   const today=_today();
