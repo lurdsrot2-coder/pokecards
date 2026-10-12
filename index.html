@@ -5212,7 +5212,8 @@ function _showBuyQueue(){
       const i=db.cards.findIndex(c=>c.id===x.id);
       if(i<0) continue;
       const c=db.cards[i];
-      c.owned=(c.owned||0)+1;
+      const nq=Math.max(1,+x.n||1);     // 買い得リストで指定した枚数
+      c.owned=(c.owned||0)+nq;
       c.ownedAt=now;
       c.editedAt=now;
       // 買った値段を購入記録に残す。原価が入っていないのが最大の欠落なので、
@@ -5220,8 +5221,8 @@ function _showBuyQueue(){
       const p=+x.price||0;
       if(p>0){
         c.buyLots=c.buyLots||[];
-        c.buyLots.push({d:day, q:1, p:p, memo:(BUYQ_SHOP[x.shop]||x.shop||'買い得リスト')});
-        yen+=p; lots++;
+        c.buyLots.push({d:day, q:nq, p:p, memo:(BUYQ_SHOP[x.shop]||x.shop||'買い得リスト')});
+        yen+=p*nq; lots+=nq;
       }
       _dropFav(c);             // 買えたので★は外す
       _markEdited(c);          // 通常の＋1と同じ扱い（差分に載せて同期する）
@@ -5247,8 +5248,11 @@ function _showBuyQueue(){
     if(b.dataset.shop!==undefined){
       const list=byShop.get(b.dataset.shop)||[];
       const nm=BUYQ_SHOP[b.dataset.shop]||b.dataset.shop||'店不明';
-      const sum=list.reduce((a,x)=>a+(+x.price||0),0);
-      if(!confirm(nm+' の '+list.length+'件に＋1します。\n'
+      const qn=x=>Math.max(1,+x.n||1);
+      const sum=list.reduce((a,x)=>a+(+x.price||0)*qn(x),0);
+      const pcs=list.reduce((a,x)=>a+qn(x),0);
+      if(!confirm(nm+' の '+list.length+'件'
+                  +(pcs!==list.length?'（'+pcs+'枚）':'')+'に＋1します。\n'
                   +'カード1枚ずつ、それぞれの値段で購入ロットに記録します'
                   +'（合計 '+fmtYen(sum)+'）。\n'
                   +'ほかの店のぶんは残します。よろしいですか？')) return;
@@ -5262,8 +5266,11 @@ function _showBuyQueue(){
       return;
     }
     if(b.dataset.a==='ok'){
-      const sum=known.reduce((a,x)=>a+(+x.price||0),0);
-      if(!confirm(known.length+'件に＋1します。\n'
+      const qn2=x=>Math.max(1,+x.n||1);
+      const sum=known.reduce((a,x)=>a+(+x.price||0)*qn2(x),0);
+      const pcs2=known.reduce((a,x)=>a+qn2(x),0);
+      if(!confirm(known.length+'件'
+                  +(pcs2!==known.length?'（'+pcs2+'枚）':'')+'に＋1します。\n'
                   +'カード1枚ずつ、それぞれの値段で購入ロットに記録します'
                   +'（合計 '+fmtYen(sum)+'）。よろしいですか？')) return;
       const r=apply(known);

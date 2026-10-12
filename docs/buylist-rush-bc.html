@@ -200,6 +200,12 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .act .p1{color:var(--pk);border-color:rgba(255,0,255,.45)}
 .act .p1:hover{background:rgba(255,0,255,.18)}
 .act .p1.done{background:rgba(255,0,255,.3);color:#fff}
+/* 枚数。押すたびに増えて、在庫の数まで行くと1枚に戻る */
+.act .qn{flex:0 0 30px;color:var(--pk);border-color:rgba(255,0,255,.45)}
+.act .qn:hover{background:rgba(255,0,255,.18)}
+.act .qn.off{opacity:.3}
+.mg-it .mq{background:rgba(255,0,255,.28);color:#fff;border-radius:3px;
+ padding:0 4px;font-size:10px;font-weight:700;margin-right:4px}
 /* 1枚だけに絞っているときの帯 */
 #focus{display:none;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;border-radius:4px;
  background:rgba(0,245,255,.1);border:1px solid rgba(0,245,255,.4);font-size:11px;color:var(--cy)}
@@ -343,11 +349,35 @@ let bestN=new Map();        // カードid → その値段で出ている件数
 // ＋1を押した出品。画面を作り直しても印が消えないよう、控え（localStorage）から作る。
 // アプリ側で反映すると控えが空になるので、戻ってきたときに印も消える
 let doneP1=new Set();
+let p1Qty=new Map();       // pid → 枚数（1のときは出さない）
 function readQueue(){
   try{ return JSON.parse(localStorage.getItem(QKEY)||'[]'); }catch(_){ return []; }
 }
 function syncDone(){
-  doneP1=new Set(readQueue().map(x=>x && x.pid).filter(Boolean));
+  const q=readQueue();
+  doneP1=new Set(q.map(x=>x && x.pid).filter(Boolean));
+  p1Qty=new Map(q.filter(x=>x && x.pid).map(x=>[x.pid, Math.max(1,+x.n||1)]));
+}
+const qtyOf=pid=>Math.max(1, p1Qty.get(pid)||1);
+// 何枚まで入れられるか。在庫が分かる店はその枚数まで、
+// 分からない店（キャンプ・PRICE BASE・マイカ・駿河屋）は9枚まで
+const maxQty=r=>r.stock>0 ? Math.min(9, r.stock) : 9;
+// 枚数のボタン。1枚しか無い出品には出さない（押せても買えないため）
+function qtyHtml(r){
+  if(maxQty(r)<2) return '';
+  const on=doneP1.has(r.pid);
+  return '<button class="qn'+(on?'':' off')+'" data-qn="'+esc(r.pid)+'"'
+    +' title="押すと枚数が増えます。'+maxQty(r)+'枚まで。その先は1枚に戻ります">'
+    +'×'+qtyOf(r.pid)+'</button>';
+}
+// タイルの＋1まわりを、控えに合わせて書き換える（描き直さずに済ませる）
+function syncP1El(b){
+  const pid=b.dataset.p1, on=doneP1.has(pid);
+  b.classList.toggle('done', on);
+  b.textContent = on ? '＋1 済' : '＋1';
+  b.title = on ? 'もう一度押すと取り消します' : 'アプリの所持を＋1します';
+  const qn=b.parentNode && b.parentNode.querySelector('[data-qn]');
+  if(qn){ qn.classList.toggle('off', !on); qn.textContent='×'+qtyOf(pid); }
 }
 syncDone();
 let rows=[], view=[], shown=0,
@@ -373,13 +403,16 @@ function tcClear(){
   open(CART.replace(/\/cart\/?$/,'/cart/clear'), 'torecacamp');
   return true;
 }
+// vids は [id, ...] か [[id, 枚数], ...]
 function tcCart(vids){
   if(!vids.length || !CART) return false;
   const f=document.createElement('form');
   f.method='post'; f.action=CART.replace(/\/cart\/?$/,'/cart/add'); f.target='torecacamp';
   const put=(n,v)=>{ const i=document.createElement('input');
     i.type='hidden'; i.name=n; i.value=v; f.appendChild(i); };
-  vids.forEach((v,i)=>{ put('items['+i+'][id]', v); put('items['+i+'][quantity]', 1); });
+  vids.forEach((v,i)=>{
+    const id=Array.isArray(v)?v[0]:v, n=Array.isArray(v)?Math.max(1,v[1]|0):1;
+    put('items['+i+'][id]', id); put('items['+i+'][quantity]', n); });
   put('return_to', '/cart');
   document.body.appendChild(f);
   open('', 'torecacamp');        // 先にタブを用意しておく（ブロック回避）
@@ -529,6 +562,7 @@ function tile(r){
       +'<button class="p1'+(doneP1.has(r.pid)?' done':'')+'" data-p1="'+esc(r.pid)+'"'
         +' title="'+(doneP1.has(r.pid)?'もう一度押すと取り消します':'アプリの所持を＋1します')+'">'
         +(doneP1.has(r.pid)?'＋1 済':'＋1')+'</button>'
+      +qtyHtml(r)
     +'</div>'
     +'<div class="lk"><a class="'+lkCls+'" href="'+esc(cru)+'"'
       +(TAB[r.shop]?' target="'+TAB[r.shop]+'"':' target="_blank" rel="noopener"')
@@ -806,12 +840,7 @@ addEventListener('focus', ()=>{
   const before=doneP1.size;
   syncDone();
   if(before===doneP1.size) return;
-  for(const b of document.querySelectorAll('[data-p1]')){
-    const on=doneP1.has(b.dataset.p1);
-    b.classList.toggle('done', on);
-    b.textContent = on ? '＋1 済' : '＋1';
-    b.title = on ? 'もう一度押すと取り消します' : 'アプリの所持を＋1します';
-  }
+  for(const b of document.querySelectorAll('[data-p1]')) syncP1El(b);
 });
 // 絞り込みを全部やめて、最初の状態に戻す。
 // ESCと、左上のタイトルから呼ぶ
@@ -872,9 +901,10 @@ function mktOf(x){
 }
 function memoTotals(){
   const q=readQueue();
-  return {n:q.length,
-          sum:q.reduce((a,x)=>a+(x&&x.price||0),0),
-          mkt:q.reduce((a,x)=>a+mktOf(x),0)};
+  const qty=x=>Math.max(1,+(x&&x.n)||1);
+  return {n:q.reduce((a,x)=>a+(x?qty(x):0),0),
+          sum:q.reduce((a,x)=>a+(x&&x.price||0)*qty(x),0),
+          mkt:q.reduce((a,x)=>a+mktOf(x)*qty(x),0)};
 }
 function memoCount(){
   const t=memoTotals();
@@ -906,12 +936,14 @@ function memoGroups(){
     const mall=(row && row.mall) || '';
     const key=it.shop+'\u0000'+mall;
     if(!g.has(key)) g.set(key,{shop:it.shop, mall, items:[], sum:0, now:0, gone:0, done:0,
-                               owned:0, soldout:0});
+                               owned:0, soldout:0, qty:0});
     const e=g.get(key);
-    e.items.push({...it, row});
-    e.sum += it.price||0;
+    const n=Math.max(1,+it.n||1);
+    e.items.push({...it, n, row});
+    e.sum += (it.price||0)*n;
+    e.qty += n;
     if(row && row.sold) e.soldout++; // ＋1したあとに売れてしまった出品
-    else if(row) e.now += row.cr||0; // いまの値段（カートに入る金額）
+    else if(row) e.now += (row.cr||0)*n; // いまの値段（カートに入る金額）
     else e.gone++;                   // 一覧から消えた出品
     if(cartDone.has(it.pid)) e.done++;
     if(row && row.owned>0) e.owned++;
@@ -963,7 +995,7 @@ function pruneCartDone(){
 function putOne(it, shop){
   const row=it.row;
   if(shop==='TC'){
-    if(!(row && row.vid && tcCart([row.vid]))) return false;
+    if(!(row && row.vid && tcCart([[row.vid, Math.max(1,+it.n||1)]]))) return false;
   }else{
     openShop((row&&row.url)||'#', shop);
   }
@@ -978,9 +1010,9 @@ function dropPids(pids){
   const rest=readQueue().filter(x=>!(x && s.has(x.pid)));
   try{ localStorage.setItem(QKEY,JSON.stringify(rest)); }catch(_){}
   for(const pid of s){
-    doneP1.delete(pid);
+    doneP1.delete(pid); p1Qty.delete(pid);
     for(const b of document.querySelectorAll('[data-p1]')){
-      if(b.dataset.p1===pid){ b.classList.remove('done'); b.textContent='＋1'; }
+      if(b.dataset.p1===pid) syncP1El(b);
     }
   }
   for(const pid of s) cartDone.delete(pid);
@@ -1002,7 +1034,9 @@ function memoDraw(){
     const free=freeLine(ship);
     const left=free && g.sum<free ? free-g.sum : 0;
     return '<div class="mg"><div class="mg-h"><b>'+name+'</b>'
-      +'<span>'+g.items.length+'点'+(g.done?'（入れた '+g.done+'）':'')+'</span>'
+      +'<span>'+g.qty+'点'
+        +(g.qty!==g.items.length?'（'+g.items.length+'出品）':'')
+        +(g.done?'（入れた '+g.done+'）':'')+'</span>'
       +'<span class="mg-sum">'+yen(g.sum)+'</span>'
       // ＋1したときと値段が変わっていたら、いまの値段も出す（カート側と合わせるため）
       +(g.now!==g.sum ? '<div class="mg-ship">いまの値段だと '+yen(g.now)
@@ -1035,7 +1069,8 @@ function memoDraw(){
                ? '<span class="mc">'+esc(it.cnd||it.cond)+'</span>' : '')+esc(it.name)
             +(it.row && it.row.owned>0
                ? '<span class="mo" title="すでに持っているカードです">持'+it.row.owned+'</span>' : '')
-            +'<span>'+yen(it.price)
+            +(it.n>1?'<span class="mq">×'+it.n+'</span>':'')
+            +'<span>'+yen((it.price||0)*it.n)
               +(!it.row ? ' <em style="color:var(--rd)">一覧に無し</em>'
                  : it.row.sold ? ' <em style="color:var(--rd)">売切'
                      +esc((it.row.soldAt||'').slice(5))+'</em>' : '')+'</span>'
@@ -1243,11 +1278,12 @@ document.getElementById('memo').onclick=e=>{
     if(!rest.length) return;
     // キャンプ(Shopify)はまとめて1つのカートに足せる
     if(g.shop==='TC'){
-      const vids=rest.map(x=>x.row.vid);
+      const vids=rest.map(x=>[x.row.vid, Math.max(1,+x.n||1)]);
       if(tcCart(vids)){
         for(const x of rest) cartDone.add(x.pid);
         saveCartDone(); memoDraw();
-        toast('カートに入れました（'+vids.length+'点）');
+        toast('カートに入れました（'
+              +vids.reduce((a,v)=>a+v[1],0)+'点）');
         return;
       }
     }
@@ -1300,6 +1336,25 @@ grid.addEventListener('click',e=>{
     openShop(r.url, r.shop);
     return;
   }
+  // 数字を押すと枚数が増える。上限まで行くと1枚に戻る（減らす手段を兼ねる）
+  const qb=e.target.closest('[data-qn]');
+  if(qb){
+    const pid=qb.dataset.qn;
+    const r=rows.find(x=>x.pid===pid); if(!r) return;
+    if(!doneP1.has(pid)){ toast('先に「＋1」を押してください'); return; }
+    const mx=maxQty(r), next=qtyOf(pid)>=mx ? 1 : qtyOf(pid)+1;
+    const q=readQueue();
+    const it=q.find(x=>x && x.pid===pid); if(!it) return;
+    it.n=next;
+    try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
+    catch(_){ toast('保存できませんでした'); return; }
+    p1Qty.set(pid,next);
+    qb.textContent='×'+next;
+    memoCount();
+    toast(r.name+' を '+next+'枚（'+yen((r.cr||0)*next)+'）'
+          +(next>=mx?'／在庫いっぱいです':''));
+    return;
+  }
   const pb=e.target.closest('[data-p1]');
   if(pb){
     const r=rows.find(x=>x.pid===pb.dataset.p1); if(!r) return;
@@ -1309,24 +1364,22 @@ grid.addEventListener('click',e=>{
       const rest=q.filter(x=>!(x && x.pid===r.pid));
       try{ localStorage.setItem(QKEY,JSON.stringify(rest)); }
       catch(_){ toast('保存できませんでした'); return; }
-      doneP1.delete(r.pid);
-      pb.classList.remove('done'); pb.textContent='＋1';
-      pb.title='アプリの所持を＋1します';
+      doneP1.delete(r.pid); p1Qty.delete(r.pid);
+      syncP1El(pb);
       memoCount();
       toast(r.name+' の＋1を取り消しました'+(rest.length?'（残り'+rest.length+'件）':'（残り0件）'));
       return;
     }
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
-            cond:r.cond, cnd:r.cnd,
+            cond:r.cond, cnd:r.cnd, n:1,
             at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
-    doneP1.add(r.pid);
     // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう
     const other=q.filter(x=>x && x.pid!==r.pid && x.id===r.id && x.shop===r.shop
                             && (x.cnd||x.cond||'')!==r.cnd);
-    pb.classList.add('done'); pb.textContent='＋1 済';
-    pb.title='もう一度押すと取り消します';
+    doneP1.add(r.pid); p1Qty.set(r.pid,1);
+    syncP1El(pb);
     memoCount();
     // 同じカードの別の状態が既に入っていると、カートに両方入ってしまう。
     // あとから気づくと買ったあとなので、その場で知らせる
@@ -1368,18 +1421,13 @@ document.getElementById('f-p1all').onclick=function(){
   const q=readQueue(), now=new Date().toISOString();
   for(const r of yet){
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
-            cond:r.cond, cnd:r.cnd, at:now});
-    doneP1.add(r.pid);
+            cond:r.cond, cnd:r.cnd, n:1, at:now});
+    doneP1.add(r.pid); p1Qty.set(r.pid,1);
   }
   try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
   catch(_){ toast('保存できませんでした'); return; }
   // 出ているタイルの印を更新する（描き直さずに済ませる）
-  for(const b of document.querySelectorAll('[data-p1]')){
-    if(doneP1.has(b.dataset.p1)){
-      b.classList.add('done'); b.textContent='＋1 済';
-      b.title='もう一度押すと取り消します';
-    }
-  }
+  for(const b of document.querySelectorAll('[data-p1]')) syncP1El(b);
   memoCount();
   toast(yet.length+'件を＋1しました（'+yen(sum)+'）');
 };
