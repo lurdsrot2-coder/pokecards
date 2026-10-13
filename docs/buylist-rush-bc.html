@@ -975,6 +975,19 @@ function saveCartDone(){
 // 店のスクリプトから「入った」と届いてから cartDone に入れる。
 // 確認待ちのあいだは二重に送らない（30分で期限切れ）
 const PNKEY='pokecards_cartpending', PN_MS=30*60*1000;
+// スクリプトから返事が来たか。来なければ確認待ちを戻して、理由を画面に出す
+let autoWatch=null;        // {shop, pids, timer, heard}
+function autoGiveUp(){
+  if(!autoWatch || autoWatch.heard) return;
+  const pn=readPending();
+  for(const p of autoWatch.pids) delete pn[p];
+  writePending(pn);
+  const sh=SHOP[autoWatch.shop]||autoWatch.shop;
+  autoWatch=null;
+  noScript=true; memoDraw();
+  toast(sh+'：スクリプトから返事がありませんでした。確認待ちは戻しました');
+}
+let noScript=false;        // 返事が無かったことを画面に出す
 function readPending(){
   let o={}; try{ o=JSON.parse(localStorage.getItem(PNKEY)||'{}')||{}; }catch(_){}
   const now=Date.now(), live={};
@@ -1108,8 +1121,16 @@ function memoDraw(){
                     +'（hobbystation-autocart.user.js）が入っていると、1つのタブで順にカートへ入れます。'
                     +'「入った」と確認できたものだけ入れた印が付きます">'
                     +'まとめてカートへ（'+Math.min(AUTO_N, go)+'件）</button>'
-                    +(wait ? '<span style="font-size:11px;color:var(--sub);margin-left:6px">'
-                        +'確認待ち '+wait+'件</span>' : '');
+                    +(wait ? '<button class="rm" data-unwait="'+gi+'" '
+                        +'title="スクリプトからの返事を待っている状態を取り消して、もう一度押せるようにします">'
+                        +'確認待ち '+wait+'件を戻す</button>' : '')
+                    +(noScript ? '<div class="mg-mix">✖ スクリプトから返事がありませんでした。'
+                        +'<a href="hobbystation-autocart.user.js" target="_blank" '
+                        +'style="color:var(--cy)">ユーザースクリプト</a>'
+                        +'が入っていないか、古い可能性があります'
+                        +'（オルタ・トレコロはv2.2以降、確認の知らせはv2.4以降）。'
+                        +'Tampermonkeyで入れ直すと直ります。'
+                        +'それまでは「店を開く」で1件ずつ入れてください</div>' : '');
                 })() : '');
         })()
       +(g.shop==='TC'?'<button class="rm" data-clear="1">店のカートを空にする</button>':'')
@@ -1240,6 +1261,19 @@ document.getElementById('memo').onclick=e=>{
     saveCartDone(); memoDraw();
     return;
   }
+  // 確認待ちを戻す（スクリプトが黙ったままのとき、30分待たずに押し直せる）
+  const uw=e.target.closest('[data-unwait]');
+  if(uw){
+    const g=(window.__memoGroups||[])[+uw.dataset.unwait]; if(!g) return;
+    const pn=readPending();
+    let n=0;
+    for(const x of g.items) if(pn[x.pid]){ delete pn[x.pid]; n++; }
+    writePending(pn);
+    if(autoWatch && autoWatch.shop===g.shop){ clearTimeout(autoWatch.timer); autoWatch=null; }
+    memoDraw();
+    toast(n+'件の確認待ちを戻しました');
+    return;
+  }
   const au=e.target.closest('[data-auto]');
   if(au){
     const g=(window.__memoGroups||[])[+au.dataset.auto]; if(!g) return;
@@ -1259,7 +1293,13 @@ document.getElementById('memo').onclick=e=>{
     // まだ「入れた」にはしない。入ったと知らせが届いたものから印が付く
     const now=Date.now();
     for(const x of take) pn[x.pid]=now;
-    writePending(pn); memoDraw();
+    writePending(pn);
+    // 20秒返事が無ければ、スクリプトが動いていないとみなして戻す
+    if(autoWatch) clearTimeout(autoWatch.timer);
+    autoWatch={shop:g.shop, pids:take.map(x=>x.pid), heard:false,
+               timer:setTimeout(autoGiveUp, 20000)};
+    noScript=false;
+    memoDraw();
     toast((SHOP[g.shop]||g.shop)+'で '+take.length+'件を順にカートへ入れています');
     return;
   }
@@ -1298,6 +1338,11 @@ document.getElementById('memo').onclick=e=>{
 addEventListener('message', e=>{
   const d=e.data && e.data.pcAutoCart;
   if(!d || !AUTO_SHOPS.has(d.shop)) return;
+  if(autoWatch && autoWatch.shop===d.shop){
+    autoWatch.heard=true; clearTimeout(autoWatch.timer);
+    if(noScript){ noScript=false; memoDraw(); }
+  }
+  if(d.hello) return;      // 「います」の知らせ。中身は無い
   const pathOf=u=>String(u||'').replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
   const okSet=new Set((Array.isArray(d.ok)?d.ok:[]).map(pathOf));
   const ngSet=new Set((Array.isArray(d.ng)?d.ng:[]).map(pathOf));

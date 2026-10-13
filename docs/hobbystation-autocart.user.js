@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.3
+// @version      2.4
 // @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
@@ -121,6 +121,9 @@
   function tell(msg){
     try{ if(window.opener) window.opener.postMessage({pcAutoCart:Object.assign({shop:shop}, msg)}, '*'); }catch(_){}
   }
+  // 動き出したことを先に知らせる。これが届かないと、買い得リスト側は
+  // 「スクリプトが入っていない／古い」と判断して確認待ちを戻す
+  tell({hello:1, ver:'2.4'});
   function next(res, name){
     if(stopped) return;
     tell(res===true ? {ok:[cur.u]} : {ng:[cur.u]});
