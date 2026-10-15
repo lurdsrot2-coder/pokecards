@@ -1012,6 +1012,9 @@ OL_NAME = re.compile(r'^(.*?)\s*\[([0-9A-Za-z\-]{1,10})/([0-9A-Za-z]{1,4})/([0-9
 OL_SKU = re.compile(r'^condition-([a-e])-')
 # オルタの状態は A+ / A- / B+ / B- / C の5段階。他店のA〜Dに寄せる
 OL_COND = {'a': 'A', 'b': 'A', 'c': 'B', 'd': 'B', 'e': 'C'}
+# 店の表記そのまま。これを残さないと A+ と A- が同じ「A」になって、
+# 同じカード・同じ状態として片方が消える（値段は倍ちがうのに選べない）
+OL_LABEL = {'a': 'A+', 'b': 'A-', 'c': 'B+', 'd': 'B-', 'e': 'C'}
 
 
 def ol_scrape():
@@ -1037,9 +1040,17 @@ def ol_scrape():
             mt = OL_NAME.match((it.get('name') or '').strip())
             if not mt:
                 continue
+            # 商品名の [ ] には、わざ名のほかに [モンスターボールミラー] のような
+            # 版の印が入る。これを捨てると通常版と見分けが付かなくなり、
+            # 同じカード・同じ状態として後で片方が消えていた
+            # （ブラックボルトのミラーが1件も出てこなかった原因）。
+            # 照合は丸かっこの中を版の手がかりに使うので、そちらへ移し替える
+            marks = re.findall(r'\[([^\]]*)\]', mt.group(1))
             name = re.sub(r'\[[^\]]*\]', '', mt.group(1)).strip()
             if not name or any(w in name for w in SKIP_WORDS):
                 continue
+            if marks:
+                name += ''.join('（%s）' % m for m in marks if m.strip())
             tags = [(t.get('name') or '').strip() for t in (it.get('productTags') or [])]
             rar = next((t for t in tags if t in TC_RARITY), '')
             for sk in (it.get('productSkus') or []):
@@ -1051,6 +1062,7 @@ def ol_scrape():
                 pid = 'ol%s-%s' % (it.get('code'), ms.group(1))
                 items[pid] = {
                     'shop': 'OL', 'pid': pid, 'cond': OL_COND[ms.group(1)],
+                    'cnd': OL_LABEL[ms.group(1)],
                     'url': '%s/pokemon/product/detail/%s' % (OL, it.get('code')),
                     'name': name, 'rarity': rar,
                     'num': '%s/%s' % (mt.group(3), mt.group(4)),
@@ -1420,7 +1432,12 @@ def variant_of(text):
     v = set()
     if 'マスターボール' in text: v.add('master')
     elif 'モンスターボール' in text: v.add('monster')
-    elif 'ミラー' in text: v.add('mirror')
+    elif 'ミラー' in text:
+        v.add('mirror')
+        # MEGAドリームexには「エネルギーミラー」と「ボール・R団ミラー」があり、
+        # どちらも ただの「ミラー」 で見ると同点になって判断がつかなくなる
+        if 'エネルギー' in text: v.add('energy')
+        elif 'ボール' in text or 'ロケット団' in text or 'R団' in text: v.add('ball')
     if '1ED' in text or '初版' in text: v.add('1ed')
     if 'キラ' in text and 'ノンキラ' not in text: v.add('kira')
     if 'マーク無' in text or 'マークな' in text: v.add('nomark')
@@ -1431,7 +1448,10 @@ def db_variant(suffix):
     v = set()
     if 'マスターボールミラー' in suffix: v.add('master')
     elif 'モンスターボールミラー' in suffix: v.add('monster')
-    elif 'ミラー' in suffix: v.add('mirror')
+    elif 'ミラー' in suffix:
+        v.add('mirror')
+        if 'エネルギー' in suffix: v.add('energy')
+        elif 'ボール' in suffix or 'ロケット団' in suffix: v.add('ball')
     if '1ED' in suffix or '初版' in suffix: v.add('1ed')
     if 'キラ' in suffix and 'ノンキラ' not in suffix: v.add('kira')
     if 'マーク無' in suffix: v.add('nomark')
@@ -1747,7 +1767,7 @@ COLS = ['pid', 'cond', 'name', 'set', 'num', 'ser', 'img',
         'fav',        # アプリで★を付けたカードか
         'ill',        # イラストレーター（公式のカード検索から）
         'lst',        # 店が出品した日。取れるのはキャンプだけ（fstは「見つけた日」）
-        'cnd']        # 店の表記そのままの状態（A- / B+ など）。取れるのはキャンプだけ
+        'cnd']        # 店の表記そのままの状態（A- / B+ など）。キャンプとオルタで取れる
 # 画像URLと商品URLは同じ頭が延々と続くので、共通部分を外に出して行から削る
 # （スマホで毎回落とすファイルなので、数MB減るのは効く）
 IMG_BASE = 'https://cdn.shopify.com/s/files/1/0763/0536/7360/'

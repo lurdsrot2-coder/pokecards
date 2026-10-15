@@ -1282,8 +1282,11 @@ document.getElementById('memo').onclick=e=>{
                                  && /^https?:\/\//.test(x.row.url||'')).slice(0, AUTO_N);
     if(!take.length) return;
     const base=take[0].row.url.match(/^https?:\/\/[^/]+/)[0];
+    // 状態は店の表記そのまま（オルタの A+ / A- など）を渡す。
+    // A にまとめて渡すと、値段の違う上下の段を取り違える
     const q=take.map(x=>({u:x.row.url.replace(/#.*$/,'').slice(base.length),
-                          c:x.row.cond||'', m:g.mall||'', p:x.price||x.row.cr||0}));
+                          c:x.row.cnd||x.row.cond||'', m:g.mall||'',
+                          p:x.price||x.row.cr||0}));
     // 開くのは1回だけ。2件目からはスクリプトが同じタブで進む。
     // BIGWEBはカートがタブごとなので、いつもの名前のタブで開く。
     // ほかの店は毎回新しい名前で開く（前の画面のタブを使い回すと、
