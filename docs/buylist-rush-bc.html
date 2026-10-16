@@ -235,6 +235,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 #serpanel .sp-hd button{background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:4px;
  color:rgba(255,255,255,.7);font-size:10px;padding:3px 8px;cursor:pointer;white-space:nowrap}
 #serpanel .sp-list{overflow-y:auto;overscroll-behavior:contain}
+/* タイトルは423もあるので、打った文字で候補を減らせるようにする */
+#serpanel #sp-q{flex-shrink:0;margin:6px 8px;padding:5px 7px;font-size:11px;
+ background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.2);
+ border-radius:4px;color:#fff}
+#serpanel #sp-q::placeholder{color:var(--sub)}
 #serpanel .sp-it{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:11px;
  cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);user-select:none}
 #serpanel .sp-it:hover{background:rgba(255,0,255,.12)}
@@ -286,6 +291,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg" data-c="C">C</button>
  <button class="tg" data-c="D">D</button>
  <button class="serbtn" id="f-ser">シリーズ ▾</button>
+ <button class="serbtn" id="f-set">タイトル ▾</button>
  <button class="serbtn" id="f-rar">レアリティ ▾</button>
  <button class="serbtn" id="f-mall">マイカの店 ▾</button>
  <button class="serbtn" id="f-ill">イラストレーター ▾</button>
@@ -315,6 +321,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div></header>
 <div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
  <button type="button" id="sp-all">全選択</button><button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
+<input type="search" id="sp-q" placeholder="名前で絞り込む" autocomplete="off">
 <div class="sp-list" id="sp-list"></div></div>
 <div id="msg">データを読み込んでいます…</div>
 <div id="toast"></div>
@@ -384,7 +391,7 @@ function syncP1El(b){
 syncDone();
 let rows=[], view=[], shown=0,
     st={cheap:0,best:0,few:0,fav:0,p1:0,flag:'',cond:'',shop:'',own:'',ser:new Set(),rar:new Set(),tag:new Set(),
-        mall:new Set(),ill:new Set(),poke:new Set(),
+        mall:new Set(),ill:new Set(),poke:new Set(),set:new Set(),
         lo:null,hi:null,min:0,q:'',sort:'cr',card:''};
 // この店だけは毎回同じタブで開く。BIGWEBはタブごとにカートが分かれるので、
 // 新しいタブで開くと1枚ずつ別のカートに入ってしまう。
@@ -605,6 +612,7 @@ function apply(){
     && (!st.cond  || r.cond===st.cond)
     && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
     && (!st.ser.size || st.ser.has(r.ser))
+    && (!st.set.size || st.set.has(r.set))
     && (!st.rar.size || st.rar.has(r.rar))
     && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
     && (!st.mall.size || st.mall.has(r.mall))
@@ -756,6 +764,7 @@ function show(d, ownedN){
   WATCH=d.watch||{};
   indexCards();
   [...st.ser].forEach(v=>{ if(!rows.some(r=>r.ser===v)) st.ser.delete(v); });
+  [...st.set].forEach(v=>{ if(!rows.some(r=>r.set===v)) st.set.delete(v); });
   [...st.rar].forEach(v=>{ if(!rows.some(r=>r.rar===v)) st.rar.delete(v); });
   [...st.tag].forEach(v=>{ if(!rows.some(r=>r.tags.includes(v))) st.tag.delete(v); });
   [...st.ill].forEach(v=>{ if(!rows.some(r=>r.ill===v)) st.ill.delete(v); });
@@ -849,6 +858,7 @@ addEventListener('focus', ()=>{
 function resetAll(){
   st.cheap=0; st.best=0; st.few=0; st.fav=0; st.p1=0; st.flag=''; st.cond=''; st.shop=''; st.own='';
   st.ser.clear(); st.rar.clear(); st.tag.clear(); st.mall.clear(); st.ill.clear();
+  st.set.clear();
   st.poke.clear();
   st.lo=null; st.hi=null; st.min=0; st.q=''; st.sort='cr'; st.card='';
   backTo=null;
@@ -1554,6 +1564,7 @@ document.getElementById('f-hi').oninput=function(){st.hi=num(this.value);apply()
 document.getElementById('q').oninput=function(){st.q=this.value.trim().toLowerCase();apply();};
 
 // シリーズ・レアリティ・タグの複数選択。選ぶたびに閉じないパネルを1つ使い回す
+const serQ=document.getElementById('sp-q');
 const serPanel=document.getElementById('serpanel'),
       serList=document.getElementById('sp-list'),
       serTtl=document.getElementById('sp-ttl');
@@ -1606,6 +1617,7 @@ function pokeOf(name){
 }
 const PICKERS=[
   ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
+  ['f-set','タイトル', ()=>st.set, r=>r.set?[r.set]:[]],
   ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
   ['f-mall','マイカの店', ()=>st.mall, r=>r.mall?[r.mall]:[]],
   ['f-ill','イラストレーター', ()=>st.ill, r=>r.ill?[r.ill]:[]],
@@ -1631,10 +1643,15 @@ function serSync(){
   const cnt={};
   for(const r of rows) for(const v of valsOf(r)) cnt[v]=(cnt[v]||0)+1;
   serTtl.textContent=label+'（複数選べます）';
-  serList.innerHTML=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b,'ja'))
-    .map(v=>'<div class="sp-it'+(sel.has(v)?' sel':'')+'" data-v="'+esc(v)+'">'
-      +'<span class="sp-ck">'+(sel.has(v)?'✓':'')+'</span>'+esc(v)
-      +'<span class="sp-n">'+cnt[v]+'</span></div>').join('');
+  const kw=(serQ.value||'').trim().toLowerCase();
+  const keys=Object.keys(cnt)
+    .filter(v=>!kw || v.toLowerCase().includes(kw) || sel.has(v))
+    .sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b,'ja'));
+  serList.innerHTML = keys.length
+    ? keys.map(v=>'<div class="sp-it'+(sel.has(v)?' sel':'')+'" data-v="'+esc(v)+'">'
+        +'<span class="sp-ck">'+(sel.has(v)?'✓':'')+'</span>'+esc(v)
+        +'<span class="sp-n">'+cnt[v]+'</span></div>').join('')
+    : '<div class="sp-it" style="color:var(--sub)">見つかりません</div>';
 }
 // タグはアプリの QUICK FILTER と同じ使い心地にする。
 // 出ているカードのタグだけを、件数付きで出す（無いタグは押しても0件なので出さない）
@@ -1661,7 +1678,7 @@ tagbar.onclick=e=>{
 function serShow(which){
   pick = which || null;
   serPanel.classList.toggle('open', !!pick);
-  if(pick){ serSync(); serPlace(); }
+  if(pick){ serQ.value=''; serSync(); serPlace(); }
 }
 for(const pk of PICKERS){
   document.getElementById(pk[0]).onclick=e=>{
@@ -1669,6 +1686,7 @@ for(const pk of PICKERS){
     serShow(pick && pick[0]===pk[0] ? null : pk);
   };
 }
+serQ.oninput=()=>{ if(pick) serSync(); };
 serPanel.onclick=e=>{
   e.stopPropagation();
   if(e.target.id==='sp-cls'){serShow(null);return;}
@@ -1676,8 +1694,9 @@ serPanel.onclick=e=>{
   // 全選択。いま一覧にあるものだけ入れる（0件のものを選んでも意味がない）
   if(e.target.id==='sp-all'){
     if(pick){
-      const sel=pick[2](), valsOf=pick[3];
-      for(const r of rows) for(const v of valsOf(r)) if(v) sel.add(v);
+      const sel=pick[2]();
+      // 絞り込み欄で減らした結果をそのまま全部選べるようにする
+      for(const el of serList.querySelectorAll('.sp-it[data-v]')) sel.add(el.dataset.v);
       serSync(); apply();
     }
     return;
