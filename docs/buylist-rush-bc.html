@@ -40,6 +40,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.fav{background:rgba(255,214,0,.28);border-color:#ffd600;color:#fff}
 .tg.on.p1{background:rgba(255,0,255,.22);border-color:var(--pk);color:#fff}
 .tg.p1all{border-color:rgba(255,0,255,.5);color:var(--pk)}
+.tg.m1all{border-color:rgba(255,68,68,.5);color:var(--rd)}
 /* 上に出す合計金額 */
 #memo-open.on{background:rgba(0,229,149,.22);border-color:var(--gr);color:#fff}
 /* ★に出品が出たときの知らせ */
@@ -264,6 +265,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
  <button class="tg p1all" id="f-p1all" title="いま出ているものを、まとめて＋1します">まとめて＋1</button>
+ <button class="tg m1all" id="f-m1all" title="いま出ているもののうち、＋1したものをまとめて取り消します（メモから外すだけ）">まとめて−1</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
  <button class="tg TC" data-s="TC">キャンプ</button>
  <button class="tg TT" data-s="TT">トレトク</button>
@@ -1478,6 +1480,27 @@ document.getElementById('f-p1all').onclick=function(){
   for(const b of document.querySelectorAll('[data-p1]')) syncP1El(b);
   memoCount();
   toast(yet.length+'件を＋1しました（'+yen(sum)+'）');
+};
+// いま出ているものの＋1を、まとめて取り消す。
+// まとめて＋1したあとに買わないと決めたとき、1枚ずつ押し直さずに済ませる。
+// 消えるのはメモからだけで、アプリの所持枚数には触らない
+document.getElementById('f-m1all').onclick=function(){
+  const byPid=new Map(readQueue().filter(x=>x&&x.pid).map(x=>[x.pid,x]));
+  const hit=view.filter(r=>byPid.has(r.pid));
+  if(!hit.length){
+    toast(view.length?'いま出ているものに、＋1したものはありません':'出ているものがありません');
+    return;
+  }
+  const qn=r=>Math.max(1,+(byPid.get(r.pid)||{}).n||1);
+  const pcs=hit.reduce((a,r)=>a+qn(r),0);
+  const sum=hit.reduce((a,r)=>a+(+(byPid.get(r.pid)||{}).price||0)*qn(r),0);
+  if(!confirm('いま出ている '+hit.length+'件'
+              +(pcs!==hit.length?'（'+pcs+'枚）':'')
+              +'の＋1を取り消します（'+yen(sum)+'）。\n'
+              +'メモから外すだけで、アプリの所持枚数には触りません。\n\n'
+              +'よろしいですか？')) return;
+  dropPids(hit.map(r=>r.pid));
+  toast(hit.length+'件の＋1を取り消しました（'+yen(sum)+'）');
 };
 document.getElementById('f-fav').onclick=function(){
   st.fav=st.fav?0:1; this.classList.toggle('on',!!st.fav); apply();};
