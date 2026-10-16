@@ -585,6 +585,30 @@ function draw(){           // 一度に全部作ると重いので、スクロ�
   grid.insertAdjacentHTML('beforeend', next.map(tile).join(''));
   shown+=next.length;
 }
+// いまの絞り込みを通るか。except を渡すと、その条件だけ見ない。
+// 店は呼ぶ側で見る（店ごとの件数を数えてから絞るため）
+function passes(r, except){
+  const q=st.q;
+  return (!st.cheap || r.cheap)
+    && (!st.best || isBest(r))
+    && (!st.few || (r.stock>0 && r.stock<=st.few))
+    && (!st.fav || r.fav)
+    && (!st.p1 || (st.p1 === 1 ? doneP1.has(r.pid) : !doneP1.has(r.pid)))
+    && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
+    && (!st.cond  || r.cond===st.cond)
+    && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
+    && (except==='ser'  || !st.ser.size  || st.ser.has(r.ser))
+    && (except==='set'  || !st.set.size  || st.set.has(r.set))
+    && (except==='rar'  || !st.rar.size  || st.rar.has(r.rar))
+    && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
+    && (except==='mall' || !st.mall.size || st.mall.has(r.mall))
+    && (except==='ill'  || !st.ill.size  || st.ill.has(r.ill))
+    && (except==='poke' || !st.poke.size || pokeOf(r.name).some(g=>st.poke.has(g)))
+    && (st.lo==null|| r.cr>=st.lo)
+    && (st.hi==null|| r.cr<=st.hi)
+    && (r.price>=st.min)
+    && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q));
+}
 function apply(){
   const q=st.q;
   if(st.card){
@@ -602,27 +626,7 @@ function apply(){
   const cnt={};
   view=[];
   for(const r of rows){
-    if(!(
-       (!st.cheap || r.cheap)
-    && (!st.best || isBest(r))
-    && (!st.few || (r.stock>0 && r.stock<=st.few))
-    && (!st.fav || r.fav)
-    && (!st.p1 || (st.p1 === 1 ? doneP1.has(r.pid) : !doneP1.has(r.pid)))
-    && (st.flag==='new' ? r.isnew : st.flag==='sold' ? r.sold : !r.sold)
-    && (!st.cond  || r.cond===st.cond)
-    && (st.own===''|| (st.own==='1' ? r.owned>0 : r.owned===0))
-    && (!st.ser.size || st.ser.has(r.ser))
-    && (!st.set.size || st.set.has(r.set))
-    && (!st.rar.size || st.rar.has(r.rar))
-    && (!st.tag.size || r.tags.some(t=>st.tag.has(t)))
-    && (!st.mall.size || st.mall.has(r.mall))
-    && (!st.ill.size || st.ill.has(r.ill))
-    && (!st.poke.size || pokeOf(r.name).some(g=>st.poke.has(g)))
-    && (st.lo==null|| r.cr>=st.lo)
-    && (st.hi==null|| r.cr<=st.hi)
-    && (r.price>=st.min)
-    && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q))
-    )) continue;
+    if(!passes(r)) continue;
     cnt[r.shop]=(cnt[r.shop]||0)+1;
     if(!st.shop || r.shop===st.shop) view.push(r);
   }
@@ -1616,12 +1620,12 @@ function pokeOf(name){
   return v;
 }
 const PICKERS=[
-  ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser]],
-  ['f-set','タイトル', ()=>st.set, r=>r.set?[r.set]:[]],
-  ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[]],
-  ['f-mall','マイカの店', ()=>st.mall, r=>r.mall?[r.mall]:[]],
-  ['f-ill','イラストレーター', ()=>st.ill, r=>r.ill?[r.ill]:[]],
-  ['f-poke','ポケモン', ()=>st.poke, r=>pokeOf(r.name)],
+  ['f-ser','シリーズ', ()=>st.ser, r=>[r.ser], 'ser'],
+  ['f-set','タイトル', ()=>st.set, r=>r.set?[r.set]:[], 'set'],
+  ['f-rar','レアリティ', ()=>st.rar, r=>r.rar?[r.rar]:[], 'rar'],
+  ['f-mall','マイカの店', ()=>st.mall, r=>r.mall?[r.mall]:[], 'mall'],
+  ['f-ill','イラストレーター', ()=>st.ill, r=>r.ill?[r.ill]:[], 'ill'],
+  ['f-poke','ポケモン', ()=>st.poke, r=>pokeOf(r.name), 'poke'],
 ];
 let pick=null;           // いま開いているもの
 function pickBtn(){ return pick? document.getElementById(pick[0]) : null; }
@@ -1639,9 +1643,17 @@ function serSync(){
     b.classList.toggle('on', n>0);
   }
   if(!pick) return;
-  const [,label,getSet,valsOf]=pick, sel=getSet();
+  const [,label,getSet,valsOf,key]=pick, sel=getSet();
+  // いまの絞り込みを通るものだけを数える。シリーズでMEGAを選んだら
+  // タイトルもMEGAのものだけになる。自分の条件は見ない（選び直せるように）
   const cnt={};
-  for(const r of rows) for(const v of valsOf(r)) cnt[v]=(cnt[v]||0)+1;
+  for(const r of rows){
+    if(!passes(r,key)) continue;
+    if(st.shop && r.shop!==st.shop) continue;
+    for(const v of valsOf(r)) if(v) cnt[v]=(cnt[v]||0)+1;
+  }
+  // すでに選んでいるものは、0件になっても消さない（外せなくなるため）
+  for(const v of sel) if(!(v in cnt)) cnt[v]=0;
   serTtl.textContent=label+'（複数選べます）';
   const kw=(serQ.value||'').trim().toLowerCase();
   const keys=Object.keys(cnt)
