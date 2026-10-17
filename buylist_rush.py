@@ -1237,7 +1237,7 @@ def my_scrape():
         return []
     log('  DMMマイカ 店 %d件' % len(shops))
     MY_SHIP.clear()
-    price_shop, done = {}, 0      # (商品id, 値段) → (店名, 店番号)
+    price_shop, per_shop, done = {}, {}, 0   # (商品id, 値段) → (店名, 店番号)
     with futures.ThreadPoolExecutor(max_workers=5) as ex:
         jobs = {ex.submit(my_one, num, b64, name): num
                 for num, (b64, name) in shops.items()}
@@ -1250,22 +1250,38 @@ def my_scrape():
                 got, name, ship = {}, '', ''
             if ship and name:
                 MY_SHIP[name] = ship
+            per_shop[num] = got
             for it in got.values():
                 price_shop.setdefault((it['pid'], it['price']), (it['mall'], num))
             if done % 40 == 0:
                 log('  DMMマイカ %d/%d店 対応表%d件' % (done, len(shops), len(price_shop)))
-    log('  DMMマイカ 店ごとの出品 %d件。全体の一覧を取りにいきます' % len(price_shop))
+    log('  DMMマイカ 店ごとの出品 %d件。全体の一覧を取りにいきます'
+        % sum(len(g) for g in per_shop.values()))
 
     items = my_all()
-    named = 0
+    named, owner = 0, {}
     for pid, it in items.items():
         hit = price_shop.get((pid, it['price']))
         if hit:
             it['mall'], named = hit[0], named + 1
             it['url'] += '?storeIds=%s' % hit[1]      # その店の値段が開くように
-    log('  DMMマイカ %d件（うち店が分かったもの %d件・%d店）'
-        % (len(items), named, len(MY_SHIP)))
-    return list(items.values())
+            owner[pid] = hit[1]                       # この行はどの店のものか
+    # 店ごとの出品も1行ずつ出す。モールは店が違えば送料が別にかかるので、
+    # 「その店に何があるか」が見えないと、まとめ買いの判断ができない。
+    # 最安の行と同じ店のものは重ねない
+    out, extra = dict(items), 0
+    for num, got in per_shop.items():
+        for it in got.values():
+            if owner.get(it['pid']) == num:
+                continue
+            x = dict(it)
+            x['pid'] = '%s-%s' % (it['pid'], num)     # 店ごとに別の行にする
+            x['url'] = it['url'] + '?storeIds=%s' % num
+            out[x['pid']] = x
+            extra += 1
+    log('  DMMマイカ %d件（全体の最安%d件＋店ごと%d件・店が分かったもの%d件・%d店）'
+        % (len(out), len(items), extra, named, len(MY_SHIP)))
+    return list(out.values())
 
 
 # ── 駿河屋 ───────────────────────────────────────────
@@ -2267,7 +2283,8 @@ def build(rows, prev, ok_shops=None):
             continue
         # 段まで分けて残す。これをしないと B+ / B / B- のうち1件しか出ず、
         # どの状態を買っているのか選べない
-        k = (r['id'], r['shop'], r.get('cnd') or r['cond'])
+        # マイカは店ごとに送料がかかるので、店まで分けて残す
+        k = (r['id'], r['shop'], r.get('cnd') or r['cond'], r.get('mall') or '')
         if k not in best or r['crPrice'] < best[k]['crPrice']:
             best[k] = r
     items = sorted(best.values(), key=lambda r: -(r['price'] - r['crPrice']))
