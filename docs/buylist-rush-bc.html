@@ -1435,7 +1435,7 @@ grid.addEventListener('click',e=>{
       return;
     }
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
-            cond:r.cond, cnd:r.cnd, n:1,
+            cond:r.cond, cnd:r.cnd, n:1, mall:r.mall||'',
             at:new Date().toISOString()});
     try{ localStorage.setItem(QKEY,JSON.stringify(q)); }
     catch(_){ toast('保存できませんでした'); return; }
@@ -1485,7 +1485,7 @@ document.getElementById('f-p1all').onclick=function(){
   const q=readQueue(), now=new Date().toISOString();
   for(const r of yet){
     q.push({id:r.id,pid:r.pid,name:r.name,shop:r.shop,price:r.cr,mkt:r.price,
-            cond:r.cond, cnd:r.cnd, n:1, at:now});
+            cond:r.cond, cnd:r.cnd, n:1, mall:r.mall||'', at:now});
     doneP1.add(r.pid); p1Qty.set(r.pid,1);
   }
   try{ localStorage.setItem(QKEY,JSON.stringify(q)); }

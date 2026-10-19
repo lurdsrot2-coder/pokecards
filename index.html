@@ -512,7 +512,12 @@ body.progging #grid{padding-bottom:64px}
  color:var(--txt);font-size:11px;padding:3px 10px;cursor:pointer}
 #buyq button[data-a="ok"]{border-color:var(--pink);color:var(--pink);font-weight:700}
 /* 店ごとの反映。買い終わった店だけ押せるように目立たせる */
-#buyq button[data-shop]{border-color:var(--cyan);color:var(--cyan);font-weight:700}
+#buyq button[data-g]{border-color:var(--cyan);color:var(--cyan);font-weight:700}
+#buyq button[data-a="min"]{border:none;color:var(--sub);font-size:13px;padding:0 6px;margin-left:auto}
+/* たたんだときの小さな印。出しっぱなしの帯が邪魔なときはこれだけ残す */
+#buyq-mini{display:block;margin:4px 0 0 14px;background:transparent;cursor:pointer;
+ border:1px solid var(--pink);border-radius:4px;color:var(--pink);
+ font-size:10px;font-weight:700;padding:2px 8px}
 /* バックアップボタンの下に出す最終実施日 */
 .bkwrap{position:relative;display:inline-flex;align-items:center}
 .bkdate{position:absolute;top:100%;left:0;right:0;margin-top:2px;text-align:center;
@@ -5179,29 +5184,60 @@ function _readBuyQueue(){
 const BUYQ_SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
   YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',SG:'駿河屋',
   BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ'};
+// 帯をたたんだかどうか。控えの中身が変わったら、また開く
+const BUYQ_MIN='pokecards_buyq_min';
+function _buyqSig(q){ return q.length+'|'+((q[q.length-1]||{}).pid||''); }
+function _buyqMin(on){
+  try{
+    if(on) localStorage.setItem(BUYQ_MIN, _buyqSig(_readBuyQueue()));
+    else localStorage.removeItem(BUYQ_MIN);
+  }catch(_){}
+}
 function _showBuyQueue(){
   const q=_readBuyQueue();
   const old=document.getElementById('buyq');
   if(old) old.remove();
-  if(!q.length) return;
+  const mini=document.getElementById('buyq-mini');
+  if(mini) mini.remove();
+  if(!q.length){ _buyqMin(false); return; }
+  // たたんであるあいだは小さな印だけ。押すと戻る
+  let hid=''; try{ hid=localStorage.getItem(BUYQ_MIN)||''; }catch(_){}
+  if(hid && hid===_buyqSig(q)){
+    const m=document.createElement('button');
+    m.id='buyq-mini'; m.type='button';
+    m.textContent='🛒 '+q.length;
+    m.title='買い得リストから届いた＋1。押すと開きます';
+    m.onclick=()=>{ _buyqMin(false); _showBuyQueue(); };
+    (document.getElementById('top-ui')||document.body).appendChild(m);
+    return;
+  }
   const known=q.filter(x=>db.cards.some(c=>c.id===x.id));
   // 買うのは店ごとなので、反映も店ごとに押せるようにする。
   // ほかの店のぶんが混ざっていても、買い終わった店だけ先に反映できる
+  // マイカはモールで、店ごとに送料がかかる。買うのも店ごとなので分ける
   const byShop=new Map();
   for(const x of known){
     const sh=x.shop||'';
-    if(!byShop.has(sh)) byShop.set(sh,[]);
-    byShop.get(sh).push(x);
+    const key = sh==='MY' ? sh+'\u0000'+(x.mall||'') : sh;
+    if(!byShop.has(key)) byShop.set(key,[]);
+    byShop.get(key).push(x);
   }
+  const shopName=k=>{
+    const i=k.indexOf('\u0000');
+    const sh = i<0 ? k : k.slice(0,i), mall = i<0 ? '' : k.slice(i+1);
+    const base = BUYQ_SHOP[sh]||sh||'店不明';
+    return mall ? base+'／'+mall : base;
+  };
   const shops=[...byShop.entries()].sort((a,b)=>b[1].length-a[1].length);
   const el=document.createElement('div');
   el.id='buyq';
   el.innerHTML='<span>🛒 買い得リストから <b>'+known.length+'件</b> の＋1が届いています'
     +(known.length<q.length?'（'+(q.length-known.length)+'件はこのDBに無いので飛ばします）':'')+'</span>'
-    + shops.map(([sh,v])=>'<button type="button" data-shop="'+sh+'">'
-        +(BUYQ_SHOP[sh]||sh||'店不明')+' '+v.length+'件</button>').join('')
+    + shops.map(([k,v],i)=>'<button type="button" data-g="'+i+'">'
+        +esc(shopName(k))+' '+v.length+'件</button>').join('')
     + (shops.length>1?'<button type="button" data-a="ok">全部</button>':'')
-    + '<button type="button" data-a="no">破棄</button>';
+    + '<button type="button" data-a="no">破棄</button>'
+    + '<button type="button" data-a="min" title="小さくたたみます（消えません）">✕</button>';
 
   // 指定したぶんだけ＋1して、控えから外す
   const apply=(list)=>{
@@ -5221,7 +5257,10 @@ function _showBuyQueue(){
       const p=+x.price||0;
       if(p>0){
         c.buyLots=c.buyLots||[];
-        c.buyLots.push({d:day, q:nq, p:p, memo:(BUYQ_SHOP[x.shop]||x.shop||'買い得リスト')});
+        // マイカはモールなので、どの店で買ったかまで残す
+        c.buyLots.push({d:day, q:nq, p:p,
+                        memo:(BUYQ_SHOP[x.shop]||x.shop||'買い得リスト')
+                             +(x.mall?'／'+x.mall:'')});
         yen+=p*nq; lots+=nq;
       }
       _dropFav(c);             // 買えたので★は外す
@@ -5245,9 +5284,11 @@ function _showBuyQueue(){
 
   el.onclick=e=>{
     const b=e.target.closest('button'); if(!b) return;
-    if(b.dataset.shop!==undefined){
-      const list=byShop.get(b.dataset.shop)||[];
-      const nm=BUYQ_SHOP[b.dataset.shop]||b.dataset.shop||'店不明';
+    if(b.dataset.a==='min'){ _buyqMin(true); el.remove(); _showBuyQueue(); return; }
+    if(b.dataset.g!==undefined){
+      const ent=shops[+b.dataset.g]; if(!ent) return;
+      const list=ent[1];
+      const nm=shopName(ent[0]);
       const qn=x=>Math.max(1,+x.n||1);
       const sum=list.reduce((a,x)=>a+(+x.price||0)*qn(x),0);
       const pcs=list.reduce((a,x)=>a+qn(x),0);
