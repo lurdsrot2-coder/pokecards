@@ -190,7 +190,10 @@ def _backoff(e, i):
             wait = int((e.headers or {}).get('Retry-After') or 0)
         except Exception:
             wait = 0
-        time.sleep(max(wait, 20 * (i + 1)))
+        # Retry-After をそのまま信じると、503のときに1時間寝てしまう。
+        # 4回で4時間止まり、巡回が終わらずリストが何日も古いままになっていた。
+        # 待つのは2分まで。それでも駄目な店は諦めて、前回のぶんを残す
+        time.sleep(min(120, max(wait, 20 * (i + 1))))
         return True
     time.sleep(2 + i * 3)
     return False
