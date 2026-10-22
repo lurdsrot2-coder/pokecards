@@ -1392,14 +1392,22 @@ def sg_scrape():
     return list(items.values())
 
 
+SHOP_JA = {'CR': 'ラッシュ', 'TC': 'キャンプ', 'TT': 'トレトク', 'FF': '福福',
+           'BW': 'BIGWEB', 'YY': '遊々亭', 'TR': 'トレコロ', 'PB': 'プライスベース',
+           'OL': 'オルタ', 'MY': 'マイカ', 'SG': '駿河屋', 'BE': 'Bee本舗',
+           'FA': 'フルアヘッド', 'HB': 'ホビステ', 'CL': 'カードラボ'}
+
+
 def over_budget():
     """時間を使い切ったか"""
     return _started is not None and (time.time() - _started) / 60 > BUDGET_MIN
 
 
-def scrape():
+def scrape(on_shop=None):
     """店ごとに集めて、ちゃんと取れた店の集合も返す。
-    取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）"""
+    取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）
+
+    on_shop: 1店ぶん取り終わるたびに呼ぶ。そこまでを公開するために使う"""
     only = None
     if '--only' in sys.argv:
         only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
@@ -1435,6 +1443,11 @@ def scrape():
         if len(got) >= least:
             items += got
             ok.add(shop)
+            if on_shop:
+                try:
+                    on_shop(shop, items, ok)
+                except Exception as e:
+                    log('  %s までの公開に失敗: %s' % (shop, e))
         else:
             log('※ %s は %d件しか取れませんでした。前回のぶんをそのまま残します' % (shop, len(got)))
     return items, ok
@@ -2646,25 +2659,40 @@ def _run():
         except Exception:
             pass
     log('お店の在庫を取得中…')
-    items, ok_shops = scrape()
+    box = {'cards': None, 'last': ''}
+
+    def publish(items, ok_shops, tag):
+        """そこまでに取れたぶんで、一覧を作って出す"""
+        if not ok_shops:
+            return
+        if box['cards'] is None:
+            box['cards'] = load_db()
+            log('DB %d件' % len(box['cards']))
+        rows, stat = match(items, box['cards'])
+        if tag == '仕上げ':
+            for k, v in stat.most_common():
+                log('  %-14s %d' % (k, v))
+        data = build(rows, prev, ok_shops)
+        os.makedirs(os.path.dirname(OUT), exist_ok=True)
+        io.open(OUT, 'w', encoding='utf-8', newline='').write(
+            json.dumps(data, ensure_ascii=False, separators=(',', ':')))
+        s = data['stats']
+        log('[%s まで] 在庫あり %d件 → カード %d件 ／ 売れた %d件 ・ 新着 %d件 ／ %.1fMB'
+            % (tag, s['listings'], s['cards'], s['sold'], s['added'],
+               os.path.getsize(OUT) / 1048576))
+        if '--no-push' not in sys.argv:
+            if safe_to_push(data) or '--force' in sys.argv:
+                log('[%s まで] push: %s' % (tag, 'OK' if push(OUT) else '失敗'))
+            else:
+                log('[%s まで] 中身がおかしいので出しません' % tag)
+        box['last'] = tag
+
+    items, ok_shops = scrape(on_shop=lambda sh, it, ok: publish(it, ok, SHOP_JA.get(sh, sh)))
     log('取得 %d件（%s）' % (len(items), '／'.join(sorted(ok_shops)) or 'なし'))
     if not ok_shops:
         raise RuntimeError('どの店からも取得できませんでした')
-    cards = load_db()
-    log('DB %d件' % len(cards))
-    rows, stat = match(items, cards)
-    for k, v in stat.most_common():
-        log('  %-14s %d' % (k, v))
-    data = build(rows, prev, ok_shops)
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    io.open(OUT, 'w', encoding='utf-8', newline='').write(
-        json.dumps(data, ensure_ascii=False, separators=(',', ':')))
-    s = data['stats']
-    log('在庫あり %d件 → カード %d件 ／ 売れた %d件 ・ 新着 %d件 ／ %.1fMB'
-        % (s['listings'], s['cards'], s['sold'], s['added'], os.path.getsize(OUT) / 1048576))
-    if '--no-push' not in sys.argv:
-        if safe_to_push(data) or '--force' in sys.argv:
-            log('push: ' + ('OK' if push(OUT) else '失敗'))
+    # 最後にもう一度。ここで照合の内訳も出す
+    publish(items, ok_shops, '仕上げ')
     return 0
 
 
