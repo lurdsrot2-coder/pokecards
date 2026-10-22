@@ -22,8 +22,10 @@ import concurrent.futures as futures
 
 OWNER, REPO = 'lurdsrot2-coder', 'pokecards'
 # 1回の巡回にかけてよい時間。超えたら残りの店は諦めて、取れたぶんで書き出す。
-# 店が1つ不調なだけで「一覧が丸一日古いまま」になるのを防ぐ
-BUDGET_MIN = 100
+# 店が1つ不調なだけで「一覧が丸一日古いまま」になるのを防ぐ。
+# 100分では15店を回りきれず、後ろの7店が毎回飛ばされていた。
+# タスク側の上限が3時間なので、その手前の160分までにする
+BUDGET_MIN = 160
 _started = None          # 巡回を始めた時刻（scrape で入れる）
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 外部コマンド（curl・git・PowerShell）を呼ぶたびに黒い窓が前面に出て
@@ -1419,16 +1421,18 @@ def scrape(on_shop=None):
     global _started
     _started = time.time()
     items, ok = [], set()
-    for shop, fn, least in (('CR', cr_scrape, 500), ('TC', tc_scrape, 500),
-                            ('TT', tt_scrape, 500), ('FF', ff_scrape, 300),
-                            ('BW', bw_scrape, 300), ('YY', yy_scrape, 300),
-                            ('TR', tr_scrape, 300), ('PB', pb_scrape, 200),
-                            ('OL', ol_scrape, 200), ('MY', my_scrape, 300),
-                            ('SG', sg_scrape, 150),     # 駿河屋は在庫のある物が少ない
-                            ('BE', be_scrape, 300),
-                            ('FA', fa_scrape, 300),
-                            ('HB', hb_scrape, 300),
-                            ('CL', cl_scrape, 300)):
+    # 軽い店から順に。重い2店（プライスベース・駿河屋）は最後に回す。
+    # 1商品ずつ在庫を見にいくので45分以上かかり、先に置くと
+    # 後ろの店が毎回まるごと時間切れになっていた
+    for shop, fn, least in (('CR', cr_scrape, 500), ('OL', ol_scrape, 200),
+                            ('FF', ff_scrape, 300), ('YY', yy_scrape, 300),
+                            ('BE', be_scrape, 300), ('FA', fa_scrape, 300),
+                            ('HB', hb_scrape, 300), ('CL', cl_scrape, 300),
+                            ('TT', tt_scrape, 500), ('BW', bw_scrape, 300),
+                            ('TR', tr_scrape, 300),
+                            ('TC', tc_scrape, 500), ('MY', my_scrape, 300),
+                            ('PB', pb_scrape, 200),
+                            ('SG', sg_scrape, 150)):   # 駿河屋は在庫のある物が少ない
         if only and shop not in only:
             log('  %s は今回スキップ（前回のぶんを残します）' % shop)
             continue
