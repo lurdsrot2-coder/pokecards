@@ -41,6 +41,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.p1{background:rgba(255,0,255,.22);border-color:var(--pk);color:#fff}
 .tg.p1all{border-color:rgba(255,0,255,.5);color:var(--pk)}
 .tg.m1all{border-color:rgba(255,68,68,.5);color:var(--rd)}
+/* 取り直しの進み具合。Ctrl＋店名で頼んだときだけ出る */
+#rfz{margin:0 12px 4px;padding:5px 9px;border-radius:5px;font-size:11px;
+ background:rgba(255,0,255,.12);border:1px solid rgba(255,0,255,.45);color:#ff9cff}
+#rfz.done{background:rgba(0,229,149,.12);border-color:rgba(0,229,149,.5);color:#7dffcf}
+#rfz.ng{background:rgba(255,68,68,.12);border-color:rgba(255,68,68,.5);color:#ff9c9c}
 /* 上に出す合計金額 */
 #memo-open.on{background:rgba(0,229,149,.22);border-color:var(--gr);color:#fff}
 /* ★に出品が出たときの知らせ */
@@ -260,6 +265,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button id="reload" title="最新のデータを取り直す">⟳ 更新</button>
  <button id="memo-open" title="＋1した出品を店ごとにまとめます">🛒 メモ</button></div>
 <div class="meta" id="meta">読み込み中…</div>
+<div id="rfz" hidden></div>
 <div class="ctl">
  <button class="tg pin" id="f-own" title="押すたび 未所持 → 所持 → 解除 と切り替わります">未所持</button>
  <button class="tg pin" id="f-new">新着</button>
@@ -1380,6 +1386,86 @@ addEventListener('message', e=>{
     if(nNg) toast('入らなかった '+nNg+'件があります（もう一度押せます）');
   }
 });
+// ── 店ごとの取り直しを頼む ────────────────────────
+// ページは静的なので、ここでは取得できない。リポジトリに依頼を置いて、
+// PC側（buylist_rush.py --watch）が2分おきに拾って実行する
+const RF_MIN={CR:8,TC:25,TT:15,FF:2,BW:10,YY:7,TR:10,PB:70,OL:2,MY:15,
+              SG:9,BE:2,FA:21,HB:12,CL:1};
+const RF_REQ='docs/refresh-request.json', RF_ST='refresh-status.json';
+function rfRepo(){
+  const owner=(location.hostname.split('.')[0])||'';
+  const repo=(location.pathname.split('/').filter(Boolean)[0])||'';
+  return {owner:owner, repo:repo};
+}
+function rfToken(){
+  try{ return (JSON.parse(localStorage.getItem('pokecards_config')||'{}').gistToken||''); }
+  catch(_){ return ''; }
+}
+function rfShow(text, cls){
+  const el=document.getElementById('rfz');
+  el.hidden=false; el.textContent=text;
+  el.className=cls||'';
+}
+async function askRefresh(shop){
+  const nm=SHOP[shop]||shop, min=RF_MIN[shop]||10;
+  const tok=rfToken();
+  if(!tok){
+    alert('取り直しを頼むには、アプリの「⚙ 設定」でGitHubのTokenを入れておいてください。\n'
+         +'（このページはアプリと同じ置き場所のTokenを借ります）');
+    return;
+  }
+  if(!confirm(nm+' を取り直します。\n\n'
+      +'だいたい '+min+'分 かかります。\n'
+      +'パソコンが起きていれば、2分以内に始まります。\n'
+      +'終わるまで、ほかの店の取得は動きません。\n\n依頼しますか？')) return;
+  const {owner,repo}=rfRepo();
+  const api='https://api.github.com/repos/'+owner+'/'+repo+'/contents/'+RF_REQ;
+  const at=new Date().toISOString();
+  rfShow('🛈 '+nm+' の取り直しを頼んでいます…');
+  try{
+    let sha='';
+    const g=await fetch(api+'?t='+Date.now(),
+      {headers:{Authorization:'token '+tok, Accept:'application/vnd.github+json'}});
+    if(g.ok) sha=(await g.json()).sha||'';
+    const body=JSON.stringify({shop:shop, at:at, name:nm}, null, 1);
+    const r=await fetch(api,{method:'PUT',
+      headers:{Authorization:'token '+tok, Accept:'application/vnd.github+json'},
+      body:JSON.stringify({message:'chore: '+nm+' の取り直しを依頼',
+        content:btoa(unescape(encodeURIComponent(body))), sha:sha||undefined})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    rfShow('🛈 '+nm+' の取り直しを依頼しました（だいたい '+min+'分）。パソコンが拾うまで最大2分…');
+    rfWatch(at, nm, min);
+  }catch(e){
+    rfShow('✖ 依頼できませんでした（'+e.message+'）。Tokenの権限を確かめてください','ng');
+  }
+}
+// 進み具合を見にいく。PC側が refresh-status.json を書き換える
+let rfTimer=null;
+function rfWatch(at, nm, min){
+  clearInterval(rfTimer);
+  const t0=Date.now();
+  rfTimer=setInterval(async()=>{
+    let j=null;
+    try{ const r=await fetch(RF_ST+'?t='+Date.now(),{cache:'no-store'});
+         if(r.ok) j=await r.json(); }catch(_){}
+    const mm=Math.round((Date.now()-t0)/60000);
+    if(j && j.at===at){
+      if(j.state==='実行中'){
+        rfShow('⏳ '+nm+' を取り直しています…（'+mm+'分経過／めやす '+min+'分）');
+      }else if(j.state==='完了'){
+        clearInterval(rfTimer);
+        rfShow('✔ '+nm+' の取り直しが終わりました（'+mm+'分）。「⟳ 更新」を押すと新しい在庫が出ます','done');
+      }else if(j.state==='失敗'){
+        clearInterval(rfTimer);
+        rfShow('✖ '+nm+' の取り直しに失敗しました：'+(j.note||''),'ng');
+      }
+    }else if(mm>=5){
+      rfShow('🛈 '+nm+' の依頼を出しましたが、まだパソコンが拾っていません（'+mm+'分）。'
+            +'電源が入っているか確かめてください');
+      if(mm>=30) clearInterval(rfTimer);
+    }
+  }, 20000);
+}
 function toast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('on');
@@ -1541,7 +1627,11 @@ document.querySelectorAll('.tg[data-c]').forEach(b=>b.onclick=function(){
   const on=st.cond===this.dataset.c; st.cond=on?'':this.dataset.c;
   document.querySelectorAll('.tg[data-c]').forEach(x=>x.classList.remove('on'));
   if(!on)this.classList.add('on'); apply();});
-document.querySelectorAll('.tg[data-s]').forEach(b=>b.onclick=function(){
+// Ctrl（Macは⌘）＋店名で、その店だけ取り直しを頼む
+document.querySelectorAll('.tg[data-s]').forEach(b=>b.oncontextmenu=e=>{
+  e.preventDefault(); askRefresh(b.dataset.s); });
+document.querySelectorAll('.tg[data-s]').forEach(b=>b.onclick=function(e){
+  if(e && (e.ctrlKey||e.metaKey)){ e.preventDefault(); askRefresh(this.dataset.s); return; }
   const on=st.shop===this.dataset.s; st.shop=on?'':this.dataset.s;
   document.querySelectorAll('.tg[data-s]').forEach(x=>x.classList.remove('on'));
   if(!on)this.classList.add('on'); apply();});

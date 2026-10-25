@@ -1394,6 +1394,7 @@ def sg_scrape():
     return list(items.values())
 
 
+ONLY_OVERRIDE = None     # --watch で「この店だけ」を指定するときに入る
 SHOP_JA = {'CR': 'ラッシュ', 'TC': 'キャンプ', 'TT': 'トレトク', 'FF': '福福',
            'BW': 'BIGWEB', 'YY': '遊々亭', 'TR': 'トレコロ', 'PB': 'プライスベース',
            'OL': 'オルタ', 'MY': 'マイカ', 'SG': '駿河屋', 'BE': 'Bee本舗',
@@ -1410,8 +1411,10 @@ def scrape(on_shop=None):
     取れなかった店のぶんは前回の内容をそのまま残す（売り切れ扱いにしない）
 
     on_shop: 1店ぶん取り終わるたびに呼ぶ。そこまでを公開するために使う"""
-    only = None
-    if '--only' in sys.argv:
+    only = ONLY_OVERRIDE
+    if only:
+        log('  %s だけ取り直します（買い得リストからの依頼）' % '／'.join(sorted(only)))
+    elif '--only' in sys.argv:
         only = {x.upper() for x in sys.argv[sys.argv.index('--only') + 1].split(',')}
     elif '--light' in sys.argv:
         # 在庫の動きが速い店だけ。重い4店（遊々亭・トレコロ・プライスベース・駿河屋）は
@@ -2458,11 +2461,10 @@ def safe_to_push(data):
     return False
 
 
-def push(path):
+def push(path, rel='docs/buylist-rush-bc.json', msg='chore: 買い得リストのデータ更新'):
     """本体の作業ツリーは触らずに、このファイルだけを別クローンから push する
     （バックアップの状態ファイルと同じやり方。編集中の内容を壊さないため）"""
     work = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'PokecardStatus')
-    rel = 'docs/buylist-rush-bc.json'
 
     def git(args, cwd=work, timeout=300):
         return subprocess.run(['git'] + args, cwd=cwd, timeout=timeout,
@@ -2486,7 +2488,7 @@ def push(path):
     for attempt in range(5):
         git(['fetch', '-q', '--depth', '1', 'origin', 'main'])
         git(['reset', '--hard', '-q', 'FETCH_HEAD'])
-        dst = os.path.join(work, 'docs', 'buylist-rush-bc.json')
+        dst = os.path.join(work, *rel.split('/'))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         io.open(dst, 'w', encoding='utf-8', newline='').write(
             io.open(path, encoding='utf-8').read())
@@ -2502,7 +2504,7 @@ def push(path):
         if head.returncode == 0 and out(head) == want:
             log('変更なし（pushしません）')
             return True
-        c = git(['commit', '-q', '-m', 'chore: 買い得リストのデータ更新'])
+        c = git(['commit', '-q', '-m', msg])
         if c.returncode != 0:
             # commit できていないのに push は「送るものが無い」で成功してしまう
             raise RuntimeError('commit失敗: ' + c.stderr.decode('utf-8', 'replace')[:160])
@@ -2643,10 +2645,84 @@ def _unlock():
         pass
 
 
+REQ_REL = 'docs/refresh-request.json'
+ST_REL = 'docs/refresh-status.json'
+DONE_MARK = os.path.join(HERE, 'refresh-done.txt')
+# だいたいの所要時間（分）。ページの確認ポップアップにも同じ数字を出す
+SHOP_MIN = {'CR': 8, 'TC': 25, 'TT': 15, 'FF': 2, 'BW': 10, 'YY': 7, 'TR': 10,
+            'PB': 70, 'OL': 2, 'MY': 15, 'SG': 9, 'BE': 2, 'FA': 21, 'HB': 12,
+            'CL': 1}
+
+
+def _raw(rel):
+    url = 'https://raw.githubusercontent.com/%s/%s/main/%s?t=%d' % (
+        OWNER, REPO, rel, int(time.time()))
+    r = urllib.request.Request(url, headers={'User-Agent': UA})
+    return urllib.request.urlopen(r, timeout=60).read().decode('utf-8')
+
+
+def _say_status(shop, at, state, note=''):
+    """進み具合をページに見せる。小さいファイルなので何度出しても軽い"""
+    try:
+        p = os.path.join(HERE, 'refresh-status.json')
+        io.open(p, 'w', encoding='utf-8', newline='').write(json.dumps(
+            {'shop': shop, 'name': SHOP_JA.get(shop, shop), 'at': at,
+             'state': state, 'note': note,
+             'updatedAt': datetime.datetime.now().astimezone().isoformat(timespec='seconds')},
+            ensure_ascii=False))
+        push(p, ST_REL, 'chore: 取り直しの進み具合')
+    except Exception as e:
+        log('  進み具合を出せません: %s' % e)
+
+
+def watch_once():
+    """買い得リストから届いた「この店を取り直して」を1件こなす"""
+    try:
+        req = json.loads(_raw(REQ_REL))
+    except Exception:
+        return 0                      # 依頼がまだ無いのが普通
+    at = str(req.get('at') or '')
+    shop = str(req.get('shop') or '').upper()
+    if not at or shop not in SHOP_JA:
+        return 0
+    last = ''
+    try:
+        last = io.open(DONE_MARK, encoding='utf-8').read().strip()
+    except Exception:
+        pass
+    if at == last:
+        return 0                      # もう済ませた依頼
+    # 先に印を付ける。失敗しても同じ依頼を延々と繰り返さないため
+    io.open(DONE_MARK, 'w', encoding='utf-8').write(at)
+    log('依頼を受けました: %s（%s）' % (SHOP_JA[shop], at))
+    _say_status(shop, at, '実行中')
+    global ONLY_OVERRIDE
+    ONLY_OVERRIDE = {shop}
+    try:
+        _run()
+        _say_status(shop, at, '完了')
+    except Exception as e:
+        log('依頼の取得に失敗: %s' % e)
+        _say_status(shop, at, '失敗', str(e)[:120])
+    finally:
+        ONLY_OVERRIDE = None
+    return 0
+
+
 def main():
     _trim_log()
     if '--sync' in sys.argv:
         return sync_only()
+    if '--watch' in sys.argv:
+        # 取得中なら何もしない（鍵が空くまで待たない）
+        if os.path.exists(LOCK):
+            return 0
+        if not _lock():
+            return 0
+        try:
+            return watch_once()
+        finally:
+            _unlock()
     if not _lock():
         return 0
     try:
