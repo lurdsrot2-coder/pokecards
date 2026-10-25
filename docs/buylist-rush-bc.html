@@ -406,7 +406,7 @@ const TAB={BW:'bigweb'};
 // 「まとめてカートへ」で1回に入れる件数と、対応している店
 // （ユーザースクリプト側 docs/hobbystation-autocart.user.js と同じ店）
 const AUTO_N=50;
-const AUTO_SHOPS=new Set(['HB','FA','CL','TT','BW','FF','MY','TR','OL']);
+const AUTO_SHOPS=new Set(['HB','FA','CL','TT','BW','FF','MY','TR','OL','CR']);
 // キャンプのカートは、URLに並べる方式だと
 //   ・約4,000文字（200件ほど）で 414 になる
 //   ・「カートを作り直す」ので1枚ずつ入れると前のが消える
@@ -1308,7 +1308,8 @@ document.getElementById('memo').onclick=e=>{
     // A にまとめて渡すと、値段の違う上下の段を取り違える
     const q=take.map(x=>({u:x.row.url.replace(/#.*$/,'').slice(base.length),
                           c:x.row.cnd||x.row.cond||'', m:g.mall||'',
-                          p:x.price||x.row.cr||0}));
+                          p:x.price||x.row.cr||0,
+                          n:Math.max(1,+x.n||1)}));
     // 開くのは1回だけ。2件目からはスクリプトが同じタブで進む。
     // BIGWEBはカートがタブごとなので、いつもの名前のタブで開く。
     // ほかの店は毎回新しい名前で開く（前の画面のタブを使い回すと、

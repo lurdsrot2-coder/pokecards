@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.4
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ）
+// @version      2.5
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
 // @match        https://pokemon-card-fullahead.com/shop/basket.html*
 // @match        https://www.c-labo-online.jp/product/*
+// @match        https://www.cardrush-pokemon.jp/product/*
+// @match        https://www.cardrush-pokemon.jp/cart*
 // @match        https://www.c-labo-online.jp/cart*
 // @match        https://www.toretoku.jp/item/details/*
 // @match        https://www.bigweb.co.jp/ja/products/pokemon/cardViewer/*
@@ -24,11 +26,13 @@
   const KEY='pcAutoCart';
   const SHOPS={'www.hobbystation-single.jp':'HB','pokemon-card-fullahead.com':'FA',
     'www.c-labo-online.jp':'CL','www.toretoku.jp':'TT','www.bigweb.co.jp':'BW',
+    'www.cardrush-pokemon.jp':'CR',
     'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY','www.torecolo.jp':'TR','olta-tcg.com':'OL'};
   const shop=SHOPS[location.hostname];
   if(!shop) return;
-  // フルアヘッドとカードラボは、押すとカート画面に移動する店
-  const NAV = shop==='FA' || shop==='CL';
+  // フルアヘッド・カードラボ・カードラッシュは、押すとカート画面に移動する店。
+  // カードラボとカードラッシュはどちらもカラーミーショップで、ボタンのidも同じ
+  const NAV = shop==='FA' || shop==='CL' || shop==='CR';
 
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const norm=u=>String(u).replace(/[?#].*$/,'').replace(/\/+$/,'');
@@ -90,7 +94,7 @@
     msg.innerHTML='';
     msg.append((byUser?'止めました。':'終わりました。')
       +'入れた '+st.ok+'件 ／ 飛ばした '+st.ng.length+'件 ');
-    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx',OL:'/cart'}[shop];
+    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx',OL:'/cart',CR:'/cart'}[shop];
     if(cartUrl){
       const a=document.createElement('a');
       a.href=cartUrl; a.textContent='カートを見る';
@@ -219,6 +223,14 @@
     const b = shop==='FA' ? document.querySelector('a.add_cart')
                           : document.getElementById('submit_cart_input_btn');
     if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
+    // カラーミーの店は枚数を選べる。リストで×Nにしたぶんをそのまま入れる
+    const q=document.querySelector('select[id^="cart_addquantity_"]');
+    const want=Math.max(1, parseInt(cur.n,10)||1);
+    if(q && want>1){
+      const max=q.options.length;
+      q.value=String(Math.min(want, max));
+      q.dispatchEvent(new Event('change',{bubbles:true}));
+    }
     st.wait=1; save(st);
     b.click();
     await sleep(15000);               // ここまで残っていたら移動できていない
@@ -236,7 +248,7 @@
   }
   // 商品ページ
   if(NAV) st.wait=0;
-  const run={HB:hb,FA:nav,CL:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr,OL:ol}[shop];
+  const run={HB:hb,FA:nav,CL:nav,CR:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr,OL:ol}[shop];
   (async()=>{
     let res;
     try{ res=await run(); }catch(e){ res='エラー '+(e&&e.message||e); }
