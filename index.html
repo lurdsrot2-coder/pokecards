@@ -193,6 +193,11 @@ body.progging #grid{padding-bottom:64px}
 .rc:not(.on):not(.all):hover{border-color:rgba(255,0,255,.8);color:#fff}
 .rc.done:not(.on){background:rgba(0,229,149,.2);border-color:rgba(0,229,149,.85);color:#00e595;font-weight:700}
 .rc.done:not(.on):hover{border-color:#00e595;color:#7dffcb}
+/* 収集率の数字（％）。ボタンの名前のうしろに小さく出す */
+.rc i,.qbtn i{font-style:normal;margin-left:4px;font-size:.88em;opacity:.7}
+.rc.on i,.qbtn.on i,.rc.done i,.qbtn.done i{opacity:1}
+/* ％の記号は数字より控えめに。枚数と読み違えないための印なので小さくてよい */
+.rc i s,.qbtn i s{text-decoration:none;font-size:.8em;opacity:.65;margin-left:.5px}
 .qbtn:not(.on){background:rgba(255,230,0,calc(.03 + var(--p,0)*.20));border-color:rgba(255,230,0,calc(.10 + var(--p,0)*.58));color:rgba(255,255,255,calc(.4 + var(--p,0)*.5))}
 .qbtn:not(.on):hover{border-color:rgba(255,230,0,.8);color:var(--gold)}
 .qbtn.done:not(.on){background:rgba(0,229,149,.18);border-color:rgba(0,229,149,.8);color:#00e595;font-weight:700}
@@ -1646,6 +1651,11 @@ function _applyProgressStyles(){
     btn.style.setProperty('--p',p.toFixed(3));
     btn.classList.toggle('done',tot>0&&own>=tot);
     btn.title=tot>0?`${own}/${tot} 所持 (${Math.round(p*100)}%)`:'対象カードなし';
+    // 何％集まったかはボタンに出す。色の濃さだけだと読み取れないし、
+    // いちいち押したり指を乗せたりしないと分からなかった
+    if(!btn.dataset.label) btn.dataset.label=btn.textContent.trim();
+    btn.innerHTML=esc(btn.dataset.label)
+      +(tot>0?'<i>'+Math.round(p*100)+'<s>%</s></i>':'');
   };
   const rEls=document.querySelectorAll('#rscroll .rc:not(.all)');
   if(rEls.length){
