@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.5
+// @version      2.6
 // @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
@@ -127,10 +127,16 @@
   }
   // 動き出したことを先に知らせる。これが届かないと、買い得リスト側は
   // 「スクリプトが入っていない／古い」と判断して確認待ちを戻す
-  tell({hello:1, ver:'2.4'});
+  tell({hello:1, ver:'2.6'});
+  // 店で「在庫なし」と確認できたもの。買い得リスト側で「売切」にしてもらう。
+  // 価格違い・店違い・押せなかった、は売り切れとは限らないので含めない
+  const isSoldOut=res=>typeof res==='string' && /^(状態.の)?在庫なし$/.test(res);
   function next(res, name){
     if(stopped) return;
-    tell(res===true ? {ok:[cur.u]} : {ng:[cur.u]});
+    // k は買い得リストの行の印。同じ商品ページに状態違いが複数あっても取り違えない
+    const k=cur.k?[cur.k]:[];
+    tell(res===true ? {ok:[cur.u], okK:k}
+                    : {ng:[cur.u], ngK:k, soldK:isSoldOut(res)?k:[], sold:isSoldOut(res)?[cur.u]:[]});
     if(res===true) st.ok++; else st.ng.push({u:cur.u, name:name, why:res});
     st.q.shift(); st.wait=0;
     advance();
@@ -159,8 +165,9 @@
   async function ol(){
     // 状態ごとに行が分かれている。リストの状態と価格が同じ行だけ押す
     // （状態違いの行や、価格が変わった行を取り違えないため）
-    const btns=()=>[...document.querySelectorAll('button')].filter(b=>b.innerText.trim()==='カートに追加');
-    if(!await waitFor(()=>btns().length, 10000)) return '在庫なし';
+    // ボタンの文字は「カートに追加」だったが、今は「追加」になっている。どちらでも押す
+    const btns=()=>[...document.querySelectorAll('button')].filter(b=>/^(カートに)?追加$/.test(b.innerText.trim()));
+    if(!await waitFor(()=>btns().length, 10000)) return 'ボタンが見つからない';
     const rowOf=b=>{ let p=b;
       while(p.parentElement && btns().filter(x=>p.parentElement.contains(x)).length<2) p=p.parentElement;
       return p; };
@@ -170,8 +177,24 @@
     if(!rows.length) return '価格が変わっています（'+want+'の行なし）';
     const hit=rows.find(r=>!r.b.disabled);
     if(!hit) return '在庫なし';
+    // 押したあとの「カートに追加しました」の表示は当てにならない（出なくなった）。
+    // カート本体の数量が増えたかで確かめる
+    const qty=async()=>{
+      try{
+        const r=await fetch('/api',{method:'POST',headers:{'content-type':'application/json'},
+          credentials:'same-origin',body:JSON.stringify({query:'query { cart { items { quantity } } }'})});
+        const j=await r.json();
+        return j.data.cart.items.reduce((s,i)=>s+(+i.quantity||0),0);
+      }catch(_){ return -1; }
+    };
+    const before=await qty();
+    if(before<0) return 'カートを確認できず';
     hit.b.click();
-    return waitText(/カートに追加しました/,15000);
+    for(let i=0;i<24;i++){            // 最大12秒
+      await sleep(500);
+      if((await qty())>before) return true;
+    }
+    return 'カートに入らず';
   }
   async function my(){
     // 店を取り違えないよう、ボタンの近くに店名が出ているものだけ押す
@@ -241,7 +264,7 @@
 
   // カート画面に着いた（直前の1件が入った）
   if(!onProduct){
-    tell({ok:[cur.u]});
+    tell({ok:[cur.u], okK:cur.k?[cur.k]:[]});
     st.ok++; st.q.shift(); st.wait=0;
     advance();
     return;

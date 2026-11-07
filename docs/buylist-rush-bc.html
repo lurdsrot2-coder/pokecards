@@ -444,7 +444,24 @@ const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
 
+// 店で実際に開いて「売り切れ」だったもの。データの取り直しが来るまでの間、
+// 売切として扱う（3日で期限切れ。そのあいだに店が入荷し直した場合に残らないように）
+const SLKEY='pokecards_soldlocal', SL_MS=3*24*3600*1000;
+function readSoldLocal(){
+  let o={}; try{ o=JSON.parse(localStorage.getItem(SLKEY)||'{}')||{}; }catch(_){}
+  const now=Date.now(), live={};
+  for(const k in o) if(o[k] && now-o[k].t<SL_MS) live[k]=o[k];
+  return live;
+}
+function writeSoldLocal(o){
+  try{ localStorage.setItem(SLKEY, JSON.stringify(o)); }catch(_){}
+}
 function toRows(d){
+  const rows=toRows0(d), sl=readSoldLocal();
+  for(const r of rows) if(!r.sold && sl[r.pid]){ r.sold=1; r.soldAt=sl[r.pid].d; }
+  return rows;
+}
+function toRows0(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
   // 共通の頭（画像URL・商品URL・カードid）はファイルを小さくするため外に出してある
   const B=d.base||{}, bi=B.img||'', bt=B.tc||'', bc=B.cr||'', bd=B.id||'',
@@ -1307,6 +1324,7 @@ document.getElementById('memo').onclick=e=>{
     // 状態は店の表記そのまま（オルタの A+ / A- など）を渡す。
     // A にまとめて渡すと、値段の違う上下の段を取り違える
     const q=take.map(x=>({u:x.row.url.replace(/#.*$/,'').slice(base.length),
+                          k:x.pid,
                           c:x.row.cnd||x.row.cond||'', m:g.mall||'',
                           p:x.price||x.row.cr||0,
                           n:Math.max(1,+x.n||1)}));
@@ -1372,19 +1390,42 @@ addEventListener('message', e=>{
   const pathOf=u=>String(u||'').replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
   const okSet=new Set((Array.isArray(d.ok)?d.ok:[]).map(pathOf));
   const ngSet=new Set((Array.isArray(d.ng)?d.ng:[]).map(pathOf));
-  if(!okSet.size && !ngSet.size) return;
+  // 行の印(k)があるときはそれで照合する。同じ商品ページに状態違いが並ぶ店
+  // （オルタ・トレトクなど）で、別の行を取り違えないため
+  const okK=new Set(Array.isArray(d.okK)?d.okK:[]);
+  const ngK=new Set(Array.isArray(d.ngK)?d.ngK:[]);
+  const soldK=new Set(Array.isArray(d.soldK)?d.soldK:[]);
+  const soldP=new Set((Array.isArray(d.sold)?d.sold:[]).map(pathOf));
+  if(!okSet.size && !ngSet.size && !okK.size && !ngK.size) return;
   const pn=readPending();
-  let nOk=0, nNg=0;
+  let nOk=0, nNg=0, nSold=0;
+  const sl=readSoldLocal(), today=new Date().toISOString().slice(0,10);
   for(const g of (window.__memoGroups||[])) if(g.shop===d.shop)
     for(const x of g.items){
-      const p=x.row && pathOf(x.row.url); if(!p) continue;
-      // 同じ商品ページに状態違いが2件あるときも、確認待ちのものを1件ずつ消化する
-      if(okSet.has(p) && pn[x.pid]){ delete pn[x.pid]; cartDone.add(x.pid); nOk++; okSet.delete(p); }
-      else if(ngSet.has(p) && pn[x.pid]){ delete pn[x.pid]; cartDone.delete(x.pid); nNg++; ngSet.delete(p); }
+      const p=x.row && pathOf(x.row.url);
+      const byK = okK.has(x.pid) ? 'ok' : ngK.has(x.pid) ? 'ng' : '';
+      // k が付いていない古いスクリプトからは、これまでどおり商品ページで照合する
+      const byP = (!okK.size && !ngK.size && p)
+                  ? (okSet.has(p) ? 'ok' : ngSet.has(p) ? 'ng' : '') : '';
+      const kind=byK||byP;
+      if(kind==='ok' && pn[x.pid]){ delete pn[x.pid]; cartDone.add(x.pid); nOk++; if(byP) okSet.delete(p); }
+      else if(kind==='ng' && pn[x.pid]){
+        delete pn[x.pid]; cartDone.delete(x.pid); nNg++; if(byP) ngSet.delete(p);
+        // 店で売り切れていた。買い得リストでも「売切」にして、買えるように見せない
+        if(soldK.has(x.pid) || (byP && soldP.has(p))){
+          sl[x.pid]={t:Date.now(), d:today}; nSold++;
+        }
+      }
     }
+  if(nSold){
+    writeSoldLocal(sl);
+    for(const r of rows) if(sl[r.pid] && !r.sold){ r.sold=1; r.soldAt=sl[r.pid].d; }
+    try{ apply(); }catch(_){}
+  }
   if(nOk||nNg){
     writePending(pn); saveCartDone(); memoDraw();
-    if(nNg) toast('入らなかった '+nNg+'件があります（もう一度押せます）');
+    if(nNg) toast('入らなかった '+nNg+'件があります'
+                  +(nSold?'（うち '+nSold+'件は店で売り切れ。「売切」にしました）':'（もう一度押せます）'));
   }
 });
 // ── 店ごとの取り直しを頼む ────────────────────────
