@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.6
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ）
+// @version      2.7
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
 // @match        https://pokemon-card-fullahead.com/shop/basket.html*
@@ -16,6 +16,7 @@
 // @match        https://myca.dmm.com/pokemon-trading-card-game/items/single-card/*
 // @match        https://www.torecolo.jp/shop/g/*
 // @match        https://olta-tcg.com/pokemon/product/detail/*
+// @match        https://torecacamp-pokemon.com/products/*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
@@ -27,7 +28,8 @@
   const SHOPS={'www.hobbystation-single.jp':'HB','pokemon-card-fullahead.com':'FA',
     'www.c-labo-online.jp':'CL','www.toretoku.jp':'TT','www.bigweb.co.jp':'BW',
     'www.cardrush-pokemon.jp':'CR',
-    'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY','www.torecolo.jp':'TR','olta-tcg.com':'OL'};
+    'pokemon.fukufukutoreka.com':'FF','myca.dmm.com':'MY','www.torecolo.jp':'TR','olta-tcg.com':'OL',
+    'torecacamp-pokemon.com':'TC'};
   const shop=SHOPS[location.hostname];
   if(!shop) return;
   // フルアヘッド・カードラボ・カードラッシュは、押すとカート画面に移動する店。
@@ -94,7 +96,7 @@
     msg.innerHTML='';
     msg.append((byUser?'止めました。':'終わりました。')
       +'入れた '+st.ok+'件 ／ 飛ばした '+st.ng.length+'件 ');
-    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx',OL:'/cart',CR:'/cart'}[shop];
+    const cartUrl={HB:'/cart',FA:'/shop/basket.html',CL:'/cart',TT:'/cart',FF:'/cart',MY:'/cart',TR:'/shop/cart/cart.aspx',OL:'/cart',CR:'/cart',TC:'/cart'}[shop];
     if(cartUrl){
       const a=document.createElement('a');
       a.href=cartUrl; a.textContent='カートを見る';
@@ -127,7 +129,7 @@
   }
   // 動き出したことを先に知らせる。これが届かないと、買い得リスト側は
   // 「スクリプトが入っていない／古い」と判断して確認待ちを戻す
-  tell({hello:1, ver:'2.6'});
+  tell({hello:1, ver:'2.7'});
   // 店で「在庫なし」と確認できたもの。買い得リスト側で「売切」にしてもらう。
   // 価格違い・店違い・押せなかった、は売り切れとは限らないので含めない
   const isSoldOut=res=>typeof res==='string' && /^(状態.の)?在庫なし$/.test(res);
@@ -161,6 +163,33 @@
     if(!b || b.disabled || b.offsetParent===null) return '在庫なし';
     b.click();
     return waitText(/カゴに入れました/,15000);
+  }
+  // キャンプ（Shopify）。商品データで在庫を確かめてから、cart/add.js で入れる。
+  // 422 だけでは「売り切れ」か「カートに入れられる上限」か区別がつかないので、
+  // 売り切れの判定は商品データの available で行う
+  async function tc(){
+    const vid=String(cur.v||'');
+    if(!vid) return 'バリエーションが不明';
+    const n=Math.max(1,+cur.n||1);
+    try{
+      const r=await fetch(location.pathname.replace(/\/+$/,'')+'.js',{credentials:'same-origin'});
+      if(r.ok){
+        const p=await r.json();
+        const v=(p.variants||[]).find(x=>String(x.id)===vid);
+        if(!v) return '商品が見つからない';
+        if(v.available===false) return '在庫なし';
+      }
+    }catch(_){}
+    let r2;
+    try{
+      r2=await fetch('/cart/add.js',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:JSON.stringify({items:[{id:Number(vid),quantity:n}]})});
+    }catch(e){ return 'カートに入らず（通信エラー）'; }
+    if(r2.ok) return true;
+    let j={}; try{ j=await r2.json(); }catch(_){}
+    const why=String(j.description||j.message||r2.status).slice(0,40);
+    return /sold out|売り切れ|在庫切れ/i.test(why) ? '在庫なし' : 'カートに入らず（'+why+'）';
   }
   async function ol(){
     // 状態ごとに行が分かれている。リストの状態と価格が同じ行だけ押す
@@ -271,7 +300,7 @@
   }
   // 商品ページ
   if(NAV) st.wait=0;
-  const run={HB:hb,FA:nav,CL:nav,CR:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr,OL:ol}[shop];
+  const run={HB:hb,FA:nav,CL:nav,CR:nav,TT:tt,BW:bw,FF:ff,MY:my,TR:tr,OL:ol,TC:tc}[shop];
   (async()=>{
     let res;
     try{ res=await run(); }catch(e){ res='エラー '+(e&&e.message||e); }
