@@ -443,6 +443,25 @@ function openShop(url, shop){
 const yen=v=>'¥'+(v||0).toLocaleString();
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const grid=document.getElementById('grid');
+// 画像が読めなかったとき。一度の失敗ですぐカード名に差し替えると、
+// 一覧を一気にめくったときの一時的な失敗（画像サーバーの混雑など）まで
+// 「画像が出ない」のまま残ってしまうので、間をあけて4回まで読み直す
+const IMG_WAIT=[1500, 4000, 10000, 25000];
+function imgRetry(el){
+  const n=+(el.dataset.try||0);
+  if(!el.dataset.src) el.dataset.src=el.getAttribute('src')||'';
+  if(n>=IMG_WAIT.length || !el.dataset.src){
+    const p=el.parentNode;
+    if(p) p.innerHTML='<div class="ni">'+esc(el.dataset.nm||'')+'</div>';
+    return;
+  }
+  el.dataset.try=n+1;
+  const src=el.dataset.src;
+  setTimeout(()=>{
+    if(!el.isConnected) return;             // 一覧を作り直して消えた画像は放っておく
+    el.src=src+(src.includes('?')?'&':'?')+'retry='+(n+1);
+  }, IMG_WAIT[n]);
+}
 
 // 店で実際に開いて「売り切れ」だったもの。データの取り直しが来るまでの間、
 // 売切として扱う（3日で期限切れ。そのあいだに店が入荷し直した場合に残らないように）
@@ -545,10 +564,10 @@ function tile(r){
     // 画像はアプリ側（そのカードだけを出した状態）へ。店へは下のボタンから
     +'<div class="ph"><a href="'+(r.id?'../index.html?card='+encodeURIComponent(r.id):cru)
       +'" target="_blank" rel="noopener" title="'+(r.id?'カードマネージャーでこのカードを見る':'商品ページ')+'">'
-    // 読めなかったらカード名を出す。真っ黒のままだと何のカードか分からない
-    +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="" '
-            +'onerror="this.parentNode.innerHTML=\'<div class=&quot;ni&quot;>'
-            +esc(r.name).replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'</div>\'">'
+    // 読めなかったら時間をおいて読み直し、それでも駄目ならカード名を出す
+    // （真っ黒のままだと何のカードか分からない）。imgRetry を参照
+    +(r.img?'<img loading="lazy" src="'+esc(r.img)+'" alt="" data-nm="'+esc(r.name)+'" '
+            +'onerror="imgRetry(this)">'
           :'<div class="ni">画像なし</div>')
     +'</a>'
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
