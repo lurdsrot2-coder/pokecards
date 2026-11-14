@@ -153,6 +153,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .b.TC{background:rgba(90,160,255,.92);color:#04122b}
 .b.TT{background:rgba(255,170,60,.92);color:#2b1600}
 .b.FF{background:rgba(255,120,170,.92);color:#2b0015}
+.b.MC{background:rgba(255,79,80,.95);color:#fff}
 .b.new{background:var(--gr);color:#06210f}
 .b.sold{background:rgba(255,68,68,.95);color:#fff}
 .bd{padding:6px 8px 8px;display:flex;flex-direction:column;gap:2px;flex:1}
@@ -188,6 +189,16 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .lk a.k:hover{background:rgba(255,170,60,.2)}
 .lk a.f{color:#ff9cc4;border-color:rgba(255,120,170,.5)}
 .lk a.f:hover{background:rgba(255,120,170,.2)}
+.lk a.m{color:#ff8a8b;border-color:rgba(255,79,80,.5)}
+.lk a.m:hover{background:rgba(255,79,80,.2)}
+/* ★カードのメルカリの様子。押すとそのカードの出品（メルカリ含む）だけに絞る */
+.mcs{margin-top:4px;font-size:9.5px;color:#ffb3b3;background:rgba(255,79,80,.08);
+ border:1px solid rgba(255,79,80,.3);border-radius:3px;padding:2px 5px;cursor:pointer;
+ text-align:center;user-select:none;line-height:1.35}
+.mcs:hover{background:rgba(255,79,80,.2);color:#fff}
+.mcs b{color:#fff}.mcs .ago{color:#9a8f9f}
+.mcs .re{margin-left:4px;color:#ff8a8b;text-decoration:underline}
+.st.mct{color:#d9c3c8}
 /* ほかの店にも同じカードが出ているときの案内。押すとそのカードだけに絞る */
 .alt{margin-top:4px;font-size:9.5px;color:#7fd8ff;background:rgba(0,245,255,.08);
  border:1px solid rgba(0,245,255,.25);border-radius:3px;padding:2px 5px;cursor:pointer;
@@ -274,6 +285,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
+ <button class="tg MC" id="f-mcnext" title="★を付けたカードを、まだ調べていない順（未所持・高い順）に1件ずつメルカリで検索します。押すたびに次のカード">🔍 ★をメルカリで</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
  <button class="tg p1all" id="f-p1all" title="いま出ているものを、まとめて＋1します">まとめて＋1</button>
  <button class="tg m1all" id="f-m1all" title="いま出ているもののうち、＋1したものをまとめて取り消します（メモから外すだけ）">まとめて−1</button>
@@ -292,6 +304,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg FA" data-s="FA">フルアヘッド</button>
  <button class="tg HB" data-s="HB">ホビステ</button>
  <button class="tg CL" data-s="CL">カードラボ</button>
+ <button class="tg MC" data-s="MC" title="「メルカリで探す」で読み取った出品。売り切れは「売れた」で見られます">メルカリ</button>
  <button class="tg" data-c="A">A</button>
  <button class="tg" data-c="B">B</button>
  <button class="tg" data-c="C">C</button>
@@ -356,7 +369,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 const SRC='buylist-rush-bc.json', DELTA='../delta.json', PAGE=200;
 const SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
             YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',
-            SG:'駿河屋',BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ'};
+            SG:'駿河屋',BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ',MC:'メルカリ'};
 const QKEY='pokecards_buyqueue';       // アプリ(index.html)に渡す＋1の控え。同じオリジンなので共有できる
 let CART='', byCard=new Map(), SHIPS={};
 let bestCr=new Map();       // カードid → いちばん安い値段
@@ -478,8 +491,150 @@ function writeSoldLocal(o){
 function toRows(d){
   const rows=toRows0(d), sl=readSoldLocal();
   for(const r of rows) if(!r.sold && sl[r.pid]){ r.sold=1; r.soldAt=sl[r.pid].d; }
-  return rows;
+  return rows.concat(mcRows(rows));
 }
+// ---- メルカリ ----
+// 「メルカリで探す」で開いた検索結果を、ユーザースクリプトが読んで送ってくる。
+// それをカードごとに覚えておき、店の出品と同じ形の行（店=MC）にして並べる。
+// メルカリへのアクセスは、ボタンを押したときの検索1回だけ（自動では検索しない）
+const MCKEY='pokecards_mercari', MC_MS=30*24*3600*1000, MC_AGAIN=3*24*3600*1000;
+const MC_EX='PSA 鑑定 BGS ARS まとめ 英語 海外';
+let mcWait=null;
+let MCAT=new Map();     // カードid → 最後にメルカリを調べた時刻（0件だったカードも含む）
+function readMc(){
+  let o={}; try{ o=JSON.parse(localStorage.getItem(MCKEY)||'{}')||{}; }catch(_){}
+  const now=Date.now(), live={};
+  for(const k in o) if(o[k] && Array.isArray(o[k].items) && now-o[k].t<MC_MS) live[k]=o[k];
+  return live;
+}
+function writeMc(o){ try{ localStorage.setItem(MCKEY, JSON.stringify(o)); return true; }catch(_){ return false; } }
+// アプリが渡してくる★カードの控え（店に出品が無いカードの名前・番号・時価を知るため）
+function readFavCards(){
+  const m=new Map();
+  try{
+    const o=JSON.parse(localStorage.getItem('pokecards_favcards')||'null');
+    for(const a of (o && o.cards)||[])
+      m.set(a[0], {id:a[0], name:a[1], num:a[2], set:a[3], ser:a[4]||'—', price:a[5]||0,
+                   img:a[6]||'', owned:a[7]||0, rar:a[8]||'', code:'', tags:[], ill:'', fav:1});
+  }catch(_){}
+  return m;
+}
+// カードの情報。店の行があればそちら（相場・所持が新しい）、無ければアプリの★の控え
+function cardInfo(id, base, fc){
+  const r=(base||rows).find(x=>x.id===id && x.shop!=='MC');
+  if(r) return {id, name:r.name, num:r.num, set:r.set, ser:r.ser, price:r.price, owned:r.owned,
+                rar:r.rar, code:r.code, tags:r.tags, ill:r.ill, fav:r.fav, img:r.img};
+  return (fc||readFavCards()).get(id) || null;
+}
+function ymd(t){
+  const d=new Date(t);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function mcRows(base){
+  const mc=readMc(), ids=Object.keys(mc);
+  MCAT=new Map(ids.map(k=>[k, mc[k].t]));
+  if(!ids.length) return [];
+  const fc=readFavCards(), out=[];
+  for(const id of ids){
+    const c=cardInfo(id, base, fc);
+    if(!c) continue;
+    const ds=ymd(mc[id].t);
+    for(const it of mc[id].items){
+      out.push({pid:'MC:'+it.i, cond:'A', cnd:'', name:c.name, set:c.set, num:c.num, ser:c.ser||'—',
+        img:'https://static.mercdn.net/thumb/item/webp/'+it.i+'_1.jpg',
+        price:c.price, cr:it.p, stock:0, owned:c.owned, cheap:0, isnew:0, sold:it.s?1:0,
+        fst:ds, sure:it.k?1:0, code:c.code||'', rar:c.rar||'', tags:c.tags||[], soldAt:'', hr:'',
+        mall:'', fav:c.fav?1:0, ill:c.ill||'', lst:'', id:id, shop:'MC', vid:'',
+        url:'https://jp.mercari.com/item/'+it.i, mt:it.n||'', mcAt:mc[id].t,
+        ratio:c.price?it.p/c.price:0, save:(c.price||0)-it.p});
+    }
+  }
+  return out;
+}
+// 検索のことば。「グライオン:ミラー」「(ミラー)」のような付け足しは外して、名前＋番号で探す
+function mcQuery(c){
+  const nm=String(c.name||'').replace(/[:：].*$/,'').replace(/[（(][^）)]*[）)]/g,'').trim();
+  const num=String(c.num||'');
+  return (nm+' '+(/\d/.test(num)?num:(c.set||''))).trim();
+}
+function mcOpen(id){
+  const c=cardInfo(id);
+  if(!c){ toast('このカードの情報がありません。アプリを一度開いてから戻ってください'); return; }
+  const u='https://jp.mercari.com/search?keyword='+encodeURIComponent(mcQuery(c))
+    +'&exclude_keyword='+encodeURIComponent(MC_EX)+'&sort=created_time&order=desc'
+    +'#pcmc='+encodeURIComponent(JSON.stringify({id:id, num:c.num||''}));
+  // 結果を送り返してもらうので noopener は付けない。タブは毎回同じものを使う
+  // 表に出す。裏のタブだとメルカリが一覧を描かず、読み取れないため
+  const w=open(u, 'mercari');
+  try{ if(w) w.focus(); }catch(_){}
+  clearTimeout(mcWait && mcWait.timer);
+  mcWait={id:id, timer:setTimeout(()=>{
+    if(mcWait && mcWait.id===id){
+      toast('メルカリから結果が届きません。Tampermonkeyのスクリプトを 2.8 に更新してください');
+      mcWait=null;
+    }}, 40000)};
+  toast(c.name+' をメルカリで検索しています…');
+}
+// ★のうち、次に調べるカード。まだ調べていない → 未所持 → 時価の高い順。3日以内に調べたものは飛ばす
+function mcNext(){
+  const fc=readFavCards();
+  // アプリの控えが無い端末でも、店に出ている★カードは調べられるように
+  for(const r of rows) if(r.fav && r.id && r.shop!=='MC' && !fc.has(r.id)) fc.set(r.id, cardInfo(r.id));
+  // 店に出ているカードは、いまの★（差分で付け外しされたもの）を信じる
+  const inRows=new Map();
+  for(const r of rows) if(r.id && r.shop!=='MC') inRows.set(r.id, !!r.fav);
+  const mc=readMc(), now=Date.now();
+  const list=[...fc.values()]
+    .filter(c=>c && (inRows.has(c.id) ? inRows.get(c.id) : true))
+    .filter(c=>!mc[c.id] || now-mc[c.id].t>MC_AGAIN)
+    .sort((a,b)=>(!!mc[a.id]-!!mc[b.id]) || ((a.owned>0)-(b.owned>0)) || ((b.price||0)-(a.price||0)));
+  return {next:list[0]||null, left:list.length, total:fc.size};
+}
+function mcSummary(id){
+  const m=(byCard.get(id)||[]).filter(x=>x.shop==='MC');
+  const at=MCAT.get(id);
+  if(!at) return '🔍 メルカリで探す';
+  const on=m.filter(x=>!x.sold), so=m.filter(x=>x.sold);
+  const min=a=>Math.min.apply(null,a.map(x=>x.cr));
+  const med=a=>{ const v=a.map(x=>x.cr).sort((x,y)=>x-y); return v[Math.floor(v.length/2)]; };
+  const mi=Math.round((Date.now()-at)/60000);
+  const ago=mi<60?mi+'分前':mi<1440?Math.round(mi/60)+'時間前':Math.round(mi/1440)+'日前';
+  return 'メルカリ '+(on.length?'販売中 <b>'+yen(min(on))+'〜</b>（'+on.length+'件）':'販売中なし')
+    +(so.length?'／売切 '+yen(med(so))+'（'+so.length+'件）':'')
+    +' <span class="ago">'+ago+'</span><span class="re" data-mcgo="'+esc(id)+'">再検索</span>';
+}
+addEventListener('message', e=>{
+  const d=e.data && e.data.pcMercari;
+  if(!d || e.origin!=='https://jp.mercari.com' || !d.id || !Array.isArray(d.items)) return;
+  const items=d.items.map(x=>({i:String(x.i||'').replace(/[^\w]/g,''), p:+x.p||0,
+      n:String(x.n||'').slice(0,80), s:x.s?1:0, k:x.k?1:0})).filter(x=>x.i && x.p).slice(0,80);
+  const mc=readMc();
+  mc[d.id]={t:Date.now(), items:items};
+  if(!writeMc(mc)) toast('メルカリの結果を保存できませんでした（容量）');
+  if(mcWait && mcWait.id===d.id){ clearTimeout(mcWait.timer); mcWait=null; }
+  rows=rows.filter(r=>r.shop!=='MC');
+  rows=rows.concat(mcRows(rows));
+  indexCards();
+  // 見ている位置を崩さないよう、一覧は作り直さず、そのカードの案内だけ書き換える
+  for(const el of document.querySelectorAll('.mcs')) if(el.dataset.mcs===d.id) el.innerHTML=mcSummary(d.id);
+  if(st.card===d.id || st.shop==='MC') apply();
+  const on=items.filter(x=>!x.s), c=cardInfo(d.id);
+  toast((c?c.name+'：':'')+'メルカリ 販売中 '+on.length+'件'
+        +(on.length?'（最安 '+yen(Math.min.apply(null,on.map(x=>x.p)))+'）':'')
+        +'・売切 '+(items.length-on.length)+'件');
+  mcBtn();
+});
+function mcBtn(){
+  const b=document.getElementById('f-mcnext'); if(!b) return;
+  const n=mcNext();
+  b.textContent='🔍 ★をメルカリで'+(n.total?'（残り'+n.left+'）':'');
+}
+document.getElementById('f-mcnext').onclick=()=>{
+  const n=mcNext();
+  if(!n.total){ toast('★のカードが見つかりません。アプリを一度開いてから戻ってください'); return; }
+  if(!n.next){ toast('★のカードは全部、3日以内に調べてあります'); return; }
+  mcOpen(n.next.id);
+};
 function toRows0(d){
   const i=Object.fromEntries(d.cols.map((c,n)=>[c,n]));
   // 共通の頭（画像URL・商品URL・カードid）はファイルを小さくするため外に出してある
@@ -557,7 +712,7 @@ function shopCounts(cnt){
 function tile(r){
   const pc=Math.round(r.ratio*100);
   const shopName=SHOP[r.shop]||'ラッシュ';
-  const lkCls=r.shop==='TC'?'t':r.shop==='TT'?'k':r.shop==='FF'?'f':'c';
+  const lkCls=r.shop==='TC'?'t':r.shop==='TT'?'k':r.shop==='FF'?'f':r.shop==='MC'?'m':'c';
   const others=(byCard.get(r.id)||[]).filter(x=>x!==r && !x.sold);
   const cru=r.url;
   return '<div class="card'+(r.sold?' gone':'')+'">'
@@ -588,7 +743,10 @@ function tile(r){
           +' title="カードマネージャーで「'+esc(r.ser)+'」の '+esc(r.rar)+' を見る">'
           +esc(r.rar)+'</a>'
         : '')+'</div>'
-    +'<div class="st">'+esc(r.set)+'</div>'
+    // メルカリはタイトルが自由入力なので、出品の題名をそのまま見せる
+    +(r.shop==='MC'
+      ? '<div class="st mct" title="'+esc(r.mt)+'">「'+esc(r.mt)+'」</div>'
+      : '<div class="st">'+esc(r.set)+'</div>')
     +(r.mall?'<div class="mall" title="'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
         +(SHIPS[r.mall]?'（'+esc(SHIPS[r.mall].slice(0,18))+'）':'')+'</div>':'')
     +'<div class="pr"><span class="cr">'+yen(r.cr)+'</span><span class="pc">'+pc+'%</span></div>'
@@ -602,11 +760,15 @@ function tile(r){
       +'</div>'
     // 旧裏は番号が無く名前で当てているので、1ED・マークなしの版までは分からない。
     // 相場との差が版違いのせいであることが多いので、旧裏は差に関係なく必ず出す
-    +((!r.sure && (r.ratio<0.35 || r.num==='旧裏'))
+    +(r.shop==='MC' && !r.sure
+       ?'<div class="chk" title="出品のタイトルにカード番号がありません。別のカードや版のこともあるので、写真で確かめてください">⚠ 番号なし・写真で確認</div>':'')
+    +((r.shop!=='MC' && !r.sure && (r.ratio<0.35 || r.num==='旧裏'))
        ?'<div class="chk" title="番号の無い出品です。旧裏は1ED・マークなしなどの版まで判別できず、'
        +'相場との差が版違いのこともあります。リンク先で現物を確かめてください">⚠ 版 未確認</div>':'')
     +(others.length?'<div class="alt" data-card="'+esc(r.id)+'">他の出品 '+others.length+'件 '
         +'<b>'+yen(Math.min.apply(null,others.map(x=>x.cr)))+'〜</b></div>':'')
+    +((r.fav || r.shop==='MC') && r.id
+       ? '<div class="mcs" data-mcs="'+esc(r.id)+'">'+mcSummary(r.id)+'</div>' : '')
     +'<div class="act">'
       +(r.sold?'':'<button class="cart" data-cart="'+esc(r.pid)+'">'
         +(r.shop==='TC'&&r.vid?'🛒 カートへ':'🛒 買う')+'</button>')
@@ -757,8 +919,8 @@ function indexCards(){
     if(!r.id) continue;
     if(!byCard.has(r.id)) byCard.set(r.id,[]);
     byCard.get(r.id).push(r);
-    // 売り切れは比べる相手にしない
-    if(r.sold) continue;
+    // 売り切れは比べる相手にしない。メルカリは別の版や状態が混ざるので、店どうしの比較に入れない
+    if(r.sold || r.shop==='MC') continue;
     const b=bestCr.get(r.id);
     if(b===undefined || r.cr<b){ bestCr.set(r.id, r.cr); bestN.set(r.id, 1); }
     else if(r.cr===b) bestN.set(r.id, (bestN.get(r.id)||0)+1);
@@ -818,6 +980,7 @@ function show(d, ownedN){
   renderTags();
   favNews();
   memoCount();
+  mcBtn();
   document.getElementById('msg').hidden=true;
   apply();
   focusFromUrl();   // apply() の後。中でもう一度絞り直す
@@ -1471,6 +1634,7 @@ function rfShow(text, cls){
   el.className=cls||'';
 }
 async function askRefresh(shop){
+  if(shop==='MC') return;      // メルカリは取り直しの対象ではない
   const nm=SHOP[shop]||shop, min=RF_MIN[shop]||10;
   const tok=rfToken();
   if(!tok){
@@ -1538,6 +1702,17 @@ function toast(msg){
 grid.addEventListener('click',e=>{
   const a=e.target.closest('.alt');
   if(a){ focusCard(a.dataset.card); return; }
+  // メルカリ：「再検索」と、まだ調べていないカードは検索。調べてあれば出品を並べる
+  const mg=e.target.closest('[data-mcgo]');
+  if(mg){ mcOpen(mg.dataset.mcgo); return; }
+  const ms=e.target.closest('.mcs');
+  if(ms){
+    const id=ms.dataset.mcs;
+    // 調べてあって何か出ていればその一覧へ。0件だったカードは検索し直す
+    if(MCAT.has(id) && (byCard.get(id)||[]).length) focusCard(id);
+    else mcOpen(id);
+    return;
+  }
   const cb=e.target.closest('[data-cart]');
   if(cb){
     const r=rows.find(x=>x.pid===cb.dataset.cart); if(!r) return;

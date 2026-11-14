@@ -1181,6 +1181,7 @@ function _dropFav(c){
 // ★を買い得リスト側でもすぐ使えるようにする。同じサイトなので localStorage で渡せる。
 // これが無いと、1時間ごとの同期とページの再公開を待つことになる
 const FAVIDS_KEY='pokecards_favids';
+let _favCardsLast='';
 function _writeFavIds(){
   // 読み込み前に空の一覧を書くと、買い得リスト側の★を消してしまう
   if(!db || !db.cards || !db.cards.length) return;
@@ -1189,6 +1190,28 @@ function _writeFavIds(){
     for(const c of db.cards) if(c.favorite) ids.push(c.id);
     localStorage.setItem(FAVIDS_KEY, JSON.stringify({t:new Date().toISOString(), ids}));
   }catch(e){}   // 容量オーバー等は無視。無ければ従来どおり差分から拾われる
+  _writeFavCards();
+}
+// 買い得リストの「メルカリで探す」用に、★カードの名前・番号・時価・画像も渡す。
+// 店に出品が無い★カードは買い得リストのデータに載っていないため。
+// ★の有無そのもの（上の FAVIDS）とは違い、起動直後に書いても他の端末の★を消さない
+function _writeFavCards(){
+  if(!db || !db.cards || !db.cards.length) return;
+  try{
+    const cards=[];
+    for(const c of db.cards){
+      if(!c.favorite) continue;
+      const ci=c.customImage && !/^data:/.test(c.customImage) ? c.customImage : '';
+      cards.push([c.id, c.name||'', c.cardNumber||'', c.setName||'', c.series||'',
+                  c.price||0, ci||c.image||'', c.owned||0, c.rarity||'']);
+    }
+    // 保存のたびに呼ばれるので、中身が変わったときだけ書く
+    const js=JSON.stringify(cards);
+    if(js!==_favCardsLast){
+      localStorage.setItem('pokecards_favcards', '{"t":"'+new Date().toISOString()+'","cards":'+js+'}');
+      _favCardsLast=js;
+    }
+  }catch(e){}
 }
 // ── 編集の即時保存（ジャーナル） ─────────────────────────
 // 全体保存は13.5MBあり重いので400msのデバウンスをかけているが、その間に
@@ -5193,7 +5216,7 @@ function _readBuyQueue(){
 // 買い得リストの店の名前。控えには記号(TC/CR…)しか入っていない
 const BUYQ_SHOP={CR:'ラッシュ',TC:'キャンプ',TT:'トレトク',FF:'福福',BW:'BIGWEB',
   YY:'遊々亭',TR:'トレコロ',PB:'プライスベース',OL:'オルタ',MY:'マイカ',SG:'駿河屋',
-  BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ'};
+  BE:'Bee本舗',FA:'フルアヘッド',HB:'ホビステ',CL:'カードラボ',MC:'メルカリ'};
 // 帯をたたんだかどうか。控えの中身が変わったら、また開く
 const BUYQ_MIN='pokecards_buyq_min';
 function _buyqSig(q){ return q.length+'|'+((q[q.length-1]||{}).pid||''); }
@@ -6016,6 +6039,7 @@ _idbReady.then(()=>loadDbAsync()).then(async d=>{
   // 買い得リストから飛んできたときは、ここで先に絞る。
   // この下でGitHubとの同期（16MBの取得）を待つので、そこまで待たせると数秒かかる
   try{ _focusCardFromUrl(); }catch(e){}
+  try{ _writeFavCards(); }catch(e){}   // 買い得リストのメルカリ検索用
   _baseDb=await _idbGetBase();   // 前回同期時点の基準を復元（マージ用）
   // 保存が間に合わずタブを閉じた分を復元する
   let pend=await _idbGetPending();

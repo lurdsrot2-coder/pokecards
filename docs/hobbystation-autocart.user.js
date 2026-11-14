@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.7
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）
+// @version      2.8
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）。メルカリは「メルカリで探す」から開いた検索結果を読んで買い得リストに返すだけ
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
 // @match        https://pokemon-card-fullahead.com/shop/basket.html*
@@ -17,11 +17,90 @@
 // @match        https://www.torecolo.jp/shop/g/*
 // @match        https://olta-tcg.com/pokemon/product/detail/*
 // @match        https://torecacamp-pokemon.com/products/*
+// @match        https://jp.mercari.com/search*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // @downloadURL  https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // ==/UserScript==
+// ---- メルカリ ----
+// 買い得リストの「メルカリで探す」から開いた検索結果（#pcmc=<カードid>）だけを読む。
+// 開いた画面に出ている出品を読むだけで、次の検索や別のページへの移動は一切しない
+// （メルカリは自動での利用を規約で禁じているため。検索するのは毎回ユーザーの操作）
+(function(){
+  'use strict';
+  if(location.hostname!=='jp.mercari.com') return;
+  const m=location.hash.match(/pcmc=([^&]+)/);
+  if(!m) return;
+  let job=null;
+  try{ job=JSON.parse(decodeURIComponent(m[1])); }catch(_){}
+  if(!job || !job.id) return;
+  history.replaceState(null,'',location.pathname+location.search);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  // 鑑定品・海外版・まとめ売りなどは、同じカード1枚の値段ではないので外す
+  const NG=/psa|bgs|ars|cgc|鑑定|まとめ|セット売|枚セット|英語|海外|中国|韓国|簡体|繁体|オリパ|引退|スリーブ|ローダー|ファイル|空箱|未開封|box/i;
+  // 番号の頭（032/080 → 32）。番号を書いていない出品は「未確認」として返す
+  const head=String(job.num||'').match(/^0*(\d+)\s*\//);
+  const numRe=head ? new RegExp('(^|[^0-9])0*'+head[1]+'\\s*[/／]') : null;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:10px 14px;'
+    +'background:#1b1f3b;color:#fff;font:bold 14px sans-serif';
+  bar.textContent='買い得リスト：出品を読み取っています…';
+  document.body.appendChild(bar);
+  const cells=()=>[...document.querySelectorAll('li[data-testid="item-cell"]')];
+  const priced=()=>cells().filter(c=>c.querySelector('[data-testid="item-tile-price"]'));
+  (async()=>{
+    // 表示を待つ。0件の検索は「見つかりません」が出る
+    const t0=Date.now();
+    while(Date.now()-t0<20000){
+      if(priced().length) break;
+      if(/該当する商品が見つかりません|見つかりませんでした/.test(document.body.innerText)) break;
+      await sleep(400);
+    }
+    // 一覧は画面に入ったところから描かれる。裏のタブだと描かれないので、表に出るまで待つ
+    if(document.hidden){
+      bar.textContent='買い得リスト：このタブを表示すると読み取ります';
+      await new Promise(r=>{ const f=()=>{ if(!document.hidden){ removeEventListener('visibilitychange',f); r(); } };
+                             addEventListener('visibilitychange',f); });
+      bar.textContent='買い得リスト：出品を読み取っています…';
+    }
+    // 少しずつ下まで流して描かせる（読み込み済みの結果を描くだけで、追加の検索はしない）。
+    // 一気に一番下へ飛ぶと、途中の出品が描かれないまま残る
+    for(let y=0, i=0; y<document.body.scrollHeight && i<60; y+=Math.max(300, innerHeight*0.7), i++){
+      scrollTo(0,y);
+      await sleep(300);
+    }
+    // 描き終わるのを待つ（数が2回続けて変わらなくなるまで、最大4秒）
+    for(let i=0, last=-1, same=0; i<8 && same<2; i++){
+      await sleep(500);
+      const n=priced().length;
+      same = n===last ? same+1 : 0; last=n;
+    }
+    scrollTo(0,0);
+    const items=[], seen=new Set();
+    let ng=0;
+    for(const c of priced()){
+      const a=c.querySelector('a[href*="/item/"]');
+      const id=a && (a.getAttribute('href').match(/\/item\/(m\d+)/)||[])[1];
+      if(!id || seen.has(id)) continue;
+      seen.add(id);
+      const n=(c.querySelector('[data-testid="thumbnail-item-name"]')||{}).innerText||'';
+      const p=+((c.querySelector('[data-testid="item-tile-price"]')||{}).innerText||'').replace(/\D/g,'');
+      if(!p) continue;
+      if(NG.test(n)){ ng++; continue; }
+      const sold=!!c.querySelector('[data-testid="item-tile-sticker"]');
+      items.push({i:id, p:p, n:n.slice(0,80), s:sold?1:0, k:numRe?(numRe.test(n)?1:0):1});
+    }
+    const res={id:job.id, t:Date.now(), items:items.slice(0,80), ng:ng};
+    const on=items.filter(x=>!x.s).length, so=items.length-on;
+    let sent=false;
+    try{ if(window.opener){ window.opener.postMessage({pcMercari:res}, '*'); sent=true; } }catch(_){}
+    bar.textContent = sent
+      ? '買い得リストに送りました：販売中 '+on+'件・売切 '+so+'件（鑑定品・まとめ売りなど '+ng+'件は除外）'
+      : '買い得リストのタブが見つかりません。買い得リストの「メルカリ」ボタンから開き直してください';
+    bar.style.background = sent ? '#0b5d3b' : '#7a1d1d';
+  })();
+})();
 (function(){
   'use strict';
   const KEY='pcAutoCart';
