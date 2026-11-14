@@ -554,8 +554,8 @@ function mcRows(base){
 // 検索のことば。「グライオン:ミラー」「(ミラー)」のような付け足しは外して、名前＋番号で探す
 function mcQuery(c){
   const nm=String(c.name||'').replace(/[:：].*$/,'').replace(/[（(][^）)]*[）)]/g,'').trim();
-  const num=String(c.num||'');
-  return (nm+' '+(/\d/.test(num)?num:(c.set||''))).trim();
+  // 番号の無い旧裏は「旧裏」のまま付ける（売る側もそう書くことが多い。弾の正式名は長すぎて当たらない）
+  return (nm+' '+String(c.num||'')).trim();
 }
 function mcOpen(id){
   const c=cardInfo(id);
@@ -600,7 +600,7 @@ function mcSummary(id){
   const mi=Math.round((Date.now()-at)/60000);
   const ago=mi<60?mi+'分前':mi<1440?Math.round(mi/60)+'時間前':Math.round(mi/1440)+'日前';
   return 'メルカリ '+(on.length?'販売中 <b>'+yen(min(on))+'〜</b>（'+on.length+'件）':'販売中なし')
-    +(so.length?'／売切 '+yen(med(so))+'（'+so.length+'件）':'')
+    +(so.length?'／売切 中央'+yen(med(so))+'（'+so.length+'件）':'')
     +' <span class="ago">'+ago+'</span><span class="re" data-mcgo="'+esc(id)+'">再検索</span>';
 }
 addEventListener('message', e=>{
