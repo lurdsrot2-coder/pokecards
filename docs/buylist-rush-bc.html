@@ -538,8 +538,11 @@ function mcRows(base){
   for(const id of ids){
     const c=cardInfo(id, base, fc);
     if(!c) continue;
-    const ds=ymd(mc[id].t);
+    const ds=ymd(mc[id].t), want=mcKey(mcName(c.name));
     for(const it of mc[id].items){
+      // メルカリの検索はことばを全部は守らない（「ブラッキー 068/092」でジバコイルが出る）。
+      // 題名にカード名が入っていない出品は、別のカードとして捨てる
+      if(want && !mcKey(it.n).includes(want)) continue;
       out.push({pid:'MC:'+it.i, cond:'A', cnd:'', name:c.name, set:c.set, num:c.num, ser:c.ser||'—',
         img:'https://static.mercdn.net/thumb/item/webp/'+it.i+'_1.jpg',
         price:c.price, cr:it.p, stock:0, owned:c.owned, cheap:0, isnew:0, sold:it.s?1:0,
@@ -552,8 +555,16 @@ function mcRows(base){
   return out;
 }
 // 検索のことば。「グライオン:ミラー」「(ミラー)」のような付け足しは外して、名前＋番号で探す
+// カード名から「:ミラー」「(キラ)」のような付け足しを外す
+function mcName(name){
+  return String(name||'').replace(/[:：].*$/,'').replace(/[（(][^）)]*[）)]/g,'').trim();
+}
+// 照合用。全角半角・大文字小文字・空白・記号の違いをならす
+function mcKey(t){
+  return String(t||'').normalize('NFKC').toLowerCase().replace(/[\s・･.\-_=＝~〜]/g,'');
+}
 function mcQuery(c){
-  const nm=String(c.name||'').replace(/[:：].*$/,'').replace(/[（(][^）)]*[）)]/g,'').trim();
+  const nm=mcName(c.name);
   // 番号の無い旧裏は「旧裏」のまま付ける（売る側もそう書くことが多い。弾の正式名は長すぎて当たらない）
   return (nm+' '+String(c.num||'')).trim();
 }
@@ -617,11 +628,14 @@ addEventListener('message', e=>{
   indexCards();
   // 見ている位置を崩さないよう、一覧は作り直さず、そのカードの案内だけ書き換える
   for(const el of document.querySelectorAll('.mcs')) if(el.dataset.mcs===d.id) el.innerHTML=mcSummary(d.id);
-  if(st.card===d.id || st.shop==='MC') apply();
-  const on=items.filter(x=>!x.s), c=cardInfo(d.id);
+  // 押した人は結果を見たいので、そのカードの出品（店＋メルカリ）をそのまま開く。
+  // 「解除」で元の位置に戻れる
+  focusCard(d.id);
+  const got=(byCard.get(d.id)||[]).filter(x=>x.shop==='MC');
+  const on=got.filter(x=>!x.sold), c=cardInfo(d.id);
   toast((c?c.name+'：':'')+'メルカリ 販売中 '+on.length+'件'
-        +(on.length?'（最安 '+yen(Math.min.apply(null,on.map(x=>x.p)))+'）':'')
-        +'・売切 '+(items.length-on.length)+'件');
+        +(on.length?'（最安 '+yen(Math.min.apply(null,on.map(x=>x.cr)))+'）':'')
+        +'・売切 '+(got.length-on.length)+'件');
   mcBtn();
 });
 function mcBtn(){
