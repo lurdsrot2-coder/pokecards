@@ -1268,10 +1268,17 @@ function dropPids(pids){
   memoCount(); memoDraw();
   if(st.p1) apply();        // ＋1しぼり中なら一覧側も消す
 }
+// メモを開いている間は店の並びを固定する。金額順のままだと、
+// 買えなかったものを消すたびに店が入れ替わって、いま見ていた店を見失う
+let memoOrder=null;
 function memoDraw(){
   pruneCartDone();
   const box=document.getElementById('memo-body');
   const gs=memoGroups();
+  const gk=g=>g.shop+'|'+g.mall;
+  if(!memoOrder) memoOrder=gs.map(gk);
+  else for(const g of gs) if(!memoOrder.includes(gk(g))) memoOrder.push(gk(g));
+  gs.sort((a,b)=>memoOrder.indexOf(gk(a))-memoOrder.indexOf(gk(b)));
   if(!gs.length){ box.innerHTML='<div style="color:var(--sub);font-size:12px">'
     +'まだ何も入っていません。カードの「＋1」を押すとここに溜まります。</div>'; return; }
   let total=0;
@@ -1400,6 +1407,7 @@ function memoDraw(){
 }
 function memoShow(on){
   document.getElementById('memo').classList.toggle('open', on);
+  memoOrder=null;          // 開き直したときは、改めて金額の大きい順に並べる
   if(on) memoDraw();
 }
 document.getElementById('memo-open').onclick=()=>memoShow(true);
