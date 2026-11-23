@@ -1274,6 +1274,7 @@ function sortView(){
 // メモに入れた出品を並べる。＋1したあとに取り直しで出品番号が変わったものや、
 // 売り切れたものもメモと同じ探し方で拾うので、メモの点数と一覧がずれない
 function memoView(){
+  try{ healMemoPids(); }catch(_){}
   const gs=memoGroups().filter(g=>st.memo==='*' || g.shop+'|'+g.mall===st.memo);
   const seen=new Set(); let gone=0, n=0;
   view=[];
@@ -1436,6 +1437,7 @@ function show(d, ownedN){
   serSync();
   renderTags();
   favNews();
+  try{ healMemoPids(); }catch(_){}
   try{ pruneGoneMemo(); }catch(_){}
   memoCount();
   mcBtn();
@@ -1601,6 +1603,28 @@ function memoShopName(g){ return (SHOP[g.shop]||g.shop)+(g.mall?'／'+g.mall:'')
 // 一覧から消えた出品（売れて店のページごと無くなった等）は、メモに残しても
 // 買えないし、開いても何も出ないので、読み込みのたびに外す。
 // その店のデータが読めていないとき（取り直しの失敗など）は、全部消えて見えるので触らない
+// 取り直しで出品番号が変わると、メモは同じ出品を指しているのに、タイルの「＋1 済」が付かず、
+// −1してもメモから外れない（番号が違うため）。同じカード・同じ店・同じ値段・同じ状態の
+// 出品が見つかったら、メモの番号をいまの出品の番号に付け替える
+function healMemoPids(){
+  const q=readQueue(); if(!q.length) return 0;
+  const have=new Set(q.map(x=>x && x.pid));
+  let ch=0;
+  for(const it of q){
+    if(!it || !it.pid) continue;
+    const r=findRow(it);
+    if(!r || r.sold || r.pid===it.pid || have.has(r.pid)) continue;
+    if(cartDone.has(it.pid)){ cartDone.delete(it.pid); cartDone.add(r.pid); }
+    have.delete(it.pid); have.add(r.pid);
+    it.pid=r.pid; ch++;
+  }
+  if(!ch) return 0;
+  try{ localStorage.setItem(QKEY,JSON.stringify(q)); }catch(_){ return 0; }
+  saveCartDone();
+  syncDone();
+  for(const b of document.querySelectorAll('[data-p1]')) syncP1El(b);
+  return ch;
+}
 function pruneGoneMemo(){
   if(rows.length<1000) return 0;
   const have=new Set(rows.map(r=>r.shop));
