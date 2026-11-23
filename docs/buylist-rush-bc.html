@@ -39,6 +39,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tg.on.few{background:rgba(255,170,60,.28);border-color:#ffaa3c;color:#fff}
 .tg.on.fav{background:rgba(255,214,0,.28);border-color:#ffd600;color:#fff}
 .tg.on.p1{background:rgba(255,0,255,.22);border-color:var(--pk);color:#fff}
+#f-memo{color:var(--pk);border-color:rgba(255,0,255,.45);max-width:15em}
+#f-memo.on{background:rgba(255,0,255,.22);color:#fff;border-color:var(--pk)}
 .tg.p1all{border-color:rgba(255,0,255,.5);color:var(--pk)}
 .tg.m1all{border-color:rgba(255,68,68,.5);color:var(--rd)}
 /* 取り直しの進み具合。Ctrl＋店名で頼んだときだけ出る */
@@ -287,6 +289,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
  <button class="tg MC" id="f-mcnext" title="★を付けたカードを、まだ調べていない順（未所持・高い順）に1件ずつメルカリで検索します。押すたびに次のカード">🔍 ★をメルカリで</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
+ <select id="f-memo" title="メモに＋1したカードを、店ごとに一覧に出します"><option value="">🛒 メモのカード ▾</option></select>
  <button class="tg p1all" id="f-p1all" title="いま出ているものを、まとめて＋1します">まとめて＋1</button>
  <button class="tg m1all" id="f-m1all" title="いま出ているもののうち、＋1したものをまとめて取り消します（メモから外すだけ）">まとめて−1</button>
  <button class="tg CR" data-s="CR">ラッシュ</button>
@@ -1096,6 +1099,7 @@ function resetAll(){
   fp.title='＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります';
   ownSync();
   document.getElementById('f-sort').value=st.sort;
+  memoSelKey=''; document.getElementById('f-memo').value=''; document.getElementById('f-memo').classList.remove('on');
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
   apply();
@@ -1149,6 +1153,21 @@ function memoCount(){
     ? '🛒 メモ '+t.n+'点 '+yen(t.sum)+(t.mkt?'（相場 '+yen(t.mkt)+'）':'')
     : '🛒 メモ';
   b.classList.toggle('on', t.n>0);
+  memoSelFill();
+}
+// メモのカードを一覧に出すプルダウン。店ごと（マイカはモールの中の店ごと）に選べる
+let memoSelKey='';
+function memoSelFill(){
+  const s=document.getElementById('f-memo'); if(!s) return;
+  const gs=memoGroups();
+  const k=g=>g.shop+'|'+g.mall;
+  const all=gs.reduce((a,g)=>(a.n+=g.qty,a.sum+=g.sum,a),{n:0,sum:0});
+  s.innerHTML='<option value="">🛒 メモのカード ▾</option>'
+    +(gs.length?'<option value="*">メモ すべて（'+all.n+'点 '+yen(all.sum)+'）</option>':'')
+    +gs.map(g=>'<option value="'+esc(k(g))+'">'+esc(g.mall||SHOP[g.shop]||g.shop)
+      +'（'+g.qty+'点 '+yen(g.sum)+'）</option>').join('');
+  s.value=[...s.options].some(o=>o.value===memoSelKey)?memoSelKey:'';
+  s.classList.toggle('on', !!s.value);
 }
 // 店ごとにまとめる。マイカはモールの中の店ごと（送料がそこでかかる）
 // ＋1したときの出品を、いまの一覧から探し直す。
@@ -1817,6 +1836,20 @@ document.getElementById('f-p1').onclick=function(){
   this.title = st.p1===2 ? 'まだ＋1していないものだけ出します（買い残しを探すとき）'
                          : '＋1したものだけ出します（買うものの調整用）';
   apply();};
+document.getElementById('f-memo').onchange=function(){
+  memoSelKey=this.value;
+  this.classList.toggle('on', !!this.value);
+  const [shop, mall]=this.value==='*'||!this.value ? ['',''] : this.value.split('|');
+  // カードを1枚に絞っていたら外す
+  st.card=''; document.getElementById('focus').classList.remove('on');
+  st.p1=this.value?1:0;
+  st.shop=shop||''; st.mall.clear(); if(mall) st.mall.add(mall);
+  const fp=document.getElementById('f-p1');
+  fp.classList.toggle('on', !!st.p1); fp.textContent='＋1したもの';
+  document.querySelectorAll('.tg[data-s]').forEach(x=>x.classList.toggle('on', !!st.shop && x.dataset.s===st.shop));
+  serSync();
+  apply(); scrollTo(0,0);
+};
 // いま出ているものをまとめて＋1する。
 // 絞り込んでから1枚ずつ押すのが大変なので、1回で済ませる
 document.getElementById('f-p1all').onclick=function(){
