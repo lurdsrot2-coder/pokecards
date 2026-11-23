@@ -770,7 +770,7 @@ function wordsView(){
     const nx=wordNext(), w=ws.length===1?ws[0]:null;
     document.getElementById('focus-t').innerHTML='🔎 <b>'+esc(st.words==='*'?'検索リスト すべて':st.words)+'</b> 販売中 '
       +view.length+'件を表示中'+(w?'　検索 '+agoText(w.t)+'<span class="re" data-wordgo="'+esc(w.q)+'">取り直す</span>':'')
-      +(nx?'<span class="re" data-wordgo="'+esc(nx.q)+'">次を検索：'+esc(nx.q)+'</span>':'');
+      +(nx && !(w && nx.q===w.q)?'<span class="re" data-wordgo="'+esc(nx.q)+'">次を検索：'+esc(nx.q)+'</span>':'');
     document.getElementById('focus').classList.add('on');
   }
 }
@@ -836,18 +836,26 @@ const likeBusy=new Set();
 function likeBtns(pid){ return [...document.querySelectorAll('[data-like]')].filter(b=>b.dataset.like===pid); }
 function likeToggle(pid){
   const r=rows.find(x=>x.pid===pid && x.shop==='MC'); if(!r || likeBusy.has(pid)) return;
+  // メルカリの商品ページは開いた元のタブとのつながりを切るので、
+  // 別のユーザースクリプト（メルカリの♡）が Tampermonkey の中で受け渡しをする
+  if(!document.documentElement.dataset.pcLikeBridge){
+    if(confirm('♡を使うには、Tampermonkeyに「メルカリの♡」スクリプトを入れる必要があります。いま入れますか？'))
+      open(LIKE_US, '_blank');
+    return;
+  }
   const want=r.like?0:1;
   likeBusy.add(pid);
   likeBtns(pid).forEach(b=>b.classList.add('wait'));
-  open(r.url+'#pclike='+want, 'mercari');
+  postMessage({pcLikeReq:{i:pid.slice(3), on:want}}, location.origin);
   setTimeout(()=>{ if(likeBusy.has(pid)){ likeBusy.delete(pid);
     likeBtns(pid).forEach(b=>b.classList.remove('wait'));
-    toast('メルカリから返事がありません。Tampermonkeyのスクリプトを 3.0 に更新してください'); } }, 30000);
+    toast('メルカリから返事がありません。開いたメルカリのタブを確かめてください'); } }, 30000);
   toast(want?'メルカリでいいね！しています…':'メルカリのいいね！を外しています…');
 }
+const LIKE_US='https://lurdsrot2-coder.github.io/pokecards/docs/mercari-like.user.js';
 addEventListener('message', e=>{
-  const d=e.data && e.data.pcLike;
-  if(!d || e.origin!=='https://jp.mercari.com' || !d.i) return;
+  const d=e.data && e.data.pcLikeRes;
+  if(!d || e.origin!==location.origin || !d.i) return;
   const id=String(d.i).replace(/[^\w]/g,''), pid='MC:'+id;
   likeBusy.delete(pid);
   const btns=likeBtns(pid);
@@ -885,7 +893,7 @@ function loadCatalog(){
       rows=rows.filter(r=>r.shop!=='MC');
       rows=rows.concat(mercRows(rows));
       indexCards();
-      if(st.likes) apply();
+      if(st.likes || st.words) apply();
     })
     .catch(()=>{ toast('カードの一覧を読めませんでした（店に出ているカードだけで当てています）'); })
     .finally(()=>{ catalogBusy=null; });

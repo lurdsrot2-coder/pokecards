@@ -2,7 +2,7 @@
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
 // @version      3.0
-// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）。メルカリは「メルカリで探す」から開いた検索結果を読んで買い得リストに返すだけ
+// @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）。メルカリは「メルカリで探す」「メルカリ検索リスト」「♡ メルカリのいいね」から開いた画面を読んで買い得リストに返すだけ
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
 // @match        https://pokemon-card-fullahead.com/shop/basket.html*
@@ -19,57 +19,11 @@
 // @match        https://torecacamp-pokemon.com/products/*
 // @match        https://jp.mercari.com/search*
 // @match        https://jp.mercari.com/mypage/favorites*
-// @match        https://jp.mercari.com/item/*
-// @match        https://jp.mercari.com/shops/product/*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // @downloadURL  https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // ==/UserScript==
-// ---- メルカリの♡（いいね！を付ける・外す） ----
-// 買い得リストのタイルの♡を押して開いた商品ページ（#pclike=1 / 0）だけで、♡を1回だけ押す。
-// すでにその状態なら押さない。終わったら買い得リストに知らせてタブを閉じる
-(function(){
-  'use strict';
-  if(location.hostname!=='jp.mercari.com') return;
-  const m=location.hash.match(/pclike=([01])/);
-  if(!m) return;
-  const want=m[1]==='1';
-  history.replaceState(null,'',location.pathname+location.search);
-  const a=location.pathname.match(/\/item\/(m\d+)/), b=location.pathname.match(/\/shops\/product\/(\w+)/);
-  const id=a?a[1]:b?'s'+b[1]:'';
-  if(!id) return;
-  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  const bar=document.createElement('div');
-  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:10px 14px;'
-    +'background:#1b1f3b;color:#fff;font:bold 14px sans-serif';
-  bar.textContent='買い得リスト：'+(want?'いいね！しています…':'いいね！を外しています…');
-  document.body.appendChild(bar);
-  const btn=()=>document.querySelector('[data-testid="icon-heart-button"]');
-  // 塗りつぶしの♡＝いいね！済み、線だけの♡＝まだ
-  const state=()=>{ const h=btn(); if(!h) return null;
-    if(h.querySelector('[data-testid="icon-like-filled"]')) return true;
-    if(h.querySelector('[data-testid="icon-like-outlined"]')) return false;
-    const p=h.getAttribute('aria-pressed'); return p==null?null:p==='true'; };
-  (async()=>{
-    const t0=Date.now();
-    while(Date.now()-t0<15000 && state()===null) await sleep(300);
-    let ok=false;
-    if(state()!==null){
-      if(state()!==want){
-        btn().click();
-        for(let i=0; i<30 && state()!==want; i++) await sleep(250);
-      }
-      ok = state()===want;
-    }
-    let sent=false;
-    try{ if(window.opener){ window.opener.postMessage({pcLike:{i:id, on:want?1:0, ok:ok?1:0}}, '*'); sent=true; } }catch(_){}
-    bar.textContent = !ok ? '買い得リスト：♡を押せませんでした（売り切れ・削除・ログアウトの可能性）'
-      : (want?'いいね！しました':'いいね！を外しました')+(sent?'。買い得リストに戻ります':'');
-    bar.style.background = ok ? '#0b5d3b' : '#7a1d1d';
-    if(ok && sent){ await sleep(1200); try{ window.opener.focus(); }catch(_){} window.close(); }
-  })();
-})();
 // ---- メルカリのいいね！ ----
 // 買い得リストの「♡ メルカリのいいね」から開いた いいね！一覧（#pclikes）だけを読む。
 // 自分のいいね！一覧の「もっと見る」を押して全部出し、販売中のものを買い得リストへ送る。
