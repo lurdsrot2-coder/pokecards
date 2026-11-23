@@ -593,10 +593,30 @@ function likeIndex(base){
   for(const c of (CATALOG||[])) add({...c});
   return {byNum, byName};
 }
+// 名前がタイトルに「その名前として」入っているか。リザード⊂リザードン、ムウマ⊂ムウマージ のような
+// 長い名前の一部は数えない。strict のときは ミュウ⊂ミュウex のような英字の続きも数えない
+// タイトルを区切り（空白・括弧など）ごとに詰めた文字列と、区切りの位置
+function keyB(t){
+  const toks=String(t).normalize('NFKC').split(/[\s、。・,\/\[\]【】「」()『』<>〈〉:：*＊!！?？~〜|]+/);
+  let k=''; const b=new Set([0]);
+  for(const x of toks){ const y=mcKey(x); if(!y) continue; k+=y; b.add(k.length); }
+  return {k, b};
+}
+function nameIn(kb, nk, strict){
+  const kana=/[ァ-ヶー]/, lat=/[a-z]/, k=kb.k;
+  for(let i=k.indexOf(nk); i>=0; i=k.indexOf(nk, i+1)){
+    const j=i+nk.length, a=kb.b.has(i)?'':k[i-1]||'', b=kb.b.has(j)?'':k[j]||'';
+    if(kana.test(a) || kana.test(b)) continue;
+    if(strict && (lat.test(b) || lat.test(a))) continue;
+    return true;
+  }
+  return false;
+}
+const RAR_WORD=new Set(['SAR','SR','UR','AR','RR','RRR','HR','CHR','CSR','SSR','EX','GX','PSA','BGS','ARS','ED','1ED','LV','PR','PROMO','MEGA','BOX','SET','PCG','ADV','DP','DPT','BW','XY','SM','SV','SS']);
 function likeMatch(title, ix){
-  const t=String(title||'').normalize('NFKC'), k=mcKey(t);
+  const t=String(title||'').normalize('NFKC'), k=mcKey(t), kb=keyB(t);
   const nums=[...t.matchAll(/(?:^|[^0-9])0*(\d{1,3})\s*[\/／]\s*0*(\d{1,3}|[A-Z][A-Z0-9-]*)/gi)].map(m=>m[1]+'/'+m[2].toUpperCase());
-  const best=a=>a.filter(c=>k.includes(c._nk)).sort((x,y)=>y._nk.length-x._nk.length);
+  const best=a=>a.filter(c=>nameIn(kb, c._nk, false)).sort((x,y)=>y._nk.length-x._nk.length);
   for(const n of nums){
     let hit=best(ix.byNum.get(n)||[]);
     if(!hit.length) continue;
@@ -606,15 +626,17 @@ function likeMatch(title, ix){
     const sc=hit.map(c=>({c, v:verScore(c, k)})).sort((x,y)=>y.v-x.v);
     return {c:sc[0].c, sure:1, amb:sc[1].v===sc[0].v?1:0};
   }
-  // 番号なし：名前が入っていて、収録記号もタイトルにあるものが1種類だけ
   const words=new Set((t.toUpperCase().match(/[A-Z0-9-]{2,6}/g)||[]));
+  // 番号が書いてあるのに当たらないなら、名前だけで当てない（別のカードのことが多い）
+  if(nums.length || /\d{2,3}\s*[\/／]/.test(t)) return null;
   // 番号なし：名前が入っていて、収録記号（BW1）かパック名（ハートゴールドコレクション）もタイトルにあるもの。
   // 版の言葉で1つに決まったときだけ
   const cand=[];
-  for(const [nk,cs] of ix.byName) if(nk.length>=2 && k.includes(nk))
+  for(const [nk,cs] of ix.byName) if(nk.length>=2 && nameIn(kb, nk, true))
     for(const c of cs){
       const pk=mcKey((String(c.set||'').match(/「([^」]+)」/)||[])[1]||'');
-      if((c.code && words.has(String(c.code).toUpperCase())) || (pk.length>=4 && k.includes(pk))) cand.push(c);
+      const cd=String(c.code||'').toUpperCase();
+      if((cd && !RAR_WORD.has(cd) && words.has(cd)) || (pk.length>=4 && k.includes(pk))) cand.push(c);
     }
   if(!cand.length) return null;
   const top=Math.max(...cand.map(c=>c._nk.length));
