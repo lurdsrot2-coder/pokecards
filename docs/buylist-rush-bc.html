@@ -1577,7 +1577,7 @@ function freeLine(txt){
 // 控えに相場が入っていない古い分は、いまの一覧から拾う
 function mktOf(x){
   if(x && x.mkt) return x.mkt;
-  const r=x && rows.find(y=>y.pid===x.pid);
+  const r=x && rowByPid(x.pid);
   return r ? r.price : 0;
 }
 function memoTotals(){
@@ -1631,15 +1631,32 @@ function memoSelFill(){
 // 店ごとにまとめる。マイカはモールの中の店ごと（送料がそこでかかる）
 // ＋1したときの出品を、いまの一覧から探し直す。
 // 取り直しで番号が変わることがあるので、同じカード・同じ店・同じ値段なら同じ出品とみなす
+// 12万行を毎回頭から探すと、メモが200件あるだけで＋1のたびに1秒以上固まる。
+// 出品番号とカードidで引けるようにしておく（一覧を作り直したら引き直す）
+let _ixRows=null, _ixPid=null, _ixId=null, _ixN=0;
+function rowIx(){
+  if(_ixRows!==rows || _ixN!==rows.length){
+    _ixPid=new Map(); _ixId=new Map();
+    for(const r of rows){
+      if(!_ixPid.has(r.pid)) _ixPid.set(r.pid,[]);
+      _ixPid.get(r.pid).push(r);
+      if(r.id){ if(!_ixId.has(r.id)) _ixId.set(r.id,[]); _ixId.get(r.id).push(r); }
+    }
+    _ixRows=rows; _ixN=rows.length;
+  }
+}
+function rowByPid(pid){ rowIx(); const a=_ixPid.get(pid); return a?a[0]:undefined; }
 function findRow(it){
+  rowIx();
+  const byP=_ixPid.get(it.pid)||[], byI=_ixId.get(it.id)||[];
   // 出品番号が変わっていても拾い直すが、状態まで合っていないと別物を
   // カートに入れてしまう（同じ値段で状態が違う出品が実際にある）
-  return rows.find(r=>r.pid===it.pid && !r.sold)
-      || rows.find(r=>r.id===it.id && r.shop===it.shop && r.cr===it.price && !r.sold
+  return byP.find(r=>!r.sold)
+      || byI.find(r=>r.shop===it.shop && r.cr===it.price && !r.sold
                       && (!(it.cnd||it.cond) || r.cnd===(it.cnd||it.cond)))
       // 生きている出品が無いときだけ、売り切れた行を返す。
       // 「いつ売れたか」を出したいので、見つけたことは伝える
-      || rows.find(r=>r.pid===it.pid)
+      || byP[0]
       || null;
 }
 function memoGroups(){
@@ -2251,7 +2268,7 @@ grid.addEventListener('click',e=>{
   }
   const pb=e.target.closest('[data-p1]');
   if(pb){
-    const r=rows.find(x=>x.pid===pb.dataset.p1); if(!r) return;
+    const r=rowByPid(pb.dataset.p1); if(!r) return;
     if(!r.id){ toast('このカードはアプリと紐づいていません'); return; }
     const q=readQueue();
     if(doneP1.has(r.pid)){          // 押し間違いを戻せるように
