@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      2.8
+// @version      2.9
 // @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）。メルカリは「メルカリで探す」から開いた検索結果を読んで買い得リストに返すだけ
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
@@ -18,11 +18,73 @@
 // @match        https://olta-tcg.com/pokemon/product/detail/*
 // @match        https://torecacamp-pokemon.com/products/*
 // @match        https://jp.mercari.com/search*
+// @match        https://jp.mercari.com/mypage/favorites*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // @downloadURL  https://lurdsrot2-coder.github.io/pokecards/docs/hobbystation-autocart.user.js
 // ==/UserScript==
+// ---- メルカリのいいね！ ----
+// 買い得リストの「♡ メルカリのいいね」から開いた いいね！一覧（#pclikes）だけを読む。
+// 自分のいいね！一覧の「もっと見る」を押して全部出し、販売中のものを買い得リストへ送る。
+// 一覧ページの外へは移動しない
+(function(){
+  'use strict';
+  if(location.hostname!=='jp.mercari.com' || !/^\/mypage\/favorites/.test(location.pathname)) return;
+  if(!/pclikes/.test(location.hash)) return;
+  history.replaceState(null,'',location.pathname+location.search);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:10px 14px;'
+    +'background:#1b1f3b;color:#fff;font:bold 14px sans-serif';
+  bar.textContent='買い得リスト：いいね！を読み取っています…';
+  document.body.appendChild(bar);
+  const tiles=()=>[...document.querySelectorAll('[data-testid="grid-liked-item"]')];
+  const moreBtn=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='もっと見る');
+  (async()=>{
+    const t0=Date.now();
+    while(Date.now()-t0<20000){
+      if(tiles().length) break;
+      if(/いいね！した商品はありません|いいね！がありません/.test(document.body.innerText)) break;
+      await sleep(400);
+    }
+    if(document.hidden){
+      bar.textContent='買い得リスト：このタブを表示すると読み取ります';
+      await new Promise(r=>{ const f=()=>{ if(!document.hidden){ removeEventListener('visibilitychange',f); r(); } };
+                             addEventListener('visibilitychange',f); });
+    }
+    // 「もっと見る」が無くなるまで押す（48件ずつ増える。最大100回＝4,800件）
+    for(let k=0; k<100; k++){
+      const b=moreBtn(); if(!b) break;
+      const before=tiles().length;
+      b.click();
+      bar.textContent='買い得リスト：いいね！を読み取っています…（'+before+'件）';
+      for(let w=0; w<40 && tiles().length===before; w++) await sleep(250);
+      if(tiles().length===before) break;
+    }
+    const items=[], seen=new Set();
+    for(const e of tiles()){
+      const h=(e.closest('a')||e.querySelector('a')||{getAttribute:()=>''}).getAttribute('href')||'';
+      const m=h.match(/\/item\/(m\d+)/), s=h.match(/\/shops\/product\/(\w+)/);
+      const id=m?m[1]:s?'s'+s[1]:'';
+      if(!id || seen.has(id)) continue;
+      seen.add(id);
+      if(e.querySelector('[data-testid="item-tile-sticker"]')) continue;     // 売り切れ
+      const g=t=>((e.querySelector('[data-testid="'+t+'"]')||{}).textContent||'').trim();
+      const p=+g('item-tile-price').replace(/\D/g,'');
+      if(!p) continue;
+      const img=(e.querySelector('img')||{}).src||'';
+      items.push({i:id, p:p, n:g('thumbnail-item-name').slice(0,100), c:g('item-tile-supplemental-text').slice(0,20),
+                  a:/現在/.test(g('item-tile-price'))?1:0, img:/^https:/.test(img)?img.split('?')[0]:''});
+    }
+    let sent=false;
+    try{ if(window.opener){ window.opener.postMessage({pcLikes:{t:Date.now(), items:items}}, '*'); sent=true; } }catch(_){}
+    bar.textContent = sent
+      ? '買い得リストに送りました：販売中のいいね！ '+items.length+'件'
+      : '買い得リストのタブが見つかりません。買い得リストの「♡ メルカリのいいね」から開き直してください';
+    bar.style.background = sent ? '#0b5d3b' : '#7a1d1d';
+  })();
+})();
 // ---- メルカリ ----
 // 買い得リストの「メルカリで探す」から開いた検索結果（#pcmc=<カードid>）だけを読む。
 // 開いた画面に出ている出品を読むだけで、次の検索や別のページへの移動は一切しない

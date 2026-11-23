@@ -202,6 +202,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mcs b{color:#fff}.mcs .ago{color:#9a8f9f}
 .mcs .re{margin-left:4px;color:#ff8a8b;text-decoration:underline}
 .st.mct{color:#d9c3c8}
+.b.lk{background:rgba(255,79,80,.95);color:#fff}
+#focus .re{margin-left:6px;color:#ff8a8b;text-decoration:underline;cursor:pointer}
 /* ほかの店にも同じカードが出ているときの案内。押すとそのカードだけに絞る */
 .alt{margin-top:4px;font-size:9.5px;color:#7fd8ff;background:rgba(0,245,255,.08);
  border:1px solid rgba(0,245,255,.25);border-radius:3px;padding:2px 5px;cursor:pointer;
@@ -288,6 +290,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
+ <button class="tg MC" id="f-likes" title="メルカリで いいね！した商品のうち、まだ売れていないものを並べます。初回と、6時間たったときはメルカリのいいね！一覧を読みに行きます">♡ メルカリのいいね</button>
  <button class="tg MC" id="f-mcnext" title="★を付けたカードを、まだ調べていない順（未所持・高い順）に1件ずつメルカリで検索します。押すたびに次のカード">🔍 ★をメルカリで</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
  <select id="f-memo" title="メモに＋1したカードを、店ごとに一覧に出します"><option value="">🛒 メモのカード ▾</option></select>
@@ -495,7 +498,7 @@ function writeSoldLocal(o){
 function toRows(d){
   const rows=toRows0(d), sl=readSoldLocal();
   for(const r of rows) if(!r.sold && sl[r.pid]){ r.sold=1; r.soldAt=sl[r.pid].d; }
-  return rows.concat(mcRows(rows));
+  return rows.concat(mercRows(rows));
 }
 // ---- メルカリ ----
 // 「メルカリで探す」で開いた検索結果を、ユーザースクリプトが読んで送ってくる。
@@ -558,6 +561,115 @@ function mcRows(base){
   }
   return out;
 }
+// メルカリの行（★の検索結果＋いいね！）。同じ出品は1行に
+function mercRows(base){
+  const lk=likeRows(base), have=new Set(lk.map(r=>r.pid));
+  return mcRows(base).filter(r=>!have.has(r.pid)).concat(lk);
+}
+// ---- メルカリのいいね！ ----
+// 「♡ メルカリのいいね」で開いた いいね！一覧を、ユーザースクリプトが読んで送ってくる。
+// 毎回まるごと置き換える（売れたもの・いいね！を外したものは消える）
+const LKKEY='pokecards_mclikes', LK_AGAIN=6*3600*1000;
+function readLikes(){
+  try{ const o=JSON.parse(localStorage.getItem(LKKEY)||'null'); if(o && Array.isArray(o.items)) return o; }catch(_){}
+  return null;
+}
+// タイトルからカードを当てる。番号（081/078）＋名前、番号が無ければ 名前＋収録記号（BW1・XY9）で
+// 1種類に決まったときだけ。決まらないものも「カード未特定」として出す
+function likeIndex(base){
+  const byNum=new Map(), byName=new Map(), seen=new Set();
+  const add=c=>{
+    if(!c || !c.id || seen.has(c.id)) return; seen.add(c.id);
+    const nk=mcKey(mcName(c.name)); if(nk.length<2) return;
+    c._nk=nk;
+    const m=String(c.num||'').match(/^0*(\d+)\s*\/\s*0*([0-9A-Z-]+)/i);
+    if(m){ const k=m[1]+'/'+m[2].toUpperCase(); if(!byNum.has(k)) byNum.set(k,[]); byNum.get(k).push(c); }
+    if(!byName.has(nk)) byName.set(nk,[]); byName.get(nk).push(c);
+  };
+  for(const r of base) if(r.shop!=='MC' && r.id && !seen.has(r.id))
+    add({id:r.id, name:r.name, num:r.num, set:r.set, ser:r.ser, price:r.price, owned:r.owned, rar:r.rar,
+         code:r.code, tags:r.tags, ill:r.ill, fav:r.fav, img:r.img});
+  for(const c of readFavCards().values()) add(c);
+  return {byNum, byName};
+}
+function likeMatch(title, ix){
+  const t=String(title||'').normalize('NFKC'), k=mcKey(t);
+  const nums=[...t.matchAll(/(?:^|[^0-9])0*(\d{1,3})\s*[\/／]\s*0*(\d{1,3}|[A-Z][A-Z0-9-]*)/gi)].map(m=>m[1]+'/'+m[2].toUpperCase());
+  const best=a=>a.filter(c=>k.includes(c._nk)).sort((x,y)=>y._nk.length-x._nk.length);
+  for(const n of nums){
+    const hit=best(ix.byNum.get(n)||[]);
+    if(hit.length) return {c:hit[0], sure:1};
+  }
+  // 番号なし：名前が入っていて、収録記号もタイトルにあるものが1種類だけ
+  const words=new Set((t.toUpperCase().match(/[A-Z0-9-]{2,6}/g)||[]));
+  const cand=[];
+  for(const [nk,cs] of ix.byName) if(nk.length>=2 && k.includes(nk))
+    for(const c of cs) if(c.code && words.has(String(c.code).toUpperCase())) cand.push(c);
+  const ids=new Set(cand.map(c=>c.id));
+  if(ids.size===1) return {c:cand[0], sure:0};
+  return null;
+}
+function likeRows(base){
+  const o=readLikes(); if(!o || !o.items.length) return [];
+  const ix=likeIndex(base), ds=ymd(o.t), out=[];
+  for(const it of o.items){
+    const m=likeMatch(it.n, ix), c=m?m.c:null;
+    const shops=it.i[0]==='s';
+    out.push({pid:'MC:'+it.i, cond:'A', cnd:'', name:c?c.name:it.n, set:c?c.set:'', num:c?c.num:'', ser:c?(c.ser||'—'):'—',
+      img: it.img || (shops ? (c&&c.img||'') : 'https://static.mercdn.net/thumb/item/webp/'+it.i+'_1.jpg'),
+      price:c?c.price||0:0, cr:it.p, stock:0, owned:c?c.owned||0:0, cheap:0, isnew:0, sold:0,
+      fst:ds, sure:m?m.sure:0, code:c&&c.code||'', rar:c&&c.rar||'', tags:c&&c.tags||[], soldAt:'', hr:'',
+      mall:'', fav:c&&c.fav?1:0, ill:c&&c.ill||'', lst:'', id:c?c.id:'', shop:'MC', vid:'',
+      url: shops ? 'https://jp.mercari.com/shops/product/'+it.i.slice(1) : 'https://jp.mercari.com/item/'+it.i,
+      mt:it.n||'', mcAt:o.t, like:1, lc:it.c||'', auc:it.a?1:0, nocard:c?0:1,
+      ratio:c&&c.price?it.p/c.price:0, save:c?(c.price||0)-it.p:0});
+  }
+  return out;
+}
+function likesOpen(){
+  open('https://jp.mercari.com/mypage/favorites?status=in_stock#pclikes', 'mercari');
+  clearTimeout(likesWait);
+  likesWait=setTimeout(()=>toast('メルカリから届きません。Tampermonkeyのスクリプトを 2.9 に更新してください'), 90000);
+  toast('メルカリのいいね！一覧を読みに行っています…（メルカリのタブが開きます）');
+}
+let likesWait=null;
+function likesView(){
+  view=rows.filter(r=>r.like);
+  shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
+  // カードが分かったものを先に、相場との差の大きい順。分からないものは後ろ
+  view.sort((a,b)=>(a.nocard-b.nocard)||(b.save-a.save)||(a.cr-b.cr));
+  grid.innerHTML=''; shown=0; draw();
+  document.getElementById('hit').textContent=view.length+'件';
+  if(!st.card){
+    const o=readLikes(), nc=view.filter(r=>r.nocard).length;
+    const mi=o?Math.round((Date.now()-o.t)/60000):0;
+    const ago=mi<60?mi+'分前':mi<1440?Math.round(mi/60)+'時間前':Math.round(mi/1440)+'日前';
+    document.getElementById('focus-t').innerHTML='♡ <b>メルカリのいいね！</b> 販売中 '+view.length+'件を表示中'
+      +(nc?'（うちカード未特定 '+nc+'件）':'')+'　読み込み '+ago
+      +'<span class="re" data-likego="1">取り直す</span>';
+    document.getElementById('focus').classList.add('on');
+  }
+}
+addEventListener('message', e=>{
+  const d=e.data && e.data.pcLikes;
+  if(!d || e.origin!=='https://jp.mercari.com' || !Array.isArray(d.items)) return;
+  clearTimeout(likesWait); likesWait=null;
+  const items=d.items.map(x=>({i:String(x.i||'').replace(/[^\w]/g,''), p:+x.p||0, n:String(x.n||'').slice(0,100),
+      c:String(x.c||'').slice(0,20), a:x.a?1:0,
+      img:/^https:\/\/[\w.-]*(mercdn\.net|mercari-shops-static\.com|mercari\.com)\//.test(x.img||'')?String(x.img):''}))
+    .filter(x=>x.i && x.p).slice(0,3000);
+  try{ localStorage.setItem(LKKEY, JSON.stringify({t:Date.now(), items})); }
+  catch(_){ toast('いいね！を保存できませんでした（容量）'); }
+  rows=rows.filter(r=>r.shop!=='MC');
+  rows=rows.concat(mercRows(rows));
+  indexCards();
+  st.likes=1; st.memo=''; st.card='';
+  const fm=document.getElementById('f-memo'); if(fm){ fm.value=''; fm.classList.remove('on'); }
+  document.getElementById('f-likes').classList.add('on');
+  apply(); scrollTo(0,0);
+  focus();
+  toast('メルカリのいいね！ 販売中 '+items.length+'件を読み込みました');
+});
 // 検索のことば。「グライオン:ミラー」「(ミラー)」のような付け足しは外して、名前＋番号で探す
 // カード名から「:ミラー」「(キラ)」のような付け足しを外す
 function mcName(name){
@@ -628,7 +740,7 @@ addEventListener('message', e=>{
   if(!writeMc(mc)) toast('メルカリの結果を保存できませんでした（容量）');
   if(mcWait && mcWait.id===d.id){ clearTimeout(mcWait.timer); mcWait=null; }
   rows=rows.filter(r=>r.shop!=='MC');
-  rows=rows.concat(mcRows(rows));
+  rows=rows.concat(mercRows(rows));
   indexCards();
   // 見ている位置を崩さないよう、一覧は作り直さず、そのカードの案内だけ書き換える
   for(const el of document.querySelectorAll('.mcs')) if(el.dataset.mcs===d.id) el.innerHTML=mcSummary(d.id);
@@ -746,7 +858,8 @@ function tile(r){
     +'<div class="bdg l"><span class="b '+r.shop+'">'+shopName+'</span>'
       +'<span class="b '+r.cond+'" title="店の表記: 状態'+esc(r.cnd)+'">'+esc(r.cnd)+'</span>'
       +(r.isnew?'<span class="b new">NEW</span>':'')
-      +(r.sold?'<span class="b sold">売切</span>':'')+'</div>'
+      +(r.sold?'<span class="b sold">売切</span>':'')
+      +(r.like?'<span class="b lk">♡</span>':'')+'</div>'
     +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
     +'</div>'
     +'<div class="bd">'
@@ -763,7 +876,9 @@ function tile(r){
         : '')+'</div>'
     // メルカリはタイトルが自由入力なので、出品の題名をそのまま見せる
     +(r.shop==='MC'
-      ? '<div class="st mct" title="'+esc(r.mt)+'">「'+esc(r.mt)+'」</div>'
+      ? '<div class="st mct" title="'+esc(r.mt)+'">'+(r.nocard?'':'「'+esc(r.mt)+'」')
+          +(r.lc?' <span style="color:var(--sub)">'+esc(r.lc)+'</span>':'')
+          +(r.auc?' <span style="color:#ffb3b3">オークション</span>':'')+'</div>'
       : '<div class="st">'+esc(r.set)+'</div>')
     +(r.mall?'<div class="mall" title="'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
         +(SHIPS[r.mall]?'（'+esc(SHIPS[r.mall].slice(0,18))+'）':'')+'</div>':'')
@@ -778,7 +893,9 @@ function tile(r){
       +'</div>'
     // 旧裏は番号が無く名前で当てているので、1ED・マークなしの版までは分からない。
     // 相場との差が版違いのせいであることが多いので、旧裏は差に関係なく必ず出す
-    +(r.shop==='MC' && !r.sure
+    +(r.nocard
+       ?'<div class="chk" title="タイトルからカードを特定できませんでした（番号が書いていない等）。相場は出せません">⚠ カード未特定</div>'
+       :r.shop==='MC' && !r.sure
        ?'<div class="chk" title="出品のタイトルにカード番号がありません。別のカードや版のこともあるので、写真で確かめてください">⚠ 番号なし・写真で確認</div>':'')
     +((r.shop!=='MC' && !r.sure && (r.ratio<0.35 || r.num==='旧裏'))
        ?'<div class="chk" title="番号の無い出品です。旧裏は1ED・マークなしなどの版まで判別できず、'
@@ -844,6 +961,7 @@ function apply(){
     return;
   }
   if(st.memo){ memoView(); return; }
+  if(st.likes){ likesView(); return; }
   // 店以外の条件を通った行を、店ごとに数えながら絞る。
   // こうすると店ボタンの数字が「その店を押したときの件数」と一致する
   const cnt={};
@@ -930,6 +1048,7 @@ function focusFromUrl(){
 }
 document.getElementById('focus-x').onclick=()=>{
   if(!st.card && st.memo){ memoSelSet(''); return; }
+  if(!st.card && st.likes){ likesOff(); return; }
   st.card=''; document.getElementById('focus').classList.remove('on');
   apply();
   // 一番上に戻さず、見ていたところまで描いてから位置を戻す
@@ -1129,6 +1248,7 @@ function resetAll(){
   ownSync();
   document.getElementById('f-sort').value=st.sort;
   st.memo=''; document.getElementById('f-memo').value=''; document.getElementById('f-memo').classList.remove('on');
+  st.likes=0;
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
   apply();
@@ -1882,8 +2002,26 @@ document.getElementById('f-p1').onclick=function(){
   this.title = st.p1===2 ? 'まだ＋1していないものだけ出します（買い残しを探すとき）'
                          : '＋1したものだけ出します（買うものの調整用）';
   apply();};
+function likesOff(){
+  st.likes=0; document.getElementById('f-likes').classList.remove('on');
+  document.getElementById('focus').classList.remove('on');
+  apply(); scrollTo(0,0);
+}
+document.getElementById('f-likes').onclick=function(){
+  if(st.likes){ likesOff(); return; }
+  const o=readLikes();
+  if(!o || Date.now()-o.t>LK_AGAIN){ likesOpen(); return; }
+  st.likes=1; st.memo=''; st.card='';
+  const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
+  this.classList.add('on');
+  apply(); scrollTo(0,0);
+};
+document.getElementById('focus').addEventListener('click', e=>{
+  if(e.target.closest('[data-likego]')) likesOpen();
+});
 function memoSelSet(v){
   st.memo=v||''; st.card='';
+  if(st.memo){ st.likes=0; document.getElementById('f-likes').classList.remove('on'); }
   const s=document.getElementById('f-memo');
   s.value=st.memo; s.classList.toggle('on', !!st.memo);
   if(!st.memo) document.getElementById('focus').classList.remove('on');
