@@ -750,7 +750,7 @@ function wordsSet(q){
   st.words=q||''; st.card='';
   if(st.words){
     st.likes=0; document.getElementById('f-likes').classList.remove('on');
-    st.memo=''; const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
+    memoShopFilter(''); st.memo=''; const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
   }else document.getElementById('focus').classList.remove('on');
   document.getElementById('f-words').classList.toggle('on', !!st.words);
   wordsDraw();
@@ -930,7 +930,7 @@ addEventListener('message', e=>{
   rows=rows.filter(r=>r.shop!=='MC');
   rows=rows.concat(mercRows(rows));
   indexCards();
-  st.likes=1; st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
+  st.likes=1; memoShopFilter(''); st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
   const fm=document.getElementById('f-memo'); if(fm){ fm.value=''; fm.classList.remove('on'); }
   document.getElementById('f-likes').classList.add('on');
   apply(); scrollTo(0,0);
@@ -1292,7 +1292,10 @@ function memoView(){
     const so=view.filter(r=>r.sold).length;
     const nm=st.memo==='*'?'メモ すべて':(gs[0]?memoShopName(gs[0]):'');
     document.getElementById('focus-t').innerHTML='🛒 <b>'+esc(nm)+'</b> のメモ '+n+'点を表示中'
-      +(so?'（うち売り切れ '+so+'件）':'')+(gone?'・一覧から消えた出品 '+gone+'件':'');
+      +(so?'（うち売り切れ '+so+'件）':'')+(gone?'・一覧から消えた出品 '+gone+'件':'')
+      +(st.memo!=='*' && gs[0]
+        ? '<span class="re" data-memoall="1">この店の出品をすべて見る（'
+          +rows.filter(r=>!r.sold && r.shop===st.shop && passes(r)).length.toLocaleString()+'件）</span>' : '');
     document.getElementById('focus').classList.add('on');
   }
 }
@@ -1535,7 +1538,7 @@ function resetAll(){
   fp.title='＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります';
   ownSync();
   document.getElementById('f-sort').value=st.sort;
-  st.memo=''; document.getElementById('f-memo').value=''; document.getElementById('f-memo').classList.remove('on');
+  memoPrev=null; st.memo=''; document.getElementById('f-memo').value=''; document.getElementById('f-memo').classList.remove('on');
   st.likes=0; st.words=''; document.getElementById('f-words').classList.remove('on');
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
@@ -2301,7 +2304,7 @@ document.getElementById('f-likes').onclick=function(){
   if(st.likes){ likesOff(); return; }
   const o=readLikes();
   if(!o || Date.now()-o.t>LK_AGAIN){ likesOpen(); return; }
-  st.likes=1; st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
+  st.likes=1; memoShopFilter(''); st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
   const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
   this.classList.add('on');
   apply(); scrollTo(0,0);
@@ -2309,8 +2312,33 @@ document.getElementById('f-likes').onclick=function(){
 document.getElementById('focus').addEventListener('click', e=>{
   if(e.target.closest('[data-likego]')) likesOpen();
   const wg=e.target.closest('[data-wordgo]'); if(wg) wordOpen(wg.dataset.wordgo);
+  // メモから、その店の出品ぜんぶへ。店の絞り込みは残したまま、ほかの絞り込みも効く
+  if(e.target.closest('[data-memoall]')){
+    memoPrev=null; st.memo='';
+    const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
+    document.getElementById('focus').classList.remove('on');
+    apply(); scrollTo(0,0);
+  }
 });
+// メモで店を選んだら、ショップ（とマイカの店）の絞り込みも同じ店にそろえる。
+// メモを外したら、選ぶ前の絞り込みに戻す。「この店の出品をすべて見る」で残す
+let memoPrev=null;
+function shopBtnSync(){
+  document.querySelectorAll('.tg[data-s]').forEach(x=>x.classList.toggle('on', st.shop===x.dataset.s));
+}
+function memoShopFilter(v){
+  if(memoPrev && (!v || v==='*')){
+    st.shop=memoPrev.shop; st.mall.clear(); memoPrev.mall.forEach(m=>st.mall.add(m)); memoPrev=null;
+  }
+  if(v && v!=='*'){
+    if(!memoPrev) memoPrev={shop:st.shop, mall:[...st.mall]};
+    const i=v.indexOf('|'), shop=v.slice(0,i), mall=v.slice(i+1);
+    st.shop=shop; st.mall.clear(); if(mall) st.mall.add(mall);
+  }
+  shopBtnSync(); serSync();
+}
 function memoSelSet(v){
+  memoShopFilter(v||'');
   st.memo=v||''; st.card='';
   if(st.memo){ st.likes=0; document.getElementById('f-likes').classList.remove('on');
     st.words=''; document.getElementById('f-words').classList.remove('on'); }
