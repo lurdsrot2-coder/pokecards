@@ -885,7 +885,7 @@ function memoView(){
   document.getElementById('hit').textContent=view.length+'件';
   if(!st.card){
     const so=view.filter(r=>r.sold).length;
-    const nm=st.memo==='*'?'メモ すべて':(gs[0]?(gs[0].mall||SHOP[gs[0].shop]||gs[0].shop):'');
+    const nm=st.memo==='*'?'メモ すべて':(gs[0]?memoShopName(gs[0]):'');
     document.getElementById('focus-t').innerHTML='🛒 <b>'+esc(nm)+'</b> のメモ '+n+'点を表示中'
       +(so?'（うち売り切れ '+so+'件）':'')+(gone?'・一覧から消えた出品 '+gone+'件':'');
     document.getElementById('focus').classList.add('on');
@@ -1024,6 +1024,7 @@ function show(d, ownedN){
   serSync();
   renderTags();
   favNews();
+  try{ pruneGoneMemo(); }catch(_){}
   memoCount();
   mcBtn();
   document.getElementById('msg').hidden=true;
@@ -1183,6 +1184,24 @@ function memoCount(){
   b.classList.toggle('on', t.n>0);
   memoSelFill();
 }
+function memoShopName(g){ return (SHOP[g.shop]||g.shop)+(g.mall?'／'+g.mall:''); }
+// 一覧から消えた出品（売れて店のページごと無くなった等）は、メモに残しても
+// 買えないし、開いても何も出ないので、読み込みのたびに外す。
+// その店のデータが読めていないとき（取り直しの失敗など）は、全部消えて見えるので触らない
+function pruneGoneMemo(){
+  if(rows.length<1000) return 0;
+  const have=new Set(rows.map(r=>r.shop));
+  const gone=[];
+  for(const it of readQueue()){
+    if(!it || !it.pid || !have.has(it.shop)) continue;
+    if(!findRow(it)) gone.push(it.pid);
+  }
+  if(gone.length){
+    dropPids(gone);
+    toast('一覧から消えた出品 '+gone.length+'点をメモから外しました');
+  }
+  return gone.length;
+}
 // メモのカードを一覧に出すプルダウン。店ごと（マイカはモールの中の店ごと）に選べる
 function memoSelFill(){
   const s=document.getElementById('f-memo'); if(!s) return;
@@ -1191,7 +1210,7 @@ function memoSelFill(){
   const all=gs.reduce((a,g)=>(a.n+=g.qty,a.sum+=g.sum,a),{n:0,sum:0});
   s.innerHTML='<option value="">🛒 メモのカード ▾</option>'
     +(gs.length?'<option value="*">メモ すべて（'+all.n+'点 '+yen(all.sum)+'）</option>':'')
-    +gs.map(g=>'<option value="'+esc(k(g))+'">'+esc(g.mall||SHOP[g.shop]||g.shop)
+    +gs.map(g=>'<option value="'+esc(k(g))+'">'+esc(memoShopName(g))
       +'（'+g.qty+'点 '+yen(g.sum)+'）</option>').join('');
   s.value=[...s.options].some(o=>o.value===st.memo)?st.memo:'';
   s.classList.toggle('on', !!s.value);
