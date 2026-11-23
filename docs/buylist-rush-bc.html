@@ -112,6 +112,8 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .tagbar .tg.on b{opacity:.85}
 .tagbar .clr{color:var(--sub);border-style:dashed}
 /* マイカだけ、モールの中の店名を出す。送料が店ごとにかかるので買い方が変わる */
+.mall[data-mall]{cursor:pointer}
+.mall[data-mall]:hover{opacity:1;text-decoration:underline}
 .mall{font-size:10px;color:var(--cy);opacity:.85;margin-top:2px;
  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thline{margin-top:4px}
@@ -1148,7 +1150,7 @@ function tile(r){
           +(r.lc?' <span style="color:var(--sub)">'+esc(r.lc)+'</span>':'')
           +(r.auc?' <span style="color:#ffb3b3">オークション</span>':'')+'</div>'
       : '<div class="st">'+esc(r.set)+'</div>')
-    +(r.mall?'<div class="mall" title="'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
+    +(r.mall?'<div class="mall" data-mall="'+esc(r.mall)+'" title="押すとこの店の出品だけに絞ります　'+esc(SHIPS[r.mall]||'')+'">🏪 '+esc(r.mall)
         +(SHIPS[r.mall]?'（'+esc(SHIPS[r.mall].slice(0,18))+'）':'')+'</div>':'')
     +'<div class="pr"><span class="cr">'+yen(r.cr)+'</span><span class="pc">'+pc+'%</span></div>'
     +'<div class="bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'
@@ -2198,6 +2200,9 @@ function toast(msg){
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),2600);
 }
 grid.addEventListener('click',e=>{
+  // マイカの店名を押すと、その店の出品だけに絞る。もう一度押すと外す
+  const ml=e.target.closest('[data-mall]');
+  if(ml){ mallOnly(ml.dataset.mall); return; }
   const a=e.target.closest('.alt');
   if(a){ focusCard(a.dataset.card); return; }
   // メルカリ：「再検索」と、まだ調べていないカードは検索。調べてあれば出品を並べる
@@ -2336,6 +2341,18 @@ function memoShopFilter(v){
     st.shop=shop; st.mall.clear(); if(mall) st.mall.add(mall);
   }
   shopBtnSync(); serSync();
+}
+function mallOnly(m){
+  const off = st.mall.size===1 && st.mall.has(m) && !st.memo && !st.likes && !st.words && !st.card;
+  memoPrev=null; st.memo=''; st.card='';
+  const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
+  st.likes=0; document.getElementById('f-likes').classList.remove('on');
+  st.words=''; document.getElementById('f-words').classList.remove('on');
+  document.getElementById('focus').classList.remove('on');
+  st.mall.clear();
+  if(off){ st.shop=''; toast('店の絞り込みを外しました'); }
+  else { st.shop='MY'; st.mall.add(m); toast('マイカ／'+m+' の出品だけを表示します（もう一度押すと外れます）'); }
+  shopBtnSync(); serSync(); apply(); scrollTo(0,0);
 }
 function memoSelSet(v){
   memoShopFilter(v||'');
