@@ -337,6 +337,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
   <option value="cr">店の価格 安い順</option>
   <option value="cr-">店の価格 高い順</option>
   <option value="price-">相場の高い順</option>
+  <option value="price">相場の安い順</option>
   <option value="name">カード名順</option>
  </select>
  <input type="search" id="q" placeholder="カード名で絞る">
@@ -688,8 +689,8 @@ function likesView(){
   if(!CATALOG) loadCatalog();
   view=rows.filter(r=>r.like);
   shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
-  // カードが分かったものを先に、相場との差の大きい順。分からないものは後ろ
-  view.sort((a,b)=>(a.nocard-b.nocard)||(b.save-a.save)||(a.cr-b.cr));
+  // 選んだ並び順で（相場を使う並びでは、カード未特定は後ろ）
+  sortView();
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length+'件';
   if(!st.card){
@@ -1027,17 +1028,24 @@ function apply(){
     if(!st.shop || r.shop===st.shop) view.push(r);
   }
   shopCounts(cnt);
-  // 差額・相場は大きい順、比率・ラッシュ価格・名前は小さい順が既定
+  sortView();
+  grid.innerHTML=''; shown=0; draw();
+  document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
+}
+// 並び替え（ふつうの一覧・メモ・いいね！ 共通）。
+// 差額・相場は大きい順、比率・店の価格・名前は小さい順が既定
+function sortView(){
   const k=st.sort.replace(/-$/,'');
   const dir=(k==='save'||k==='fst'||st.sort==='price-'||st.sort==='cr-')?-1:1;
+  // 相場の分からない出品（カード未特定）は、相場を使う並びでは後ろへ
+  const needCard=(k==='save'||k==='ratio'||k==='price');
   view.sort((a,b)=>{
+    if(needCard && (!a.price)!==(!b.price)) return a.price?-1:1;
     // 新着順は、店の出品日が取れていればそちらで並べる（見つけた日より実態に近い）
     const x=k==='fst'?(a.lst||a.fst||''):a[k], y=k==='fst'?(b.lst||b.fst||''):b[k];
     const c=(typeof x==='number'?x-y:String(x).localeCompare(String(y),'ja'))*dir;
     // 同じ日のものが多いので、その中では差額の大きい順に見せる
     return (k==='fst' && c===0) ? b.save-a.save : c;});
-  grid.innerHTML=''; shown=0; draw();
-  document.getElementById('hit').textContent=view.length.toLocaleString()+'件';
 }
 // メモに入れた出品を並べる。＋1したあとに取り直しで出品番号が変わったものや、
 // 売り切れたものもメモと同じ探し方で拾うので、メモの点数と一覧がずれない
@@ -1052,8 +1060,9 @@ function memoView(){
     seen.add(it.row.pid); view.push(it.row);
   }
   shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
-  // 買えるものを先に、売り切れは後ろへ
-  view.sort((a,b)=>(a.sold-b.sold)||(b.cr-a.cr));
+  // 選んだ並び順で。売り切れは後ろへ
+  sortView();
+  view.sort((a,b)=>a.sold-b.sold);
   grid.innerHTML=''; shown=0; draw();
   document.getElementById('hit').textContent=view.length+'件';
   if(!st.card){
