@@ -203,6 +203,30 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .mcs .re{margin-left:4px;color:#ff8a8b;text-decoration:underline}
 .st.mct{color:#d9c3c8}
 .b.lk{background:rgba(255,79,80,.95);color:#fff}
+.b.lkb{cursor:pointer;font-size:13px;line-height:18px;padding:1px 8px;background:rgba(0,0,0,.55);color:#ff8a8b;border:1px solid #ff8a8b}
+.b.lkb.on{background:rgba(255,79,80,.95);color:#fff;border-color:transparent}
+.b.lkb.wait{opacity:.5;cursor:wait}
+#wpanel{position:fixed;z-index:21;display:none;flex-direction:column;background:#0a0a20;
+  border:1px solid rgba(255,79,80,.5);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.6);
+  left:50%;top:70px;transform:translateX(-50%);width:min(440px,calc(100vw - 32px));max-height:75vh}
+#wpanel.open{display:flex}
+#wpanel .wp-hd{display:flex;align-items:center;gap:6px;padding:8px;font-size:12px;font-weight:700;color:#ff8a8b;
+  border-bottom:1px solid rgba(255,255,255,.1)}
+#wpanel .wp-hd span{margin-right:auto}
+#wpanel button{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:4px;color:var(--tx);
+  font-size:11px;padding:4px 8px;cursor:pointer}
+#wpanel #wp-next{border-color:#ff8a8b;color:#ff8a8b;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#wpanel form{display:flex;gap:6px;padding:8px}
+#wpanel #wp-q{flex:1;min-width:0;padding:6px 8px;font-size:12px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.2);border-radius:4px;color:var(--tx)}
+#wpanel .wp-list{overflow-y:auto;overscroll-behavior:contain}
+#wpanel .wp-it{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:12px;cursor:pointer;
+  border-top:1px solid rgba(255,255,255,.05)}
+#wpanel .wp-it:hover{background:rgba(255,79,80,.12)}
+#wpanel .wp-it.sel{background:rgba(255,79,80,.2);color:#ff8a8b;font-weight:700}
+#wpanel .wp-n{margin-left:auto;color:var(--sub);font-size:10px;white-space:nowrap}
+#wpanel .wp-it button{padding:2px 6px;font-size:10px}
+#wpanel .wp-note{padding:8px;font-size:10px;color:var(--sub);border-top:1px solid rgba(255,255,255,.1)}
 #focus .re{margin-left:6px;color:#ff8a8b;text-decoration:underline;cursor:pointer}
 /* ほかの店にも同じカードが出ているときの案内。押すとそのカードだけに絞る */
 .alt{margin-top:4px;font-size:9.5px;color:#7fd8ff;background:rgba(0,245,255,.08);
@@ -290,6 +314,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
  <button class="tg best" id="f-best" title="同じカードで一番安い出品だけ出します">最安値</button>
  <button class="tg few" id="f-few" title="残りわずかな出品だけ出します（枚数が分かる店のみ）">残り2枚以下</button>
  <button class="tg fav" id="f-fav" title="アプリで★を付けたカードの出品だけ出します">★お気に入り</button>
+ <button class="tg MC" id="f-words" title="登録したことば（例：EBB ミラー ファイヤー）でメルカリを検索して、販売中の出品を並べます。押すたびに1つずつ検索します">🔎 メルカリ検索リスト</button>
  <button class="tg MC" id="f-likes" title="メルカリで いいね！した商品のうち、まだ売れていないものを並べます。初回と、6時間たったときはメルカリのいいね！一覧を読みに行きます">♡ メルカリのいいね</button>
  <button class="tg MC" id="f-mcnext" title="★を付けたカードを、まだ調べていない順（未所持・高い順）に1件ずつメルカリで検索します。押すたびに次のカード">🔍 ★をメルカリで</button>
  <button class="tg p1" id="f-p1" title="＋1したものだけ出します（買うものの調整用）。もう一度押すと「＋1してない」になります">＋1したもの</button>
@@ -346,6 +371,12 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div class="tagbar" id="tagbar"></div>
 <div id="focus"><span id="focus-t"></span><button type="button" id="focus-x">解除</button></div>
 </div></header>
+<div id="wpanel"><div class="wp-hd"><span>🔎 メルカリ検索リスト</span>
+ <button type="button" id="wp-next">次を検索</button><button type="button" id="wp-cls">閉じる</button></div>
+ <form id="wp-add"><input type="search" id="wp-q" placeholder="ことばを追加（例：EBB ミラー ファイヤー）" autocomplete="off"><button>追加</button></form>
+ <div class="wp-list" id="wp-list"></div>
+ <div class="wp-note">1回押すごとに1つのことばを検索します（メルカリは自動での巡回を規約で禁じているため）。結果の♡を押すと、メルカリでいいね！します</div>
+</div>
 <div id="serpanel"><div class="sp-hd"><span id="sp-ttl">シリーズ（複数選べます）</span>
  <button type="button" id="sp-all">全選択</button><button type="button" id="sp-clr">全解除</button><button type="button" id="sp-cls">閉じる</button></div>
 <input type="search" id="sp-q" placeholder="名前で絞り込む" autocomplete="off">
@@ -564,8 +595,10 @@ function mcRows(base){
 }
 // メルカリの行（★の検索結果＋いいね！）。同じ出品は1行に
 function mercRows(base){
-  const lk=likeRows(base), have=new Set(lk.map(r=>r.pid));
-  return mcRows(base).filter(r=>!have.has(r.pid)).concat(lk);
+  const ix=likeIndex(base);
+  const lk=likeRows(base, ix), have=new Set(lk.map(r=>r.pid));
+  const wd=wordRows(base, ix).filter(r=>!have.has(r.pid) && (have.add(r.pid), true));
+  return mcRows(base).filter(r=>!have.has(r.pid)).concat(lk, wd);
 }
 // ---- メルカリのいいね！ ----
 // 「♡ メルカリのいいね」で開いた いいね！一覧を、ユーザースクリプトが読んで送ってくる。
@@ -643,23 +676,196 @@ function verScore(c, k){
   }
   return v;
 }
-function likeRows(base){
-  const o=readLikes(); if(!o || !o.items.length) return [];
-  const ix=likeIndex(base), ds=ymd(o.t), out=[];
-  for(const it of o.items){
+// メルカリの出品1件（いいね！・検索リスト）を、題名からカードを当てて行にする
+function mcItemRow(it, ix, t){
+    const ds=ymd(t);
     const m=likeMatch(it.n, ix), c=m?m.c:null;
     const shops=it.i[0]==='s';
-    out.push({pid:'MC:'+it.i, cond:'A', cnd:'', name:c?c.name:it.n, set:c?c.set:'', num:c?c.num:'', ser:c?(c.ser||'—'):'—',
+    return {pid:'MC:'+it.i, cond:'A', cnd:'', name:c?c.name:it.n, set:c?c.set:'', num:c?c.num:'', ser:c?(c.ser||'—'):'—',
       img: it.img || (shops ? (c&&c.img||'') : 'https://static.mercdn.net/thumb/item/webp/'+it.i+'_1.jpg'),
       price:c?c.price||0:0, cr:it.p, stock:0, owned:c?c.owned||0:0, cheap:0, isnew:0, sold:0,
       fst:ds, sure:m?m.sure:0, code:c&&c.code||'', rar:c&&c.rar||'', tags:c&&c.tags||[], soldAt:'', hr:'',
       mall:'', fav:c&&c.fav?1:0, ill:c&&c.ill||'', lst:'', id:c?c.id:'', shop:'MC', vid:'',
       url: shops ? 'https://jp.mercari.com/shops/product/'+it.i.slice(1) : 'https://jp.mercari.com/item/'+it.i,
-      mt:it.n||'', mcAt:o.t, like:1, amb:m&&m.amb?1:0, lc:it.c||'', auc:it.a?1:0, nocard:c?0:1,
-      ratio:c&&c.price?it.p/c.price:0, save:c?(c.price||0)-it.p:0});
-  }
+      mt:it.n||'', mcAt:t, like:0, amb:m&&m.amb?1:0, lc:it.c||'', auc:it.a?1:0, nocard:c?0:1,
+      ratio:c&&c.price?it.p/c.price:0, save:c?(c.price||0)-it.p:0};
+}
+function likeRows(base, ix){
+  const o=readLikes(); if(!o || !o.items.length) return [];
+  ix=ix||likeIndex(base);
+  return o.items.map(it=>Object.assign(mcItemRow(it, ix, o.t), {like:1}));
+}
+// ---- メルカリ検索リスト ----
+// 登録したことばで検索した結果。ことばごとに最後の結果だけ持つ
+const WKEY='pokecards_mcwords';
+function readWords(){
+  try{ const o=JSON.parse(localStorage.getItem(WKEY)||'null'); if(o && Array.isArray(o.words)) return o.words; }catch(_){}
+  return [];
+}
+function writeWords(ws){
+  try{ localStorage.setItem(WKEY, JSON.stringify({words:ws})); return true; }
+  catch(_){ toast('検索リストを保存できませんでした（容量）'); return false; }
+}
+function wordRows(base, ix){
+  const out=[];
+  for(const w of readWords()) for(const it of (w.items||[])) if(!it.s)
+    out.push(Object.assign(mcItemRow(it, ix, w.t), {wq:w.q}));
   return out;
 }
+// 次に検索することば：まだ検索していないもの → いちばん前に検索したもの
+function wordNext(){
+  const ws=readWords();
+  return ws.slice().sort((a,b)=>(a.t||0)-(b.t||0))[0]||null;
+}
+let wordWait=null;
+function wordOpen(q){
+  const u='https://jp.mercari.com/search?keyword='+encodeURIComponent(q)
+    +'&exclude_keyword='+encodeURIComponent(MC_EX)+'&status=on_sale&sort=created_time&order=desc'
+    +'#pcmc='+encodeURIComponent(JSON.stringify({w:q}));
+  const w=open(u, 'mercari');
+  try{ if(w) w.focus(); }catch(_){}
+  clearTimeout(wordWait);
+  wordWait=setTimeout(()=>toast('メルカリから結果が届きません。Tampermonkeyのスクリプトを 3.0 に更新してください'), 45000);
+  toast('「'+q+'」をメルカリで検索しています…');
+}
+function agoText(t){
+  if(!t) return '未検索';
+  const mi=Math.round((Date.now()-t)/60000);
+  return mi<60?mi+'分前':mi<1440?Math.round(mi/60)+'時間前':Math.round(mi/1440)+'日前';
+}
+function wordsDraw(){
+  const ws=readWords(), el=document.getElementById('wp-list');
+  const nx=wordNext();
+  document.getElementById('wp-next').textContent=nx?'次を検索：'+nx.q:'次を検索';
+  el.innerHTML=(ws.length
+    ? '<div class="wp-it'+(st.words==='*'?' sel':'')+'" data-wsel="*">すべての結果<span class="wp-n">'
+        +ws.reduce((a,w)=>a+(w.items||[]).filter(x=>!x.s).length,0)+'件</span></div>'
+    : '<div class="wp-note">まだありません。上の欄にことばを入れて「追加」</div>')
+    +ws.map((w,i)=>'<div class="wp-it'+(st.words===w.q?' sel':'')+'" data-wsel="'+esc(w.q)+'">'+esc(w.q)
+      +'<span class="wp-n">'+(w.t?(w.items||[]).filter(x=>!x.s).length+'件・'+agoText(w.t):'未検索')+'</span>'
+      +'<button type="button" data-wgo="'+i+'" title="いま検索する">🔍</button>'
+      +'<button type="button" data-wdel="'+i+'" title="リストから外す">×</button></div>').join('');
+}
+function wordsSet(q){
+  st.words=q||''; st.card='';
+  if(st.words){
+    st.likes=0; document.getElementById('f-likes').classList.remove('on');
+    st.memo=''; const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
+  }else document.getElementById('focus').classList.remove('on');
+  document.getElementById('f-words').classList.toggle('on', !!st.words);
+  wordsDraw();
+  apply(); scrollTo(0,0);
+}
+function wordsView(){
+  if(!CATALOG) loadCatalog();
+  const ws=readWords().filter(w=>st.words==='*' || w.q===st.words);
+  const ids=new Set();
+  for(const w of ws) for(const it of (w.items||[])) if(!it.s) ids.add('MC:'+it.i);
+  view=rows.filter(r=>ids.has(r.pid) && qHit(r, st.q) && (st.lo==null||r.cr>=st.lo) && (st.hi==null||r.cr<=st.hi));
+  shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
+  sortView();
+  grid.innerHTML=''; shown=0; draw();
+  document.getElementById('hit').textContent=view.length+'件';
+  if(!st.card){
+    const nx=wordNext(), w=ws.length===1?ws[0]:null;
+    document.getElementById('focus-t').innerHTML='🔎 <b>'+esc(st.words==='*'?'検索リスト すべて':st.words)+'</b> 販売中 '
+      +view.length+'件を表示中'+(w?'　検索 '+agoText(w.t)+'<span class="re" data-wordgo="'+esc(w.q)+'">取り直す</span>':'')
+      +(nx?'<span class="re" data-wordgo="'+esc(nx.q)+'">次を検索：'+esc(nx.q)+'</span>':'');
+    document.getElementById('focus').classList.add('on');
+  }
+}
+addEventListener('message', e=>{
+  const d=e.data && e.data.pcWord;
+  if(!d || e.origin!=='https://jp.mercari.com' || typeof d.q!=='string' || !Array.isArray(d.items)) return;
+  clearTimeout(wordWait); wordWait=null;
+  const ws=readWords(), w=ws.find(x=>x.q===d.q);
+  if(!w) return;
+  w.t=Date.now();
+  w.items=d.items.map(x=>({i:String(x.i||'').replace(/[^\w]/g,''), p:+x.p||0, n:String(x.n||'').slice(0,100),
+      s:x.s?1:0, img:/^https:\/\/[\w.-]*(mercdn\.net|mercari-shops-static\.com|mercari\.com)\//.test(x.img||'')?String(x.img):''}))
+    .filter(x=>x.i && x.p && !x.s).slice(0,120);
+  writeWords(ws);
+  rows=rows.filter(r=>r.shop!=='MC');
+  rows=rows.concat(mercRows(rows));
+  indexCards();
+  focus();
+  wordsSet(d.q);
+  const nx=wordNext();
+  toast('「'+d.q+'」販売中 '+w.items.length+'件'+(nx && nx.q!==d.q?'　次は「'+nx.q+'」':''));
+});
+document.getElementById('f-words').onclick=()=>{
+  const p=document.getElementById('wpanel');
+  p.classList.toggle('open');
+  if(p.classList.contains('open')){
+    wordsDraw();
+    if(!readWords().length) document.getElementById('wp-q').focus();
+  }
+};
+document.getElementById('wp-cls').onclick=()=>document.getElementById('wpanel').classList.remove('open');
+document.getElementById('wp-next').onclick=()=>{
+  const nx=wordNext();
+  if(!nx){ toast('先にことばを追加してください'); document.getElementById('wp-q').focus(); return; }
+  wordOpen(nx.q);
+};
+document.getElementById('wp-add').onsubmit=e=>{
+  e.preventDefault();
+  const i=document.getElementById('wp-q'), q=i.value.replace(/\s+/g,' ').trim().slice(0,60);
+  if(!q) return;
+  const ws=readWords();
+  if(ws.some(w=>w.q===q)){ toast('もう入っています'); return; }
+  ws.push({q:q, t:0, items:[]});
+  if(writeWords(ws)){ i.value=''; wordsDraw(); }
+};
+document.getElementById('wp-list').addEventListener('click', e=>{
+  const g=e.target.closest('[data-wgo]'), d=e.target.closest('[data-wdel]'), s=e.target.closest('[data-wsel]');
+  const ws=readWords();
+  if(g){ const w=ws[+g.dataset.wgo]; if(w) wordOpen(w.q); return; }
+  if(d){
+    const w=ws[+d.dataset.wdel]; if(!w) return;
+    if(!confirm('「'+w.q+'」を検索リストから外しますか？')) return;
+    ws.splice(+d.dataset.wdel,1); writeWords(ws);
+    rows=rows.filter(r=>r.shop!=='MC'); rows=rows.concat(mercRows(rows)); indexCards();
+    if(st.words===w.q) wordsSet(''); else { wordsDraw(); if(st.words) apply(); }
+    return;
+  }
+  if(s){ wordsSet(s.dataset.wsel); document.getElementById('wpanel').classList.remove('open'); }
+});
+// ---- ♡：メルカリのいいね！を付ける・外す ----
+// 押した1件だけ、メルカリの商品ページを開いてユーザースクリプトに♡を押してもらう
+const likeBusy=new Set();
+function likeBtns(pid){ return [...document.querySelectorAll('[data-like]')].filter(b=>b.dataset.like===pid); }
+function likeToggle(pid){
+  const r=rows.find(x=>x.pid===pid && x.shop==='MC'); if(!r || likeBusy.has(pid)) return;
+  const want=r.like?0:1;
+  likeBusy.add(pid);
+  likeBtns(pid).forEach(b=>b.classList.add('wait'));
+  open(r.url+'#pclike='+want, 'mercari');
+  setTimeout(()=>{ if(likeBusy.has(pid)){ likeBusy.delete(pid);
+    likeBtns(pid).forEach(b=>b.classList.remove('wait'));
+    toast('メルカリから返事がありません。Tampermonkeyのスクリプトを 3.0 に更新してください'); } }, 30000);
+  toast(want?'メルカリでいいね！しています…':'メルカリのいいね！を外しています…');
+}
+addEventListener('message', e=>{
+  const d=e.data && e.data.pcLike;
+  if(!d || e.origin!=='https://jp.mercari.com' || !d.i) return;
+  const id=String(d.i).replace(/[^\w]/g,''), pid='MC:'+id;
+  likeBusy.delete(pid);
+  const btns=likeBtns(pid);
+  btns.forEach(b=>b.classList.remove('wait'));
+  if(!d.ok){ toast('メルカリで♡を押せませんでした（売り切れ・削除の可能性）'); return; }
+  const r=rows.find(x=>x.pid===pid);
+  const o=readLikes()||{t:Date.now(), items:[]};
+  o.items=o.items.filter(x=>x.i!==id);
+  if(d.on && r) o.items.unshift({i:id, p:r.cr, n:r.mt||r.name, c:r.lc||'', a:r.auc||0, img:r.img||''});
+  try{ localStorage.setItem(LKKEY, JSON.stringify(o)); }catch(_){}
+  rows=rows.filter(x=>x.shop!=='MC');
+  rows=rows.concat(mercRows(rows));
+  indexCards();
+  // 見ている位置を崩さないよう、一覧は作り直さずボタンだけ変える
+  btns.forEach(b=>{ b.classList.toggle('on', !!d.on); b.title=d.on?'メルカリのいいね！を外す':'メルカリでいいね！する'; });
+  if(st.likes) btns.forEach(b=>{ const c=b.closest('.card'); if(c) c.classList.toggle('gone', !d.on); });
+  toast(d.on?'メルカリでいいね！しました':'メルカリのいいね！を外しました');
+});
 function likesOpen(){
   open('https://jp.mercari.com/mypage/favorites?status=in_stock#pclikes', 'mercari');
   clearTimeout(likesWait);
@@ -687,7 +893,7 @@ function loadCatalog(){
 }
 function likesView(){
   if(!CATALOG) loadCatalog();
-  view=rows.filter(r=>r.like);
+  view=rows.filter(r=>r.like && qHit(r, st.q) && (st.lo==null||r.cr>=st.lo) && (st.hi==null||r.cr<=st.hi));
   shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
   // 選んだ並び順で（相場を使う並びでは、カード未特定は後ろ）
   sortView();
@@ -716,7 +922,7 @@ addEventListener('message', e=>{
   rows=rows.filter(r=>r.shop!=='MC');
   rows=rows.concat(mercRows(rows));
   indexCards();
-  st.likes=1; st.memo=''; st.card='';
+  st.likes=1; st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
   const fm=document.getElementById('f-memo'); if(fm){ fm.value=''; fm.classList.remove('on'); }
   document.getElementById('f-likes').classList.add('on');
   apply(); scrollTo(0,0);
@@ -912,7 +1118,8 @@ function tile(r){
       +'<span class="b '+r.cond+'" title="店の表記: 状態'+esc(r.cnd)+'">'+esc(r.cnd)+'</span>'
       +(r.isnew?'<span class="b new">NEW</span>':'')
       +(r.sold?'<span class="b sold">売切</span>':'')
-      +(r.like?'<span class="b lk">♡</span>':'')+'</div>'
+      +(r.shop==='MC'?'<span class="b lkb'+(r.like?' on':'')+'" data-like="'+esc(r.pid)+'" title="'
+        +(r.like?'メルカリのいいね！を外す':'メルカリでいいね！する')+'">♡</span>':'')+'</div>'
     +(r.owned>0?'<div class="bdg r"><span class="b own">×'+r.owned+'</span></div>':'')
     +'</div>'
     +'<div class="bd">'
@@ -1002,7 +1209,13 @@ function passes(r, except){
     && (st.lo==null|| r.cr>=st.lo)
     && (st.hi==null|| r.cr<=st.hi)
     && (r.price>=st.min)
-    && (!q || r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q));
+    && qHit(r, q);
+}
+// 検索欄：カード名・収録・メルカリの題名、レアリティ（UR など、ぴったり同じとき）
+function qHit(r, q){
+  if(!q) return true;
+  return r.name.toLowerCase().includes(q) || (r.set||'').toLowerCase().includes(q)
+    || (r.mt||'').toLowerCase().includes(q) || (r.rar||'').toLowerCase()===q;
 }
 function apply(){
   const q=st.q;
@@ -1018,6 +1231,7 @@ function apply(){
   }
   if(st.memo){ memoView(); return; }
   if(st.likes){ likesView(); return; }
+  if(st.words){ wordsView(); return; }
   // 店以外の条件を通った行を、店ごとに数えながら絞る。
   // こうすると店ボタンの数字が「その店を押したときの件数」と一致する
   const cnt={};
@@ -1057,7 +1271,8 @@ function memoView(){
     n++;
     if(!it.row){ gone++; continue; }
     if(seen.has(it.row.pid)) continue;
-    seen.add(it.row.pid); view.push(it.row);
+    seen.add(it.row.pid);
+    if(qHit(it.row, st.q)) view.push(it.row);
   }
   shopCounts(view.reduce((a,r)=>(a[r.shop]=(a[r.shop]||0)+1,a),{}));
   // 選んだ並び順で。売り切れは後ろへ
@@ -1113,6 +1328,7 @@ function focusFromUrl(){
 document.getElementById('focus-x').onclick=()=>{
   if(!st.card && st.memo){ memoSelSet(''); return; }
   if(!st.card && st.likes){ likesOff(); return; }
+  if(!st.card && st.words){ wordsSet(''); return; }
   st.card=''; document.getElementById('focus').classList.remove('on');
   apply();
   // 一番上に戻さず、見ていたところまで描いてから位置を戻す
@@ -1312,7 +1528,7 @@ function resetAll(){
   ownSync();
   document.getElementById('f-sort').value=st.sort;
   st.memo=''; document.getElementById('f-memo').value=''; document.getElementById('f-memo').classList.remove('on');
-  st.likes=0;
+  st.likes=0; st.words=''; document.getElementById('f-words').classList.remove('on');
   document.getElementById('focus').classList.remove('on');
   serShow(null); serSync(); renderTags();
   apply();
@@ -1974,6 +2190,8 @@ grid.addEventListener('click',e=>{
   const a=e.target.closest('.alt');
   if(a){ focusCard(a.dataset.card); return; }
   // メルカリ：「再検索」と、まだ調べていないカードは検索。調べてあれば出品を並べる
+  const lb=e.target.closest('[data-like]');
+  if(lb){ e.preventDefault(); likeToggle(lb.dataset.like); return; }
   const mg=e.target.closest('[data-mcgo]');
   if(mg){ mcOpen(mg.dataset.mcgo); return; }
   const ms=e.target.closest('.mcs');
@@ -2075,17 +2293,19 @@ document.getElementById('f-likes').onclick=function(){
   if(st.likes){ likesOff(); return; }
   const o=readLikes();
   if(!o || Date.now()-o.t>LK_AGAIN){ likesOpen(); return; }
-  st.likes=1; st.memo=''; st.card='';
+  st.likes=1; st.memo=''; st.card=''; st.words=''; document.getElementById('f-words').classList.remove('on');
   const fm=document.getElementById('f-memo'); fm.value=''; fm.classList.remove('on');
   this.classList.add('on');
   apply(); scrollTo(0,0);
 };
 document.getElementById('focus').addEventListener('click', e=>{
   if(e.target.closest('[data-likego]')) likesOpen();
+  const wg=e.target.closest('[data-wordgo]'); if(wg) wordOpen(wg.dataset.wordgo);
 });
 function memoSelSet(v){
   st.memo=v||''; st.card='';
-  if(st.memo){ st.likes=0; document.getElementById('f-likes').classList.remove('on'); }
+  if(st.memo){ st.likes=0; document.getElementById('f-likes').classList.remove('on');
+    st.words=''; document.getElementById('f-words').classList.remove('on'); }
   const s=document.getElementById('f-memo');
   s.value=st.memo; s.classList.toggle('on', !!st.memo);
   if(!st.memo) document.getElementById('focus').classList.remove('on');
