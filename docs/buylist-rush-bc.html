@@ -473,18 +473,25 @@ function tcClear(){
   return true;
 }
 // vids は [id, ...] か [[id, 枚数], ...]
-function tcCart(vids){
+// set=true は「カートの枚数をこの枚数にする」（/cart/update）。何度送っても増えない。
+// メモからは必ずこちら。/cart/add は押すたびに足すので、送り直しで2枚3枚と増えてしまう
+function tcCart(vids, set, noOpen){
   if(!vids.length || !CART) return false;
   const f=document.createElement('form');
-  f.method='post'; f.action=CART.replace(/\/cart\/?$/,'/cart/add'); f.target='torecacamp';
+  f.method='post'; f.action=CART.replace(/\/cart\/?$/, set?'/cart/update':'/cart/add'); f.target='torecacamp';
   const put=(n,v)=>{ const i=document.createElement('input');
     i.type='hidden'; i.name=n; i.value=v; f.appendChild(i); };
-  vids.forEach((v,i)=>{
+  if(set){
+    const m=new Map();
+    for(const v of vids){ const id=Array.isArray(v)?v[0]:v, n=Array.isArray(v)?Math.max(1,v[1]|0):1;
+      m.set(String(id), (m.get(String(id))||0)+n); }
+    for(const [id,n] of m) put('updates['+id+']', n);
+  }else vids.forEach((v,i)=>{
     const id=Array.isArray(v)?v[0]:v, n=Array.isArray(v)?Math.max(1,v[1]|0):1;
     put('items['+i+'][id]', id); put('items['+i+'][quantity]', n); });
   put('return_to', '/cart');
   document.body.appendChild(f);
-  open('', 'torecacamp');        // 先にタブを用意しておく（ブロック回避）
+  if(!noOpen) open('', 'torecacamp');   // 先にタブを用意しておく（ブロック回避）
   f.submit();
   f.remove();
   return true;
@@ -1759,10 +1766,26 @@ function pruneCartDone(){
   if(cut) saveCartDone();
 }
 // 1件だけカートに入れる（キャンプ）／店のページを開く（ほかの店）
+// キャンプの「入れる」は少しためてから1回で送る。続けて押すと、前の送信が
+// 次の送信に打ち切られて入り損ねるため。直前に送ったものも一緒に送り直す
+// （枚数を指定する送り方なので、送り直しても増えない）
+let tcBuf=new Map(), tcTimer=null, tcLast={at:0, m:new Map()};
+function tcFlush(){
+  tcTimer=null;
+  if(!tcBuf.size) return;
+  const m=new Map(Date.now()-tcLast.at<6000 ? tcLast.m : []);
+  for(const [k,v] of tcBuf) m.set(k,v);
+  tcBuf=new Map();
+  if(tcCart([...m], true, true)) tcLast={at:Date.now(), m};
+}
 function putOne(it, shop){
   const row=it.row;
   if(shop==='TC'){
-    if(!(row && row.vid && tcCart([[row.vid, Math.max(1,+it.n||1)]]))) return false;
+    if(!(row && row.vid && CART)) return false;
+    // 押した瞬間にタブを用意する（あとで送るときはクリックの外なので、新しく開けない）
+    open('', 'torecacamp');
+    tcBuf.set(String(row.vid), Math.max(1,+it.n||1));
+    clearTimeout(tcTimer); tcTimer=setTimeout(tcFlush, 700);
   }else{
     openShop((row&&row.url)||'#', shop);
   }
@@ -2089,7 +2112,7 @@ document.getElementById('memo').onclick=e=>{
     // キャンプ(Shopify)はまとめて1つのカートに足せる
     if(g.shop==='TC'){
       const vids=rest.map(x=>[x.row.vid, Math.max(1,+x.n||1)]);
-      if(tcCart(vids)){
+      if(tcCart(vids, true)){
         for(const x of rest) cartDone.add(x.pid);
         saveCartDone(); memoDraw();
         toast('カートに入れました（'
