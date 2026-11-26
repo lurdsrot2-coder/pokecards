@@ -202,6 +202,9 @@
     'torecacamp-pokemon.com':'TC'};
   const shop=SHOPS[location.hostname];
   if(!shop) return;
+  // 同じスクリプトが2つ入っていると、1枚を2回入れてしまう。先に動いた方だけ動く
+  if(document.documentElement.dataset.pcAutoRun) return;
+  document.documentElement.dataset.pcAutoRun='1';
   // フルアヘッド・カードラボ・カードラッシュは、押すとカート画面に移動する店。
   // カードラボとカードラッシュはどちらもカラーミーショップで、ボタンのidも同じ
   const NAV = shop==='FA' || shop==='CL' || shop==='CR';
@@ -299,7 +302,7 @@
   }
   // 動き出したことを先に知らせる。これが届かないと、買い得リスト側は
   // 「スクリプトが入っていない／古い」と判断して確認待ちを戻す
-  tell({hello:1, ver:'2.7'});
+  tell({hello:1, ver:'3.1'});
   // 店で「在庫なし」と確認できたもの。買い得リスト側で「売切」にしてもらう。
   // 価格違い・店違い・押せなかった、は売り切れとは限らないので含めない
   const isSoldOut=res=>typeof res==='string' && /^(状態.の)?在庫なし$/.test(res);

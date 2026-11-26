@@ -2108,7 +2108,15 @@ addEventListener('message', e=>{
     autoWatch.heard=true; clearTimeout(autoWatch.timer);
     if(noScript){ noScript=false; memoDraw(); }
   }
-  if(d.hello) return;      // 「います」の知らせ。中身は無い
+  if(d.hello){             // 「います」の知らせ。中身は無い
+    // 1つのページから2回届いたら、スクリプトが2つ入っている（1枚が2回入る）
+    const now=Date.now();
+    if(now-(window.__helloAt||0)<3000 && window.__helloSrc===e.source)
+      alert('まとめてカートのスクリプトが2つ入っています。1枚のつもりが2枚入ることがあります。'
+        +'Tampermonkeyのダッシュボードで「ポケカ買い得リスト：まとめてカート」が2つないか見て、古い方を削除してください。');
+    window.__helloAt=now; window.__helloSrc=e.source;
+    return;
+  }
   const pathOf=u=>String(u||'').replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
   const okSet=new Set((Array.isArray(d.ok)?d.ok:[]).map(pathOf));
   const ngSet=new Set((Array.isArray(d.ng)?d.ng:[]).map(pathOf));
