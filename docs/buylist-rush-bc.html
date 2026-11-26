@@ -1976,10 +1976,11 @@ document.getElementById('memo').onclick=e=>{
   if(pu){
     const pid=pu.dataset.put;
     const gs=window.__memoGroups||[];
-    let hit=null, shop='';
-    for(const g of gs) for(const x of g.items) if(x.pid===pid){ hit=x; shop=g.shop; }
+    let hit=null, shop='', hg=null;
+    for(const g of gs) for(const x of g.items) if(x.pid===pid){ hit=x; shop=g.shop; hg=g; }
     if(!hit) return;
     if(cartDone.has(pid)){ cartDone.delete(pid); saveCartDone(); memoDraw(); return; }
+    if(shop==='TC'){ startAuto(hg, [hit]); return; }
     if(putOne(hit, shop)){
       memoDraw();
       toast(shop==='TC' ? hit.name+' をカートに入れました' : hit.name+' の店を開きました');
@@ -2041,11 +2042,36 @@ document.getElementById('memo').onclick=e=>{
   const au=e.target.closest('[data-auto]');
   if(au){
     const g=(window.__memoGroups||[])[+au.dataset.auto]; if(!g) return;
+    startAuto(g, g.items);
+    return;
+  }
+  const op=e.target.closest('[data-open]');
+  if(op){
+    const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
+    // 「もう一度」は印を外してから、はじめからやり直す
+    if(op.dataset.again){
+      for(const x of g.items) cartDone.delete(x.pid);
+      saveCartDone();
+    }
+    // キャンプも、店のページの中でスクリプトが入れる（外から送るとカートが作り直されることがある）
+    if(g.shop==='TC'){ startAuto(g, g.items); return; }
+    // まだ入れていないものだけ相手にする
+    const rest=g.items.filter(x=>!cartDone.has(x.pid) && x.row && !x.row.sold);
+    if(!rest.length) return;
+    // ほかの店は1件ずつ。まとめて開くとブラウザに止められる
+    putOne(rest[0], g.shop);
+    memoDraw();
+    return;
+  }
+};
+// ユーザースクリプトに、店のページの中で順にカートへ入れてもらう。
+// 入ったと知らせが届いたものから「入れた」になる
+function startAuto(g, items){
     const pn=readPending();
-    const take=g.items.filter(x=>!cartDone.has(x.pid) && !pn[x.pid] && x.row && !x.row.sold
+    const take=items.filter(x=>!cartDone.has(x.pid) && !pn[x.pid] && x.row && !x.row.sold
                                  && (g.shop!=='TC' || x.row.vid)
                                  && /^https?:\/\//.test(x.row.url||'')).slice(0, AUTO_N);
-    if(!take.length) return;
+    if(!take.length){ toast('入れるものがありません（確認待ち・入れた・売り切れを除く）'); return false; }
     const base=take[0].row.url.match(/^https?:\/\/[^/]+/)[0];
     // 状態は店の表記そのまま（オルタの A+ / A- など）を渡す。
     // A にまとめて渡すと、値段の違う上下の段を取り違える
@@ -2071,38 +2097,8 @@ document.getElementById('memo').onclick=e=>{
     noScript=false;
     memoDraw();
     toast((SHOP[g.shop]||g.shop)+'で '+take.length+'件を順にカートへ入れています');
-    return;
-  }
-  const op=e.target.closest('[data-open]');
-  if(op){
-    const g=(window.__memoGroups||[])[+op.dataset.open]; if(!g) return;
-    // 「もう一度」は印を外してから、はじめからやり直す
-    if(op.dataset.again){
-      for(const x of g.items) cartDone.delete(x.pid);
-      saveCartDone();
-    }
-    // まだ入れていないものだけ相手にする
-    const rest=g.items.filter(x=>!cartDone.has(x.pid)
-                                 && x.row && !x.row.sold
-                                 && (g.shop!=='TC' || x.row.vid));
-    if(!rest.length) return;
-    // キャンプ(Shopify)はまとめて1つのカートに足せる
-    if(g.shop==='TC'){
-      const vids=rest.map(x=>[x.row.vid, Math.max(1,+x.n||1)]);
-      if(tcCart(vids)){
-        for(const x of rest) cartDone.add(x.pid);
-        saveCartDone(); memoDraw();
-        toast('カートに入れました（'
-              +vids.reduce((a,v)=>a+v[1],0)+'点）');
-        return;
-      }
-    }
-    // ほかの店は1件ずつ。まとめて開くとブラウザに止められる
-    putOne(rest[0], g.shop);
-    memoDraw();
-    return;
-  }
-};
+    return true;
+}
 // 店のスクリプトから「入った／入らなかった」が1件ごとに届く。
 // 入ったものだけ「入れた」にして、入らなかったものは確認待ちを外す（もう一度押せる）
 addEventListener('message', e=>{
@@ -2264,8 +2260,8 @@ grid.addEventListener('click',e=>{
     const r=rows.find(x=>x.pid===cb.dataset.cart); if(!r) return;
     // キャンプ(Shopify)だけはカートに直接入れられる。
     // 他の2店はカート投入がPOSTなので、商品ページを開くところまで
-    if(r.shop==='TC' && r.vid && tcCart([r.vid])){   // 1枚でも足す形で入れる
-      toast(r.name+' をカートに入れました');
+    if(r.shop==='TC' && r.vid){
+      startAuto({shop:'TC', mall:''}, [{pid:r.pid, row:r, n:1, price:r.cr, name:r.name}]);
       return;
     }
     openShop(r.url, r.shop);

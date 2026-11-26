@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケカ買い得リスト：まとめてカート
 // @namespace    https://lurdsrot2-coder.github.io/pokecards/
-// @version      3.0
+// @version      3.1
 // @description  買い得リストの「まとめてカートへ」から開いたときだけ、店ごとの商品を1件ずつ自動でカートに入れる（ホビステ／フルアヘッド／カードラボ／トレトク／BIGWEB／福福トレカ／マイカ／トレコロ／オルタ／カードラッシュ／キャンプ）。メルカリは「メルカリで探す」「メルカリ検索リスト」「♡ メルカリのいいね」から開いた画面を読んで買い得リストに返すだけ
 // @match        https://www.hobbystation-single.jp/pk/product/detail/*
 // @match        https://pokemon-card-fullahead.com/shopdetail/*
@@ -350,11 +350,18 @@
         if(v.available===false) return '在庫なし';
       }
     }catch(_){}
+    // すでにカートに入っていれば、その分は足さない。押し直し・やり直しで2枚3枚と増えないように
+    let have=0;
+    try{
+      const c=await fetch('/cart.js',{credentials:'same-origin'}).then(r=>r.json());
+      for(const it of (c.items||[])) if(String(it.variant_id)===vid) have+=it.quantity;
+    }catch(_){}
+    if(have>=n) return true;
     let r2;
     try{
       r2=await fetch('/cart/add.js',{method:'POST',credentials:'same-origin',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
-        body:JSON.stringify({items:[{id:Number(vid),quantity:n}]})});
+        body:JSON.stringify({items:[{id:Number(vid),quantity:n-have}]})});
     }catch(e){ return 'カートに入らず（通信エラー）'; }
     if(r2.ok) return true;
     let j={}; try{ j=await r2.json(); }catch(_){}
